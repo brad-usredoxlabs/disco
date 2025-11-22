@@ -1,0 +1,67 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "Run"
+type: object
+
+allOf:
+  - $ref: "./common.schema.yaml#/$defs/FAIRCommon"
+
+required:
+  - experimentId
+
+properties:
+  experimentId:
+    type: string
+    description: >
+      Reference to the parent Experiment record. Must match an existing
+      experiment.id or a resolvable experiment record identifier.
+
+  runId:
+    type: string
+    description: >
+      Optional human-friendly run identifier. If omitted, the system may
+      auto-generate a canonical ID based on naming rules.
+
+  startedAt:
+    type: string
+    format: date-time
+    description: "Timestamp when the run started."
+
+  completedAt:
+    type: string
+    format: date-time
+    description: "Timestamp when the run completed."
+
+  plateLayout:
+    type: string
+    description: >
+      Optional plugin-owned JSON or YAML describing wells, plate layout, etc.
+      Stored as a string and interpreted by plate editor plugins.
+
+  notes:
+    type: string
+    description: "Free-text notes associated with this Run."
+
+  assayType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "Type of assay performed (e.g. OBI:0000663)."
+
+  dataFiles:
+    type: array
+    description: >
+      Paths or identifiers for data outputs associated with this Run.
+      These may point to DVC pointer files, CSVs, or other artifacts.
+    items:
+      type: string
+      description: "Data file path or identifier."
+
+  outputType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "Output data type or measurement ontology term."
+
+  obiType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "OBI category corresponding to an assay."
+    default:
+      label: "assay"
+      identifier: "OBI:0000663"
+      ontology: "OBI"

@@ -1,0 +1,130 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "Experiment"
+type: object
+
+allOf:
+  - $ref: "./common.schema.yaml#/$defs/FAIRCommon"
+
+required:
+  - title
+  - protocolId
+  - samples
+  - projectId
+  - shortSlug
+
+properties:
+  shortSlug:
+    type: string
+    description: >
+      Short identifier (2–4 uppercase alphanumeric chars) used in child Run IDs.
+      Example: 'AB01'
+    pattern: "^[A-Z0-9]{2,4}$"
+    minLength: 2
+    maxLength: 4
+
+  projectId:
+    type: string
+    description: >
+      Reference to parent Project/Investigation.
+      Should match an existing project record ID.
+    # Optional pattern; adjust to your naming convention
+    # pattern: "^PRJ-[0-9]{4}(_[A-Z0-9_]+)?$"
+
+  protocolId:
+    type: string
+    description: >
+      Reference to the protocol record used for this experiment.
+    # pattern: "^PR-[0-9]{4}(_[A-Z0-9_]+)?$"
+
+  runs:
+    type: array
+    description: >
+      Child Run record identifiers associated with this Experiment.
+    items:
+      type: string
+      description: "Run record ID or path (e.g., 'RUN-0001_AB01_INITIAL')."
+
+  samples:
+    type: array
+    description: >
+      Sample record identifiers used in this Experiment.
+    items:
+      type: string
+      description: "Sample record ID or path."
+
+  reagents:
+    type: array
+    description: >
+      Reagent record identifiers used in this Experiment.
+    items:
+      type: string
+      description: "Reagent record ID or path (e.g., lot-specific records)."
+
+  instruments:
+    type: array
+    description: >
+      Instrument record identifiers (e.g., flow cytometer, incubator).
+    items:
+      type: string
+      description: "Instrument record ID or path."
+
+  qcResults:
+    type: array
+    description: "QC result record identifiers associated with this Experiment."
+    items:
+      type: string
+      description: "QC result record ID or path."
+
+  attachments:
+    type: array
+    description: >
+      Attached binary assets via DVC pointer files and hashes.
+    items:
+      type: object
+      required:
+        - pointer
+        - sha256
+      properties:
+        pointer:
+          type: string
+          description: "Path to .dvc pointer file under the data/ tree."
+        sha256:
+          type: string
+          description: "SHA-256 checksum of the underlying binary asset."
+          pattern: "^[0-9a-fA-F]{64}$"
+        role:
+          type: string
+          description: "Logical role of the attachment in this Experiment."
+          enum: ["raw", "processed", "qc", "report", "other"]
+        mediaType:
+          type: string
+          description: "Optional MIME type (e.g., 'application/pdf', 'image/png')."
+
+  measurementType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "Type of measurement (e.g. OBI:0000070)."
+
+  technologyType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "Analytical technology used (e.g. OBI:0000185)."
+
+  factorValues:
+    type: array
+    description: "Experimental factors and their values."
+    items:
+      type: object
+      required: [factorName, factorValue]
+      properties:
+        factorName:
+          $ref: "./ontology-term.schema.yaml"
+        factorValue:
+          type: string
+          description: "Concrete value of the factor (e.g. '37°C', '10% FBS')."
+
+  obiType:
+    $ref: "./ontology-term.schema.yaml"
+    description: "High-level OBI type for this record."
+    default:
+      label: "study"
+      identifier: "OBI:0000067"
+      ontology: "OBI"

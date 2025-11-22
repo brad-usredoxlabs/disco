@@ -1,0 +1,101 @@
+title: "Experiment UI Configuration"
+recordType: "experiment"
+
+layout:
+  fields:
+    shortSlug:
+      group: "header"
+      order: 10
+      ui:
+        width: 3
+    projectId:
+      group: "header"
+      order: 20
+      ui:
+        width: 6
+        collapsible: true
+        navigation:
+          relationship: "parent"
+          showParent: true
+          defaultExpanded: false
+    protocolId:
+      group: "header"
+      order: 30
+      ui:
+        width: 6
+        collapsible: false
+
+    runs:
+      group: "relationships"
+      order: 40
+      ui:
+        collapsible: true
+        display: "list"
+        summaryField: "id"
+        navigation:
+          relationship: "child"
+          relatedType: "run"
+          showChildren: true
+          allowDrillDown: true
+
+    samples:
+      group: "entities"
+      order: 50
+      ui:
+        display: "table"
+        collapsible: false
+
+    reagents:
+      group: "entities"
+      order: 60
+      ui:
+        display: "table"
+        collapsible: true
+
+    instruments:
+      group: "entities"
+      order: 70
+      ui:
+        display: "table"
+        collapsible: true
+
+    qcResults:
+      group: "qc"
+      order: 80
+      ui:
+        display: "table"
+        collapsible: true
+
+    attachments:
+      group: "attachments"
+      order: 90
+      ui:
+        display: "table"
+        collapsible: true
+
+    measurementType:
+      group: "ontology"
+      order: 100
+      ui:
+        collapsible: true
+        summaryField: "label"
+
+    technologyType:
+      group: "ontology"
+      order: 110
+      ui:
+        collapsible: true
+        summaryField: "label"
+
+    factorValues:
+      group: "ontology"
+      order: 120
+      ui:
+        collapsible: true
+
+    obiType:
+      group: "ontology"
+      order: 130
+      ui:
+        collapsible: true
+        summaryField: "label"

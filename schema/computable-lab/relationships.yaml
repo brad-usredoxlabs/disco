@@ -1,0 +1,71 @@
+recordTypes:
+  project:
+    idField: "id"
+    slugField: "shortSlug"
+
+    parents: {}
+
+    children:
+      experiments:
+        field: "experiments"
+        recordType: "experiment"
+        cardinality: "0..*"
+
+    related:
+      publications:
+        field: "publications"
+        recordType: "publication"
+        cardinality: "0..*"
+
+  experiment:
+    idField: "id"
+    slugField: "shortSlug"
+
+    parents:
+      project:
+        field: "projectId"
+        recordType: "project"
+        cardinality: "1"
+      protocol:
+        field: "protocolId"
+        recordType: "protocol"
+        cardinality: "0..1"
+
+    children:
+      runs:
+        field: "runs"
+        recordType: "run"
+        cardinality: "0..*"
+
+    related:
+      samples:
+        field: "samples"
+        recordType: "sample"
+        cardinality: "0..*"
+      reagents:
+        field: "reagents"
+        recordType: "reagent"
+        cardinality: "0..*"
+      instruments:
+        field: "instruments"
+        recordType: "instrument"
+        cardinality: "0..*"
+      qcResults:
+        field: "qcResults"
+        recordType: "qc-result"
+        cardinality: "0..*"
+
+  run:
+    idField: "id"
+    # runs don’t need a slugField unless you decide they do
+
+    parents:
+      experiment:
+        field: "experimentId"
+        recordType: "experiment"
+        cardinality: "1"
+
+    children: {}
+
+    related:
+      {}

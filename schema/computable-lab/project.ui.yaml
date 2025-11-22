@@ -1,0 +1,84 @@
+title: "Project UI Configuration"
+recordType: "project"
+
+layout:
+  fields:
+    title:
+      group: "header"
+      order: 10
+      ui:
+        width: 9
+
+    shortSlug:
+      group: "header"
+      order: 20
+      ui:
+        width: 3
+
+    identifier:
+      group: "header"
+      order: 30
+      ui:
+        width: 6
+
+    description:
+      group: "main"
+      order: 40
+      ui:
+        component: "markdown-textarea"
+        rows: 6
+
+    investigationType:
+      group: "ontology"
+      order: 50
+      ui:
+        collapsible: true
+        summaryField: "label"
+
+    designDescriptors:
+      group: "ontology"
+      order: 60
+      ui:
+        collapsible: true
+        display: "chips"
+
+    objectives:
+      group: "details"
+      order: 70
+      ui:
+        display: "list"
+        collapsible: true
+
+    contacts:
+      group: "details"
+      order: 80
+      ui:
+        display: "table"
+        collapsible: true
+
+    publications:
+      group: "details"
+      order: 90
+      ui:
+        display: "table"
+        collapsible: true
+
+    experiments:
+      group: "relationships"
+      order: 100
+      ui:
+        display: "list"
+        collapsible: true
+        summaryField: "title"
+        navigation:
+          relationship: "child"
+          relatedType: "experiment"
+          showChildren: true
+          allowDrillDown: true
+
+    obiType:
+      group: "ontology"
+      order: 110
+      ui:
+        collapsible: true
+        summaryField: "label"
