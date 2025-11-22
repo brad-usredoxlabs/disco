@@ -1,0 +1,7 @@
+disco-pages/
+tmp/*
+!tmp/disco-pages-2.0-plan.md
+!tmp/disco-pages-2.0/
+tmp/disco-pages-2.0/node_modules/
+tmp/disco-pages-2.0/dist/
+

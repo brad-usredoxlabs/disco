@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Repository Access Manager · DIsCo Pages 2.0</title>
+    <style>
+      :root {
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #0f172a;
+        background: #e2e8f0;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+
+      .card {
+        width: min(720px, 100%);
+        background: #fff;
+        border-radius: 20px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 30px 80px rgba(15, 23, 42, 0.1);
+        padding: 2rem;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.9rem;
+      }
+
+      p.lede {
+        margin-top: 0.5rem;
+        color: #475569;
+      }
+
+      .status-panel {
+        margin: 1.5rem 0;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 1.25rem;
+        background: #f8fafc;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .status-tile {
+        padding: 0.85rem 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: #fff;
+      }
+
+      .status-label {
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.75rem;
+        color: #94a3b8;
+      }
+
+      .status-value {
+        font-size: 1rem;
+        margin-top: 0.15rem;
+      }
+
+      .status-value.warn {
+        color: #d97706;
+      }
+
+      .status-value.error {
+        color: #dc2626;
+      }
+
+      .status-value.ok {
+        color: #059669;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin: 1.5rem 0 0;
+      }
+
+      button {
+        border-radius: 999px;
+        border: 1px solid transparent;
+        padding: 0.65rem 1.4rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        background: #2563eb;
+        color: #fff;
+        transition: transform 0.15s ease;
+      }
+
+      button.secondary {
+        background: #f1f5f9;
+        color: #0f172a;
+        border-color: #cbd5f5;
+      }
+
+      button.danger {
+        background: #fee2e2;
+        color: #b91c1c;
+        border-color: #fecaca;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .log {
+        margin-top: 1.5rem;
+        font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+        font-size: 0.85rem;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 14px;
+        padding: 1rem;
+        min-height: 120px;
+        white-space: pre-wrap;
+      }
+
+      a.back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-top: 1.5rem;
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Repository Access Manager</h1>
+      <p class="lede">
+        Inspect and reset the File System Access handle cached by the DIsCo Pages 2.0 shell. Use this tool when the
+        picker points to an obsolete folder or the browser refuses to prompt for a directory.
+      </p>
+
+      <section class="status-panel">
+        <div class="status-grid">
+          <div class="status-tile">
+            <div class="status-label">API support</div>
+            <div id="supportStatus" class="status-value">Detecting…</div>
+          </div>
+          <div class="status-tile">
+            <div class="status-label">Saved handle</div>
+            <div id="handleStatus" class="status-value">Loading…</div>
+          </div>
+          <div class="status-tile">
+            <div class="status-label">Permission</div>
+            <div id="permissionStatus" class="status-value">—</div>
+          </div>
+          <div class="status-tile">
+            <div class="status-label">Directory name</div>
+            <div id="directoryName" class="status-value">—</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="secondary" type="button" onclick="refreshState()">Refresh state</button>
+          <button type="button" onclick="pickNewDirectory()">Select repository</button>
+          <button class="secondary" type="button" onclick="revalidatePermissions()">Re-check permission</button>
+          <button class="danger" type="button" onclick="clearHandle()">Clear cached handle</button>
+          <button class="danger" type="button" onclick="wipeDatabase()">Delete IndexedDB store</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <div id="log" class="log">Init…</div>
+        <a href="index.html" class="back-link">← Back to DIsCo Pages 2.0</a>
+      </section>
+    </main>
+
+    <script>
+      const DB_NAME = 'disco-pages-2';
+      const STORE_NAME = 'repo-access';
+      const HANDLE_KEY = 'root-directory-handle';
+
+      const supportStatus = document.getElementById('supportStatus');
+      const handleStatus = document.getElementById('handleStatus');
+      const permissionStatus = document.getElementById('permissionStatus');
+      const directoryName = document.getElementById('directoryName');
+      const logEl = document.getElementById('log');
+
+      function log(message) {
+        const stamp = new Date().toLocaleTimeString();
+        logEl.textContent = `[${stamp}] ${message}\n` + logEl.textContent;
+      }
+
+      function hasFsAccess() {
+        return typeof window.showDirectoryPicker === 'function';
+      }
+
+      function openRepoStore() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, 1);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              db.createObjectStore(STORE_NAME);
+            }
+          };
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+        });
+      }
+
+      async function readHandle() {
+        const db = await openRepoStore();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const store = tx.objectStore(STORE_NAME);
+          const request = store.get(HANDLE_KEY);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result || null);
+        });
+      }
+
+      async function writeHandle(handle) {
+        const db = await openRepoStore();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.objectStore(STORE_NAME).put(handle, HANDLE_KEY);
+        });
+      }
+
+      async function deleteHandle() {
+        const db = await openRepoStore();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.objectStore(STORE_NAME).delete(HANDLE_KEY);
+        });
+      }
+
+      async function refreshState() {
+        supportStatus.textContent = hasFsAccess() ? 'Supported' : 'Not supported';
+        supportStatus.className = `status-value ${hasFsAccess() ? 'ok' : 'error'}`;
+
+        if (!hasFsAccess()) {
+          handleStatus.textContent = 'Unavailable';
+          permissionStatus.textContent = '—';
+          directoryName.textContent = '—';
+          return;
+        }
+
+        try {
+          const handle = await readHandle();
+          if (!handle) {
+            handleStatus.textContent = 'No handle cached';
+            handleStatus.className = 'status-value';
+            permissionStatus.textContent = 'n/a';
+            permissionStatus.className = 'status-value';
+            directoryName.textContent = '—';
+            log('No cached handle found in IndexedDB.');
+            return;
+          }
+
+          handleStatus.textContent = 'Handle stored';
+          handleStatus.className = 'status-value ok';
+          directoryName.textContent = handle.name || '(unknown)';
+
+          const permission = await handle.queryPermission({ mode: 'readwrite' });
+          permissionStatus.textContent = permission;
+          permissionStatus.className = `status-value ${permission === 'granted' ? 'ok' : permission === 'prompt' ? 'warn' : 'error'}`;
+          log(`Loaded handle for "${handle.name}" (permission: ${permission}).`);
+        } catch (error) {
+          console.error(error);
+          handleStatus.textContent = 'Error reading handle';
+          handleStatus.className = 'status-value error';
+          permissionStatus.textContent = 'unknown';
+          permissionStatus.className = 'status-value warn';
+          log(`Error reading handle: ${error.message}`);
+        }
+      }
+
+      async function pickNewDirectory() {
+        if (!hasFsAccess()) {
+          log('File System Access API unavailable in this browser.');
+          return;
+        }
+
+        try {
+          log('Requesting directory access…');
+          const handle = await window.showDirectoryPicker();
+          await writeHandle(handle);
+          log(`Stored new handle for "${handle.name}".`);
+          refreshState();
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            log('User dismissed the directory picker.');
+            return;
+          }
+          log(`Failed to select directory: ${error.message}`);
+        }
+      }
+
+      async function revalidatePermissions() {
+        try {
+          const handle = await readHandle();
+          if (!handle) {
+            log('No handle stored to validate.');
+            refreshState();
+            return;
+          }
+          const permission = await handle.requestPermission({ mode: 'readwrite' });
+          log(`Permission state: ${permission}`);
+          refreshState();
+        } catch (error) {
+          log(`Unable to re-validate permission: ${error.message}`);
+        }
+      }
+
+      async function clearHandle() {
+        if (!confirm('Remove the cached directory handle for DIsCo Pages 2.0?')) return;
+        try {
+          await deleteHandle();
+          log('Cleared cached handle.');
+          refreshState();
+        } catch (error) {
+          log(`Failed to clear handle: ${error.message}`);
+        }
+      }
+
+      function wipeDatabase() {
+        if (!confirm('This permanently deletes the entire IndexedDB store for the repo connection. Continue?')) return;
+        const request = indexedDB.deleteDatabase(DB_NAME);
+        request.onsuccess = () => {
+          log('IndexedDB database deleted.');
+          refreshState();
+        };
+        request.onerror = () => {
+          log(`Failed to delete database: ${request.error?.message || 'unknown error'}`);
+        };
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        refreshState();
+      });
+    </script>
+  </body>
+</html>
