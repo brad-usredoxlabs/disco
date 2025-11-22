@@ -1,0 +1,52 @@
+title: "Run UI Configuration"
+recordType: "run"
+layout:
+  fields:
+    experimentId:
+      group: "header"
+      order: 10
+      ui:
+        width: 6
+    runId:
+      group: "header"
+      order: 20
+      ui:
+        width: 6
+    startedAt:
+      group: "timeline"
+      order: 30
+      ui:
+        width: 6
+    completedAt:
+      group: "timeline"
+      order: 40
+      ui:
+        width: 6
+    notes:
+      group: "details"
+      order: 50
+      ui:
+        component: textarea
+        props:
+          rows: 4
+    plateLayout:
+      group: "details"
+      order: 60
+      ui:
+        component: code
+        language: yaml
+    dataFiles:
+      group: "artifacts"
+      order: 70
+      ui:
+        component: list
+    assayType:
+      group: "ontology"
+      order: 80
+      ui:
+        summaryField: label
+    outputType:
+      group: "ontology"
+      order: 90
+      ui:
+        summaryField: label

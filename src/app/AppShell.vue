@@ -4,11 +4,14 @@ import AppPanel from '../ui/panels/AppPanel.vue'
 import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import FileWorkbench from './FileWorkbench.vue'
+import SchemaBundlePanel from './SchemaBundlePanel.vue'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
+import { useSchemaBundle } from '../schema-bundles/useSchemaBundle'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
+const schemaLoader = useSchemaBundle(repo)
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
 
@@ -139,6 +142,9 @@ async function handleExpand(node) {
       </div>
 
       <div class="column column-right">
+        <AppPanel>
+          <SchemaBundlePanel :loader="schemaLoader" />
+        </AppPanel>
         <AppPanel class="workbench-panel">
           <FileWorkbench :repo="repo" :node="selectedNode" />
         </AppPanel>

@@ -1,0 +1,70 @@
+title: "FAIR Common UI"
+recordType: "common"
+layout:
+  groups:
+    header:
+      title: "Record header"
+    metadata:
+      title: "Metadata"
+    references:
+      title: "Provenance & identifiers"
+  fields:
+    id:
+      group: header
+      order: 10
+      ui:
+        width: 6
+        props:
+          dense: true
+    title:
+      group: header
+      order: 20
+      ui:
+        width: 6
+        props:
+          dense: true
+    description:
+      group: metadata
+      order: 30
+      ui:
+        component: textarea
+        props:
+          rows: 3
+    createdAt:
+      group: metadata
+      order: 40
+      ui:
+        width: 4
+        readOnly: true
+    createdBy:
+      group: metadata
+      order: 50
+      ui:
+        width: 4
+    updatedAt:
+      group: metadata
+      order: 60
+      ui:
+        width: 4
+        readOnly: true
+    license:
+      group: metadata
+      order: 70
+      ui:
+        width: 6
+    provenance:
+      group: references
+      order: 80
+      ui:
+        component: chips-list
+        width: 6
+    relatedIdentifiers:
+      group: references
+      order: 90
+      ui:
+        component: chips-list
+    keywords:
+      group: references
+      order: 100
+      ui:
+        component: chips-list

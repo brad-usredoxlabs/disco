@@ -1,0 +1,35 @@
+title: "Ontology Term UI"
+recordType: "ontology-term"
+layout:
+  fields:
+    label:
+      order: 10
+      ui:
+        width: 6
+        props:
+          dense: true
+    identifier:
+      order: 20
+      ui:
+        width: 6
+        props:
+          dense: true
+    definition:
+      order: 30
+      ui:
+        component: textarea
+        props:
+          rows: 3
+    ontology:
+      order: 40
+      ui:
+        width: 4
+    synonyms:
+      order: 50
+      ui:
+        component: chips-list
+        width: 8
+    xrefs:
+      order: 60
+      ui:
+        component: chips-list

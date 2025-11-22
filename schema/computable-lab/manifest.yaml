@@ -1,0 +1,10 @@
+recordSchemas:
+  - project.schema.yaml
+  - experiment.schema.yaml
+  - run.schema.yaml
+uiConfigs:
+  - project.ui.yaml
+  - experiment.ui.yaml
+  - run.ui.yaml
+  - common.ui.yaml
+  - ontology-term.ui.yaml

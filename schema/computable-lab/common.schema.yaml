@@ -1,0 +1,47 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "_meta mixins (FAIR common fields)"
+type: object
+$defs:
+  FAIRCommon:
+    type: object
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        description: Persistent record identifier (URI or compact ID)
+      title:
+        type: string
+        description: Human-readable label/title
+      description:
+        type: string
+        description: Short description / purpose
+      createdAt:
+        type: string
+        format: date-time
+        readOnly: true
+        description: Record creation timestamp (ISO 8601)
+      createdBy:
+        type: string
+        description: Creator (user or agent identifier)
+      updatedAt:
+        type: string
+        format: date-time
+        readOnly: true
+        description: Last modified timestamp (ISO 8601)
+      license:
+        type: string
+        description: License identifier/URL for this record
+      provenance:
+        type: array
+        description: Provenance statements (links to sources, evidence)
+        items:
+          type: string
+      relatedIdentifiers:
+        type: array
+        description: Related external identifiers (DOIs, accessions, URIs)
+        items:
+          type: string
+      keywords:
+        type: array
+        description: Keywords/tags to aid findability
+        items: { type: string }

@@ -1,40 +1,8 @@
-experiment:
-  idField: "id"               # from YAML front matter
-  shortSlugField: "shortSlug"
-  baseDir: "07_EXPERIMENTS"
-  filenamePattern: "{{id}}_{{title_sanitized}}.md"
-  # Example: EXP-0007_MICROPLASTICS_PILOT.md
-
-  # Optional: how new experiment IDs are generated
-  idGeneration:
-    prefix: "EXP"
-    format: "EXP-{counter:0000}"
-    counterFile: ".counters/experiment.counter"
-
-run:
+project:
   idField: "id"
-  baseDir: "08_RUNS"
-  filenamePattern: "{{id}}_{{experimentShortSlug}}_{{date}}.md"
-  # Example: RUN-0123_AB01_2025-11-09.md
-
-  idGeneration:
-    prefix: "RUN"
-    format: "RUN-{counter:0000}"
-    counterFile: ".counters/run.counter"
-
-  # Derivation rules using Experiment's shortSlug
-  derivedFields:
-    experimentShortSlug:
-      sourceRecordType: "experiment"
-      sourceField: "shortSlug"
-      linkage:
-        viaField: "experimentId"  # run front-matter field pointing to experiment.idproject:
-  idField: "id"                  # front-matter
   shortSlugField: "shortSlug"
-  baseDir: "02_PROJECTS"         # adjust to your actual repo layout
+  baseDir: "02_PROJECTS"
   filenamePattern: "{{id}}_{{title_sanitized}}.md"
-  # Example: PRJ-0001_MICROPLASTICS_METHOD_DEV.md
-
   idGeneration:
     prefix: "PRJ"
     format: "PRJ-{counter:0000}"
@@ -45,8 +13,6 @@ experiment:
   shortSlugField: "shortSlug"
   baseDir: "07_EXPERIMENTS"
   filenamePattern: "{{id}}_{{title_sanitized}}.md"
-  # Example: EXP-0007_MICROPLASTICS_PILOT.md
-
   idGeneration:
     prefix: "EXP"
     format: "EXP-{counter:0000}"
@@ -56,16 +22,13 @@ run:
   idField: "id"
   baseDir: "08_RUNS"
   filenamePattern: "{{id}}_{{experimentShortSlug}}_{{date}}.md"
-  # Example: RUN-0123_MP01_2025-11-09.md
-
   idGeneration:
     prefix: "RUN"
     format: "RUN-{counter:0000}"
     counterFile: ".counters/run.counter"
-
   derivedFields:
     experimentShortSlug:
       sourceRecordType: "experiment"
       sourceField: "shortSlug"
       linkage:
-        viaField: "experimentId"   # run front-matter field pointing to experiment.id
+        viaField: "experimentId"
