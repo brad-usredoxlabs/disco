@@ -1,0 +1,49 @@
+name: reagents
+description: "Controlled vocabulary for lab reagents"
+
+bioportal_ontologies:
+  - acronym: CHEBI
+    priority: 1
+    description: "Chemical Entities of Biological Interest"
+  - acronym: CCONT
+    priority: 2
+    description: "Cell Culture Ontology"
+  - acronym: NCIT
+    priority: 3
+    description: "National Cancer Institute Thesaurus"
+
+search_settings:
+  require_exact_match: false
+  include_obsolete: false
+  include_properties: true
+  include_definitions: true
+
+local_extensions:
+  - id: "LAB:CUSTOM001"
+    label: "Smith Lab Buffer A"
+    definition: "Proprietary lysis buffer (10mM Tris-HCl pH 7.5, 150mM NaCl, 1% Triton X-100)"
+    synonyms: ["Buffer A", "Lysis Buffer A"]
+    category: "buffer"
+  - id: "LAB:CUSTOM002"
+    label: "In-house Microplastic Standard Mix"
+    definition: "Polystyrene/polyethylene/PET blend at 100 µg/mL each"
+    category: "standard"
+
+validation:
+  required_fields:
+    - id
+    - label
+    - category
+  allowed_categories:
+    - chemical
+    - buffer
+    - media
+    - antibody
+    - enzyme
+    - standard
+    - other
+
+display:
+  label_format: "{label} ({id})"
+  show_definitions: true
+  group_by: category

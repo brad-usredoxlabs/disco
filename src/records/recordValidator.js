@@ -40,7 +40,7 @@ export function useRecordValidator(schemaLoader) {
     }
     const schema = getSchema(recordType)
     if (!schema) {
-      return { ok: false, issues: [`No schema registered for record type \\"${recordType}\\".`] }
+      return { ok: false, issues: [{ path: 'root', message: `No schema registered for record type "${recordType}".` }] }
     }
 
     const result = schema.safeParse(data)
@@ -48,10 +48,10 @@ export function useRecordValidator(schemaLoader) {
       return { ok: true, issues: [] }
     }
 
-    const issues = result.error.issues.map((issue) => {
-      const path = issue.path?.length ? issue.path.join('.') : 'root'
-      return `${path}: ${issue.message}`
-    })
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path?.length ? issue.path.join('.') : 'root',
+      message: issue.message
+    }))
     return { ok: false, issues }
   }
 

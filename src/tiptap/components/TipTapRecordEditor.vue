@@ -1,0 +1,695 @@
+<template>
+  <div class="tiptap-record-editor">
+    <header class="editor-header">
+      <div>
+        <p class="editor-label">TapTab</p>
+        <h3>{{ displayTitle }}</h3>
+        <p class="editor-subtitle">
+          {{ recordPath }}
+          <span v-if="recordType">· {{ recordType }}</span>
+        </p>
+      </div>
+      <div class="editor-actions">
+        <button class="secondary" type="button" @click="emit('close')" :disabled="saving">Close</button>
+        <button
+          class="primary"
+          type="button"
+          :disabled="effectiveReadOnly || !isDirty || saving || !tiptapDoc"
+          @click="saveRecord"
+        >
+          {{ saving ? 'Saving…' : 'Save changes' }}
+        </button>
+      </div>
+    </header>
+
+    <p v-if="effectiveReadOnly" class="read-only-banner">
+      This record is immutable in the current workflow state. TapTab is in view-only mode.
+    </p>
+    <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
+    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+
+    <div v-if="isLoading" class="loading-state">
+      <p>Loading record…</p>
+    </div>
+
+    <div v-else class="editor-grid">
+      <section class="tiptap-column tiptap-column--full">
+        <TipTapEditor v-if="tiptapDoc" v-model="tiptapDoc" :editable="!effectiveReadOnly" />
+        <p v-else class="placeholder">No document content yet.</p>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref, watch, nextTick } from 'vue'
+import TipTapEditor from './TipTapEditor.vue'
+import { useTipTapIO, buildDocFromRecord } from '../composables/useTipTapIO'
+import { generateMarkdownView, buildFieldDescriptors } from '../../records/markdownView'
+import { serializeFrontMatter } from '../../records/frontMatter'
+
+const props = defineProps({
+  repo: {
+    type: Object,
+    required: true
+  },
+  recordPath: {
+    type: String,
+    default: ''
+  },
+  recordType: {
+    type: String,
+    default: ''
+  },
+  schema: {
+    type: Object,
+    default: () => ({})
+  },
+  uiConfig: {
+    type: Object,
+    default: () => ({})
+  },
+  namingRule: {
+    type: Object,
+    default: () => ({})
+  },
+  readOnly: {
+    type: Boolean,
+    default: false
+  },
+  validateRecord: {
+    type: Function,
+    default: null
+  },
+  workflowDefinition: {
+    type: Object,
+    default: null
+  },
+  schemaBundle: {
+    type: Object,
+    default: () => ({})
+  }
+})
+
+const emit = defineEmits(['close', 'saved'])
+
+const propsValidator = computed(() => (record) => {
+  if (props.validateRecord && activeRecordType.value) {
+    const result = props.validateRecord(activeRecordType.value, record)
+    if (!result.ok) {
+      const summary =
+        result.issues
+          ?.map((issue) => (typeof issue === 'string' ? issue : `${issue.path || 'root'}: ${issue.message}`))
+          .join('\n') || 'Validation failed'
+      const err = new Error(summary)
+      err.issues = result.issues
+      throw err
+    }
+  }
+})
+
+const { loadDocument, saveDocument, loading, error } = useTipTapIO(props.repo, (record) => propsValidator.value?.(record))
+const metadata = ref({})
+const tiptapDoc = ref(null)
+const originalMetadata = ref({})
+const originalDoc = ref(null)
+const statusMessage = ref('')
+const saving = ref(false)
+const isHydrating = ref(false)
+
+const protectedFields = computed(() => {
+  const set = new Set(['id', 'recordType', 'shortSlug'])
+  if (props.namingRule?.idField) set.add(props.namingRule.idField)
+  if (props.namingRule?.shortSlugField) set.add(props.namingRule.shortSlugField)
+  return set
+})
+
+const activeRecordType = computed(() => metadata.value?.recordType || props.recordType || '')
+const fieldDescriptorBundle = computed(() => buildFieldDescriptors(activeRecordType.value, props.schemaBundle || {}))
+const metadataDescriptors = computed(() => fieldDescriptorBundle.value.metadata)
+const formFieldDescriptors = computed(() => fieldDescriptorBundle.value.body)
+const descriptorMap = computed(() => {
+  const map = new Map()
+  metadataDescriptors.value.forEach((descriptor) =>
+    map.set(descriptor.name, { ...descriptor, section: 'metadata' })
+  )
+  formFieldDescriptors.value.forEach((descriptor) =>
+    map.set(descriptor.name, { ...descriptor, section: 'body' })
+  )
+  return map
+})
+const metadataFieldSet = computed(() => new Set(metadataDescriptors.value.map((descriptor) => descriptor.name)))
+const errorMessage = computed(() => error.value || '')
+const isLoading = computed(() => loading.value || isHydrating.value)
+const displayTitle = computed(() => metadata.value?.title || metadata.value?.id || 'Untitled record')
+
+const formState = ref({})
+const metadataDirty = ref(false)
+const formDirty = ref(false)
+const docDirty = ref(false)
+const isDirty = computed(() => metadataDirty.value || formDirty.value || docDirty.value)
+const isSyncingFromDoc = ref(false)
+const isSyncingFromMetadata = ref(false)
+const metadataIssues = ref({})
+const workflowConfig = computed(() => props.workflowDefinition?.config || null)
+const workflowStateMeta = computed(() => {
+  if (!workflowConfig.value || !metadata.value?.state) return {}
+  return workflowConfig.value.states?.[metadata.value.state]?.meta || {}
+})
+const workflowImmutable = computed(() => !!workflowStateMeta.value?.immutable)
+const effectiveReadOnly = computed(() => props.readOnly || workflowImmutable.value)
+
+function runWithSyncFlag(flagRef, updater) {
+  flagRef.value = true
+  try {
+    updater()
+  } finally {
+    nextTick(() => {
+      flagRef.value = false
+    })
+  }
+}
+
+watch(
+  () => metadata.value,
+  () => {
+    if (isHydrating.value || isSyncingFromDoc.value) return
+    metadataDirty.value = true
+    runMetadataValidation()
+    if (!tiptapDoc.value) return
+    runWithSyncFlag(isSyncingFromMetadata, () => {
+      tiptapDoc.value = ensureFieldBlocks(
+        tiptapDoc.value,
+        metadata.value,
+        formState.value,
+        metadataDescriptors.value,
+        formFieldDescriptors.value,
+        metadataIssues.value
+      )
+    })
+  },
+  { deep: true }
+)
+
+watch(
+  () => formState.value,
+  () => {
+    if (isHydrating.value || isSyncingFromDoc.value) return
+    formDirty.value = true
+    if (!tiptapDoc.value) return
+    runWithSyncFlag(isSyncingFromMetadata, () => {
+      tiptapDoc.value = ensureFieldBlocks(
+        tiptapDoc.value,
+        metadata.value,
+        formState.value,
+        metadataDescriptors.value,
+        formFieldDescriptors.value,
+        metadataIssues.value
+      )
+    })
+  },
+  { deep: true }
+)
+
+watch(
+  () => tiptapDoc.value,
+  (doc) => {
+    if (isHydrating.value) return
+    if (isSyncingFromMetadata.value) return
+    docDirty.value = true
+    const updates = extractFieldBlockValues(doc, descriptorMap.value)
+    if (Object.keys(updates).length) {
+      const metadataUpdates = {}
+      const bodyUpdates = {}
+      Object.entries(updates).forEach(([key, value]) => {
+        if (metadataFieldSet.value.has(key)) {
+          metadataUpdates[key] = value
+        } else {
+          bodyUpdates[key] = value
+        }
+      })
+      const next = mergeMetadata(metadata.value, metadataUpdates)
+      if (next.changed) {
+        runWithSyncFlag(isSyncingFromDoc, () => {
+          metadata.value = next.data
+          metadataDirty.value = true
+        })
+      }
+      if (Object.keys(bodyUpdates).length) {
+        runWithSyncFlag(isSyncingFromDoc, () => {
+          formState.value = { ...formState.value, ...bodyUpdates }
+          formDirty.value = true
+        })
+      }
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => metadataIssues.value,
+  () => {
+    if (!tiptapDoc.value) return
+    runWithSyncFlag(isSyncingFromMetadata, () => {
+      tiptapDoc.value = ensureFieldBlocks(
+        tiptapDoc.value,
+        metadata.value,
+        formState.value,
+        metadataDescriptors.value,
+        formFieldDescriptors.value,
+        metadataIssues.value
+      )
+    })
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.recordPath,
+  (path) => {
+    if (path) {
+      loadRecord(path)
+    }
+  },
+  { immediate: true }
+)
+
+async function loadRecord(path) {
+  try {
+    isHydrating.value = true
+    statusMessage.value = ''
+    const payload = await loadDocument(path, { sidecarName: 'body.tiptap.json' })
+    const rawMetadata = { ...(payload.metadata || {}) }
+    const initialFormData = rawMetadata.formData || {}
+    delete rawMetadata.formData
+    metadata.value = rawMetadata
+    originalMetadata.value = { ...rawMetadata }
+    formState.value = { ...initialFormData }
+    const baseDoc = payload.tiptapDoc || buildDocFromRecord(payload.metadata, payload.body)
+    tiptapDoc.value = ensureFieldBlocks(
+      baseDoc,
+      metadata.value,
+      formState.value,
+      metadataDescriptors.value,
+      formFieldDescriptors.value,
+      metadataIssues.value
+    )
+    originalDoc.value = cloneDoc(tiptapDoc.value)
+    metadataDirty.value = false
+    formDirty.value = false
+    docDirty.value = false
+    runMetadataValidation()
+  } catch (err) {
+    statusMessage.value = err?.message || 'Failed to load record.'
+    console.error('[TapTab] Failed to load document', err)
+  } finally {
+    isHydrating.value = false
+  }
+}
+
+async function saveRecord() {
+  if (effectiveReadOnly.value || !props.recordPath) return
+  if (!tiptapDoc.value) return
+
+  try {
+    saving.value = true
+    statusMessage.value = ''
+    const validationResult = runMetadataValidation()
+    if (validationResult && !validationResult.ok) {
+      statusMessage.value = 'Fix highlighted fields before saving.'
+      saving.value = false
+      return
+    }
+    const metadataPayload = { ...metadata.value, formData: { ...formState.value } }
+    await saveDocument({
+      recordPath: props.recordPath,
+      metadata: metadataPayload,
+      tiptapDoc: tiptapDoc.value,
+      sidecarName: 'body.tiptap.json'
+    })
+    const markdown = generateMarkdownView(
+      activeRecordType.value,
+      metadataPayload,
+      formState.value || {},
+      props.schemaBundle || {}
+    )
+    await props.repo.writeFile(
+      props.recordPath,
+      serializeFrontMatter(metadataPayload, markdown)
+    )
+    originalMetadata.value = { ...metadata.value }
+    originalDoc.value = cloneDoc(tiptapDoc.value)
+    metadataDirty.value = false
+    docDirty.value = false
+    statusMessage.value = 'Record saved.'
+    emit('saved', { metadata: metadata.value, recordPath: props.recordPath })
+  } catch (err) {
+    statusMessage.value = err?.message || 'Failed to save record.'
+    console.error('[TapTab] Failed to save document', err)
+  } finally {
+    saving.value = false
+  }
+}
+
+function updateField(field, value) {
+  if (protectedFields.value.has(field)) return
+  metadata.value = {
+    ...metadata.value,
+    [field]: value
+  }
+}
+
+function cloneDoc(doc) {
+  return doc ? JSON.parse(JSON.stringify(doc)) : null
+}
+
+function runMetadataValidation() {
+  if (!props.validateRecord || !activeRecordType.value) {
+    metadataIssues.value = {}
+    return { ok: true }
+  }
+  const result = props.validateRecord(activeRecordType.value, metadata.value || {})
+  if (result.ok) {
+    metadataIssues.value = {}
+    return result
+  }
+  const map = {}
+  ;(result.issues || []).forEach((issue) => {
+    if (typeof issue === 'string') {
+      const [pathPart, ...rest] = issue.split(':')
+      const key = pathPart?.trim() || 'root'
+      if (!map[key]) map[key] = []
+      map[key].push(rest.join(':').trim() || issue)
+    } else {
+      const key = (issue.path || 'root').split('.')[0] || 'root'
+      if (!map[key]) map[key] = []
+      map[key].push(issue.message)
+    }
+  })
+  metadataIssues.value = map
+  return result
+}
+
+function ensureFieldBlocks(doc, metadata, formData, metadataDescriptors, bodyDescriptors, errorsMap = {}) {
+  const baseDoc = doc ? cloneDoc(doc) : { type: 'doc', content: [] }
+  const metadataNodes = metadataDescriptors.map((descriptor) =>
+    createFieldBlockNode(descriptor, metadata?.[descriptor.name], errorsMap[descriptor.name] || [], 'metadata')
+  )
+  const bodyNodes = bodyDescriptors.map((descriptor) =>
+    createFieldBlockNode(descriptor, formData?.[descriptor.name], errorsMap[descriptor.name] || [], 'body')
+  )
+  return {
+    type: baseDoc.type || 'doc',
+    content: [
+      createSectionHeading('***Metadata***'),
+      ...metadataNodes,
+      createSectionHeading('***Record Body***'),
+      ...bodyNodes
+    ]
+  }
+}
+
+function createSectionHeading(text) {
+  return {
+    type: 'heading',
+    attrs: { level: 3 },
+    content: [{ type: 'text', text }]
+  }
+}
+
+function createFieldBlockNode(descriptor, value, errors = [], section = 'metadata') {
+  const schema = descriptor.schema || {}
+  const placeholder = descriptor.config?.ui?.placeholder || schema.description || ''
+  const enumOptions = schema.enum ? JSON.stringify(schema.enum) : null
+  return {
+    type: 'fieldBlock',
+    attrs: {
+      fieldKey: descriptor.name,
+      dataType: schema.type || 'string',
+      placeholder,
+      section,
+      enumOptions,
+      value: formatFieldValue(value, schema, descriptor.fieldType),
+      fieldType: descriptor.fieldType || null,
+      vocab: descriptor.vocab || null,
+      errors
+    }
+  }
+}
+
+function extractFieldBlockValues(doc, descriptorMap) {
+  const updates = {}
+  if (!doc || !Array.isArray(doc.content)) {
+    return updates
+  }
+  doc.content.forEach((node) => {
+    if (node.type !== 'fieldBlock') return
+    const key = node.attrs?.fieldKey
+    if (!key) return
+    const descriptor = descriptorMap.get(key)
+    updates[key] = coerceFieldValue(node.attrs?.value, descriptor?.schema, descriptor?.fieldType)
+  })
+  return updates
+}
+
+function mergeMetadata(metadata, updates) {
+  let changed = false
+  const next = { ...(metadata || {}) }
+  for (const [key, value] of Object.entries(updates)) {
+    const previous = next[key]
+    if (Array.isArray(value) || Array.isArray(previous)) {
+      const prevString = JSON.stringify(previous ?? [])
+      const nextString = JSON.stringify(value ?? [])
+      if (prevString !== nextString) {
+        next[key] = value
+        changed = true
+      }
+    } else if ((previous ?? '') !== (value ?? '')) {
+      next[key] = value
+      changed = true
+    }
+  }
+  return { changed, data: next }
+}
+
+
+function formatFieldValue(value, schema = {}, fieldType) {
+  if (fieldType === 'ontology') {
+    if (Array.isArray(value)) {
+      return value.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
+    }
+    return normalizeOntologyValue(value)
+  }
+  if (fieldType === 'recipeCard') {
+    return normalizeRecipeValue(value)
+  }
+  if (schema.type === 'array') {
+    if (Array.isArray(value)) {
+      return value.join('\n')
+    }
+    return value || ''
+  }
+  if (schema.type === 'number' || schema.type === 'integer') {
+    return value ?? ''
+  }
+  if (schema.type === 'boolean') {
+    return value === true ? 'true' : value === false ? 'false' : ''
+  }
+  if (value === undefined || value === null) return ''
+  return String(value)
+}
+
+function coerceFieldValue(rawValue, schema = {}, fieldType) {
+  if (fieldType === 'ontology') {
+    if (Array.isArray(rawValue)) {
+      const list = rawValue.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
+      return list
+    }
+    return normalizeOntologyValue(rawValue)
+  }
+  if (fieldType === 'recipeCard') {
+    return normalizeRecipeValue(rawValue)
+  }
+  if (schema.type === 'array') {
+    if (Array.isArray(rawValue)) return rawValue
+    if (typeof rawValue === 'string') {
+      return rawValue
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    }
+    return []
+  }
+  if (schema.type === 'number' || schema.type === 'integer') {
+    const parsed = Number(rawValue)
+    if (Number.isNaN(parsed)) return undefined
+    return schema.type === 'integer' ? Math.trunc(parsed) : parsed
+  }
+  if (schema.type === 'boolean') {
+    if (typeof rawValue === 'boolean') return rawValue
+    if (typeof rawValue === 'string') {
+      return rawValue.toLowerCase() === 'true'
+    }
+    return undefined
+  }
+  if (rawValue === undefined || rawValue === null) return undefined
+  return rawValue
+}
+
+function normalizeOntologyValue(entry) {
+  if (!entry) return null
+  if (typeof entry === 'string') {
+    return { id: entry, label: entry, source: '' }
+  }
+  if (typeof entry !== 'object') return null
+  const id = entry.id || entry['@id'] || ''
+  const label = entry.label || entry.prefLabel || entry.name || id
+  if (!id && !label) return null
+  return {
+    id,
+    label,
+    source: entry.source || entry.ontology || '',
+    definition: entry.definition || entry.description || ''
+  }
+}
+
+function normalizeRecipeValue(value) {
+  if (!value || typeof value !== 'object') {
+    return {
+      items: [],
+      steps: []
+    }
+  }
+  const items = Array.isArray(value.items)
+    ? value.items.map((item) => ({
+        quantity: item.quantity || '',
+        unit: item.unit || '',
+        notes: item.notes || '',
+        reagent: item.reagent ? normalizeOntologyValue(item.reagent) : null
+      }))
+    : []
+  const steps = Array.isArray(value.steps) ? value.steps.slice() : []
+  return {
+    items,
+    steps
+  }
+}
+</script>
+
+<style scoped>
+.tiptap-record-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 80vh;
+  min-width: 0;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.editor-label {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.editor-header h3 {
+  margin: 0.2rem 0 0;
+  font-size: 1.6rem;
+  color: #0f172a;
+}
+
+.editor-subtitle {
+  margin: 0.1rem 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.primary,
+.secondary {
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  font-size: 0.9rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #1d4ed8;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondary {
+  background: #fff;
+  border-color: #e2e8f0;
+}
+
+.status-message {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #0f766e;
+}
+
+.error-message {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #b91c1c;
+}
+
+.read-only-banner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: #fef9c3;
+  color: #854d0e;
+  border: 1px solid rgba(202, 138, 4, 0.4);
+}
+
+.loading-state {
+  padding: 2rem;
+  text-align: center;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.editor-grid {
+  min-height: 0;
+}
+
+.tiptap-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tiptap-column--full {
+  min-height: 60vh;
+}
+
+.placeholder {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed #cbd5f5;
+  border-radius: 12px;
+  color: #94a3b8;
+  text-align: center;
+}
+</style>

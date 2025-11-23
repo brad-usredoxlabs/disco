@@ -79,6 +79,8 @@ layout:
       ui:
         collapsible: true
         summaryField: "label"
+        fieldType: "ontology"
+        vocab: "reagents"
 
     technologyType:
       group: "ontology"
@@ -86,12 +88,16 @@ layout:
       ui:
         collapsible: true
         summaryField: "label"
+        fieldType: "ontology"
+        vocab: "reagents"
 
     factorValues:
       group: "ontology"
       order: 120
       ui:
         collapsible: true
+        fieldType: "ontology"
+        vocab: "reagents"
 
     obiType:
       group: "ontology"
@@ -99,3 +105,11 @@ layout:
       ui:
         collapsible: true
         summaryField: "label"
+        fieldType: "ontology"
+        vocab: "reagents"
+
+    recipeCard:
+      group: "details"
+      order: 140
+      ui:
+        fieldType: "recipeCard"

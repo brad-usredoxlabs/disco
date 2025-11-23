@@ -128,3 +128,29 @@ properties:
       label: "study"
       identifier: "OBI:0000067"
       ontology: "OBI"
+
+  recipeCard:
+    type: object
+    description: "Recipe card for reagents and preparation steps."
+    properties:
+      title:
+        type: string
+      items:
+        type: array
+        items:
+          type: object
+          required: [reagent]
+          properties:
+            quantity:
+              type: string
+            unit:
+              type: string
+            reagent:
+              $ref: "./ontology-term.schema.yaml"
+            notes:
+              type: string
+      steps:
+        type: array
+        items:
+          type: string
+    required: []

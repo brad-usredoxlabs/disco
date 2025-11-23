@@ -11,3 +11,33 @@ uiConfigs:
   - common.ui.yaml
   - ontology-term.ui.yaml
 assistantConfig: assistant.yaml
+tiptap:
+  recordTypes:
+    - project
+    - experiment
+    - run
+vocabSchemas:
+  - reagents.yaml
+metadataFields:
+  default:
+    - id
+    - recordType
+    - state
+    - title
+    - shortSlug
+    - description
+    - createdAt
+    - createdBy
+    - updatedAt
+  experiment:
+    - id
+    - recordType
+    - state
+    - title
+    - shortSlug
+    - description
+    - projectId
+    - protocolId
+    - createdAt
+    - createdBy
+    - updatedAt

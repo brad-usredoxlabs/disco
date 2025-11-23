@@ -2,6 +2,7 @@
 import { computed, reactive, watch } from 'vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import { buildDefaultFrontMatter, computeRecordPath, sanitizeSlug } from '../records/recordCreation'
+import { generateMarkdownView, buildBodyDefaults } from '../records/markdownView'
 import { previewId, commitId } from '../records/idGenerator'
 import { serializeFrontMatter } from '../records/frontMatter'
 
@@ -50,8 +51,17 @@ const namingRules = computed(() => bundle.value?.naming || {})
 const relationships = computed(() => bundle.value?.relationships || { recordTypes: {} })
 const workflowMachines = computed(() => props.workflowLoader.workflowBundle?.value?.machines || {})
 const graphData = computed(() => props.recordGraph?.graph?.value || { nodes: [], nodesById: {} })
+const tiptapRecordTypes = computed(() => bundle.value?.manifest?.tiptap?.recordTypes || [])
 
-const availableRecordTypes = computed(() => Object.keys(namingRules.value))
+const loaderStatus = computed(() => props.schemaLoader?.status?.value || 'idle')
+
+const availableRecordTypes = computed(() => {
+  const namingEntries = Object.keys(namingRules.value || {})
+  if (namingEntries.length) return namingEntries
+  return Object.keys(bundle.value?.recordSchemas || {})
+})
+
+const isBundleReady = computed(() => ['ready', 'warning'].includes(loaderStatus.value))
 const parentDefinitions = computed(() => {
   if (!state.recordType) return []
   const descriptor = relationships.value.recordTypes?.[state.recordType]
@@ -85,7 +95,13 @@ watch(
     const namingRule = namingRules.value[type]
     const workflowMachine = workflowMachines.value?.[type]
     state.metadata = buildDefaultFrontMatter(type, namingRule, workflowMachine)
-    state.body = await loadTemplateFor(type)
+    const bodyDefaults = buildBodyDefaults(type, bundle.value || {})
+    if (Object.keys(bodyDefaults).length) {
+      state.metadata.formData = bodyDefaults
+    } else {
+      delete state.metadata.formData
+    }
+    state.body = generateMarkdownView(type, state.metadata, state.metadata.formData || {}, bundle.value || {})
     await seedAutoId(namingRule)
     ensureParentFields()
     recomputePath()
@@ -171,7 +187,13 @@ async function handleCreate() {
   try {
     state.isCreating = true
     state.error = ''
-    const content = serializeFrontMatter(state.metadata, state.body)
+    const markdownView = generateMarkdownView(
+      state.recordType,
+      state.metadata,
+      state.metadata.formData || {},
+      bundle.value || {}
+    )
+    const content = serializeFrontMatter(state.metadata, markdownView)
     await props.repo.writeFile(state.filePath, content)
     const namingRule = namingRules.value[state.recordType]
     if (state.metadata.id === state.autoId && state.pendingCounter) {
@@ -217,30 +239,21 @@ function updateDerivedFields() {
   }
 }
 
-async function loadTemplateFor(recordType) {
-  if (!recordType) return '# New record\n\nDescribe the record here.'
-  try {
-    const res = await fetch(`/schema/${bundle.value?.schemaSet || 'computable-lab'}/templates/${recordType}.md`)
-    if (res.ok) {
-      return await res.text()
-    }
-  } catch (err) {
-    console.warn('[RecordCreator] unable to load template', recordType, err)
-  }
-  return '# New record\n\nDescribe the record here.'
-}
 </script>
 
 <template>
   <BaseModal v-if="open" title="Create new record" @close="close">
     <div class="creator-body">
       <label>Record type</label>
-      <select v-model="state.recordType">
+      <select v-model="state.recordType" :disabled="!availableRecordTypes.length">
         <option value="" disabled>Select type…</option>
         <option v-for="type in availableRecordTypes" :key="type" :value="type">
           {{ type }}
         </option>
       </select>
+      <p v-if="!availableRecordTypes.length" class="status status-muted">
+        {{ isBundleReady ? 'No record types detected. Connect to a repository with a valid naming configuration.' : 'Loading schema bundle…' }}
+      </p>
 
       <div v-if="state.recordType" class="creator-form">
         <label>Title</label>

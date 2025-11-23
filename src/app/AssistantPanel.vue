@@ -12,9 +12,9 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
-  body: {
-    type: String,
-    default: ''
+  metadataFields: {
+    type: Array,
+    default: () => []
   },
   graphNode: {
     type: Object,
@@ -33,7 +33,7 @@ const responseText = ref('')
 const errorText = ref('')
 const selectedAction = ref('')
 const parsedMetadata = ref(null)
-const parsedBody = ref('')
+const parsedFormData = ref(null)
 const parseMessage = ref('')
 
 const actions = computed(() => props.assistantConfig?.actions || [])
@@ -41,7 +41,7 @@ const models = ref([])
 const isLoadingModels = ref(false)
 const modelsError = ref('')
 
-const needsApiConfig = computed(() => !client.apiKey.value && !client.baseUrl.value)
+const metadataFieldSet = computed(() => new Set(props.metadataFields || []))
 
 watch(
   () => client.baseUrl.value,
@@ -77,8 +77,19 @@ async function fetchModels() {
 
 function buildContext(include = []) {
   const sections = []
+  const rawMetadata = props.metadata || {}
+  const metadataOnly = { ...rawMetadata }
+  const formData = metadataOnly.formData || {}
+  delete metadataOnly.formData
+  const metadataYaml = YAML.stringify(metadataOnly || {}, { indent: 2 }).trim()
+  const formYaml = YAML.stringify(formData || {}, { indent: 2 }).trim()
+
   if (!include.length || include.includes('self')) {
-    sections.push(`# Current ${props.recordType}\n\n${JSON.stringify(props.metadata, null, 2)}\n\n${props.body}`)
+    sections.push(
+      `# Current ${props.recordType}\n\n## Metadata\n${metadataYaml || '{}'}\n\n## Form data\n${
+        formYaml || '{}'
+      }`
+    )
   }
   if (include.includes('parents')) {
     (props.graphNode?.parents || []).forEach((edge) => {
@@ -122,14 +133,14 @@ async function runAction(action) {
     ]
 
     responseText.value = await client.sendChat({ messages })
-    const { metadata, body, message } = extractStructuredData(responseText.value)
+    const { metadata, formData, message } = extractStructuredData(responseText.value)
     parsedMetadata.value = metadata
-    parsedBody.value = body
+    parsedFormData.value = formData
     parseMessage.value = message
   } catch (err) {
     errorText.value = err?.message || 'Assistant request failed.'
     parsedMetadata.value = null
-    parsedBody.value = ''
+    parsedFormData.value = null
     parseMessage.value = ''
   } finally {
     isRunning.value = false
@@ -146,83 +157,89 @@ async function runCustomPrompt() {
 }
 
 function extractStructuredData(text) {
-  if (!text) return { metadata: null, body: '', message: '' }
+  parseMessage.value = ''
+  const payload = parseStructuredPayload(text)
+  if (!payload) {
+    return { metadata: null, formData: null, message: '' }
+  }
+  const { metadata, formData } = splitPayload(payload)
+  return { metadata, formData, message: parseMessage.value }
+}
+
+function parseStructuredPayload(text) {
+  if (!text) return null
+  const { candidate, lang } = extractCandidate(text)
+  const parsed =
+    parseByLanguage(candidate, lang) ||
+    parseJsonSnippet(text) ||
+    parseYamlFrontMatter(text)
+  return parsed && typeof parsed === 'object' ? parsed : null
+}
+
+function extractCandidate(text) {
   const match = text.match(/```(\w+)?\s*([\s\S]*?)```/i)
-  const lang = match?.[1]?.toLowerCase()
-  const candidate = (match ? match[2] : text).trim()
-
-  const tryJson = () => {
-    try {
-      const parsed = JSON.parse(candidate)
-      if (parsed && typeof parsed === 'object') {
-        parseMessage.value = 'Parsed JSON response.'
-        return parsed
-      }
-    } catch (_) {}
-    return null
+  if (match) {
+    return { candidate: match[2].trim(), lang: match[1]?.toLowerCase() || '' }
   }
+  return { candidate: text.trim(), lang: '' }
+}
 
-  const tryYaml = () => {
-    try {
-      const parsed = YAML.parse(candidate)
-      if (parsed && typeof parsed === 'object') {
-        parseMessage.value = 'Parsed YAML response.'
-        return parsed
-      }
-    } catch (_) {}
-    return null
-  }
-
-  let parsed = null
+function parseByLanguage(candidate, lang) {
   if (!lang || lang === 'json') {
-    parsed = tryJson()
-    if (parsed) return parsed
-    parsed = tryYaml()
-  } else if (lang === 'yaml' || lang === 'yml') {
-    parsed = tryYaml()
-    if (parsed) return parsed
-    parsed = tryJson()
-  } else {
-    parsed = tryJson() || tryYaml()
+    return tryParseJson(candidate) || tryParseYaml(candidate)
   }
+  if (lang === 'yaml' || lang === 'yml') {
+    return tryParseYaml(candidate) || tryParseJson(candidate)
+  }
+  return tryParseJson(candidate) || tryParseYaml(candidate)
+}
 
-  if (!parsed) {
-    const jsonFallback = extractJsonSnippet(text)
-    if (jsonFallback) {
-      try {
-        const parsedSnippet = JSON.parse(jsonFallback)
-        if (parsedSnippet && typeof parsedSnippet === 'object') {
-          parseMessage.value = 'Parsed JSON snippet.'
-          parsed = parsedSnippet
-        }
-      } catch (_) {}
+function tryParseJson(text) {
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object') {
+      parseMessage.value = 'Parsed JSON response.'
+      return parsed
     }
-  }
+  } catch (_) {}
+  return null
+}
 
-  if (!parsed) {
-    const yamlBlock = extractYamlFrontMatter(text)
-    if (yamlBlock) {
-      try {
-        const parsedYaml = YAML.parse(yamlBlock)
-        if (parsedYaml && typeof parsedYaml === 'object') {
-          parseMessage.value = 'Parsed YAML front matter.'
-          parsed = parsedYaml
-        }
-      } catch (_) {}
+function tryParseYaml(text) {
+  try {
+    const parsed = YAML.parse(text)
+    if (parsed && typeof parsed === 'object') {
+      parseMessage.value = 'Parsed YAML response.'
+      return parsed
     }
-  }
+  } catch (_) {}
+  return null
+}
 
-  let bodyText = ''
-  if (!parsed) {
-    return { metadata: null, body: '', message: '' }
-  }
+function parseJsonSnippet(text) {
+  const snippet = extractJsonSnippet(text)
+  if (!snippet) return null
+  try {
+    const parsed = JSON.parse(snippet)
+    if (parsed && typeof parsed === 'object') {
+      parseMessage.value = 'Parsed JSON snippet.'
+      return parsed
+    }
+  } catch (_) {}
+  return null
+}
 
-  const extracted = extractMarkdownBody(text)
-  if (extracted) {
-    bodyText = extracted
-  }
-
-  return { metadata: parsed, body: bodyText, message: parseMessage.value }
+function parseYamlFrontMatter(text) {
+  const yamlBlock = extractYamlFrontMatter(text)
+  if (!yamlBlock) return null
+  try {
+    const parsed = YAML.parse(yamlBlock)
+    if (parsed && typeof parsed === 'object') {
+      parseMessage.value = 'Parsed YAML front matter.'
+      return parsed
+    }
+  } catch (_) {}
+  return null
 }
 
 function extractJsonSnippet(text) {
@@ -242,24 +259,40 @@ function extractYamlFrontMatter(text) {
   return null
 }
 
-function extractMarkdownBody(text) {
-  const parts = text.split(/---[\s\S]*?---/)
-  if (parts.length > 1) {
-    return parts.pop().trim()
+function splitPayload(payload) {
+  const metadata = {}
+  const formData = {}
+  const fieldSet = metadataFieldSet.value
+  const builtInMetadata = new Set(['recordType', 'record_type', 'record_type_id', 'id', 'state', 'title', 'shortSlug'])
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (key === 'formData' && value && typeof value === 'object') {
+      Object.assign(formData, value)
+      return
+    }
+    if (fieldSet.has(key) || builtInMetadata.has(key)) {
+      metadata[key] = value
+    } else if (key !== 'body' && key !== 'markdown') {
+      formData[key] = value
+    }
+  })
+
+  return {
+    metadata: Object.keys(metadata).length ? metadata : null,
+    formData: Object.keys(formData).length ? formData : null
   }
-  return ''
 }
 
-const emit = defineEmits(['apply', 'apply-body'])
+const emit = defineEmits(['apply-metadata', 'apply-formdata'])
 
 function applyMetadata() {
   if (!parsedMetadata.value) return
-  emit('apply', parsedMetadata.value)
+  emit('apply-metadata', parsedMetadata.value)
 }
 
-function applyBody() {
-  if (!parsedBody.value) return
-  emit('apply-body', parsedBody.value)
+function applyFormData() {
+  if (!parsedFormData.value) return
+  emit('apply-formdata', parsedFormData.value)
 }
 
 function saveApiKey(event) {
@@ -325,10 +358,12 @@ function saveBaseUrl(event) {
       <div v-if="responseText" class="assistant-response">
         <pre>{{ responseText }}</pre>
         <p v-if="parseMessage" class="status status-muted">{{ parseMessage }}</p>
-        <p v-else class="status status-muted">No structured metadata detected. Ask the assistant to respond with JSON or YAML.</p>
+        <p v-else class="status status-muted">
+          No structured YAML/JSON detected. Ask the assistant to respond with valid metadata.
+        </p>
         <div class="assistant-actions">
-          <button v-if="parsedMetadata" class="primary" type="button" @click="applyMetadata">Apply to metadata</button>
-          <button v-if="parsedBody" class="secondary" type="button" @click="applyBody">Apply to body</button>
+          <button v-if="parsedMetadata" class="primary" type="button" @click="applyMetadata">Apply metadata</button>
+          <button v-if="parsedFormData" class="secondary" type="button" @click="applyFormData">Apply form data</button>
         </div>
       </div>
     </div>

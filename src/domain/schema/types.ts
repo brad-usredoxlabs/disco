@@ -75,6 +75,7 @@ export interface SchemaManifest {
   uiConfigs?: string[];
   ontology?: string;
   assistantConfig?: string;
+  vocabSchemas?: string[];
 }
 
 export interface AssistantAction {
@@ -98,6 +99,7 @@ export interface SchemaBundle {
   relationships: RelationshipsConfig;
   naming: NamingConfig;
   ontology?: OntologyConfig;
+  vocabSchemas?: Record<string, unknown>;
   relationshipIndex: RelationshipIndex;
   assistant?: AssistantConfig;
 }

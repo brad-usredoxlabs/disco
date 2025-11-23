@@ -4,6 +4,8 @@ import AppPanel from '../ui/panels/AppPanel.vue'
 import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import FileWorkbench from './FileWorkbench.vue'
+import TipTapSandbox from '../tiptap/components/TipTapSandbox.vue'
+import TipTapRecordEditor from '../tiptap/components/TipTapRecordEditor.vue'
 import SchemaBundlePanel from './SchemaBundlePanel.vue'
 import RecordGraphPanel from './RecordGraphPanel.vue'
 import RecordSearchPanel from './RecordSearchPanel.vue'
@@ -14,6 +16,9 @@ import { useSchemaBundle } from '../schema-bundles/useSchemaBundle'
 import { useWorkflowBundle } from '../workflows/useWorkflowBundle'
 import { useRecordGraph } from '../graph/useRecordGraph'
 import { useSearchIndex } from '../search/useSearchIndex'
+import { useRecordValidator } from '../records/recordValidator'
+import { useSystemConfig } from '../config/useSystemConfig'
+import { configureOntologyService } from '../ontology/service'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -21,16 +26,90 @@ const schemaLoader = useSchemaBundle(repo)
 const workflowLoader = useWorkflowBundle(repo, schemaLoader)
 const recordGraph = useRecordGraph(repo, schemaLoader)
 const searchIndex = useSearchIndex(recordGraph)
+const systemConfig = useSystemConfig(repo)
 const showCreator = ref(false)
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
 
 const showPrompt = ref(true)
 const selectedNode = ref(null)
-
+const showSandbox = import.meta.env.DEV === true
+const schemaBundle = computed(() => schemaLoader.schemaBundle?.value)
+const recordValidator = useRecordValidator(schemaLoader)
+const tiptapTarget = ref(readTiptapTargetFromUrl())
+const tiptapStatus = ref('')
 const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
 const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
+const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
+const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
+const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
+const tiptapSchema = computed(() =>
+  tiptapTarget.value ? schemaBundle.value?.recordSchemas?.[tiptapTarget.value.recordType] || null : null
+)
+const tiptapUiConfig = computed(() =>
+  tiptapTarget.value ? schemaBundle.value?.uiConfigs?.[tiptapTarget.value.recordType] || null : null
+)
+const tiptapNamingRule = computed(() =>
+  tiptapTarget.value ? schemaBundle.value?.naming?.[tiptapTarget.value.recordType] || null : null
+)
+const tiptapSupports = computed(() =>
+  !!tiptapTarget.value && tiptapSupportedTypes.value.includes(tiptapTarget.value.recordType)
+)
+const tiptapBundleMismatch = computed(() => {
+  if (!tiptapTarget.value?.bundle) return false
+  return selectedBundleName.value !== tiptapTarget.value.bundle
+})
+const tiptapWorkflowDefinition = computed(() =>
+  tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
+)
+
+watch(
+  () => tiptapTarget.value?.bundle,
+  (bundle) => {
+    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
+      schemaLoader.selectBundle(bundle)
+    }
+  }
+)
+
+watch(
+  [
+    () => repo.directoryHandle.value,
+    () => schemaLoader.schemaBundle?.value,
+    () => systemConfig.bioportalConfig.value
+  ],
+  ([handle, bundle, bioportal]) => {
+    configureOntologyService({
+      repoConnection: handle ? repo : null,
+      systemConfig: bioportal,
+      vocabSchemas: bundle?.vocabSchemas || {}
+    })
+  },
+  { immediate: true }
+)
+
+function readTiptapTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('tiptapPath')) return null
+  return {
+    path: decodeURIComponent(params.get('tiptapPath')),
+    recordType: params.get('tiptapType') || '',
+    bundle: params.get('tiptapBundle') || ''
+  }
+}
+
+function clearTiptapTarget() {
+  tiptapTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('tiptapPath')
+    url.searchParams.delete('tiptapType')
+    url.searchParams.delete('tiptapBundle')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
 
 watch(
   () => repo.directoryHandle.value,
@@ -104,10 +183,63 @@ function handleRecordCreated(path) {
 async function handleExpand(node) {
   await tree.loadChildrenForNode(node)
 }
+
+function handleStandaloneSaved() {
+  tiptapStatus.value = 'TapTab changes saved.'
+  recordGraph?.rebuild?.()
+  searchIndex?.rebuild?.()
+}
 </script>
 
 <template>
-  <div class="app-shell">
+  <div v-if="isStandaloneTiptap" class="tiptap-standalone">
+    <header class="tiptap-standalone__header">
+      <div>
+        <p class="app-kicker">TapTab</p>
+        <h1>{{ tiptapTarget?.recordType || 'Record' }}</h1>
+        <p class="app-subtitle">{{ tiptapTarget?.path }}</p>
+      </div>
+      <div class="tiptap-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button class="secondary" type="button" @click="clearTiptapTarget">Return to workspace</button>
+      </div>
+    </header>
+    <div class="tiptap-standalone__body">
+      <p v-if="tiptapStatus" class="status status-ok">{{ tiptapStatus }}</p>
+      <div v-if="!isReady" class="tiptap-standalone__message">
+        <p>Connect your repository to edit this record.</p>
+        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+      </div>
+      <div v-else-if="tiptapBundleMismatch" class="tiptap-standalone__message">
+        <p>Loading schema bundle {{ tiptapTarget?.bundle }}…</p>
+      </div>
+      <div v-else-if="!tiptapSupports" class="tiptap-standalone__message">
+        <p>This record type is not TapTab-enabled.</p>
+      </div>
+      <div v-else-if="!tiptapSchema || !tiptapUiConfig" class="tiptap-standalone__message">
+        <p>Schema details are still loading…</p>
+      </div>
+      <div v-else class="tiptap-standalone__editor">
+        <TipTapRecordEditor
+          :repo="repo"
+          :record-path="tiptapTarget.path"
+          :record-type="tiptapTarget.recordType"
+          :schema="tiptapSchema"
+          :ui-config="tiptapUiConfig"
+          :naming-rule="tiptapNamingRule || {}"
+          :read-only="false"
+          :workflow-definition="tiptapWorkflowDefinition"
+          :schema-bundle="schemaLoader.schemaBundle?.value || {}"
+          :validate-record="recordValidator.validate"
+          @close="clearTiptapTarget"
+          @saved="handleStandaloneSaved"
+        />
+      </div>
+    </div>
+  </div>
+  <div v-else class="app-shell">
     <header class="app-header">
       <div>
         <p class="app-kicker">Phase 2 · File I/O Layer</p>
@@ -198,6 +330,9 @@ async function handleExpand(node) {
             :on-open-path="openPath"
           />
         </AppPanel>
+        <AppPanel v-if="showSandbox">
+          <TipTapSandbox :repo="repo" />
+        </AppPanel>
       </div>
     </main>
 
@@ -286,6 +421,51 @@ async function handleExpand(node) {
 
 .connection-pill.is-connected {
   border-color: rgba(16, 185, 129, 0.4);
+}
+
+.tiptap-standalone {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.tiptap-standalone__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.tiptap-standalone__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tiptap-standalone__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tiptap-standalone__message {
+  border: 1px dashed #cbd5f5;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.tiptap-standalone__editor {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1rem;
+  background: #fff;
+  min-height: 70vh;
 }
 
 .app-main-grid {

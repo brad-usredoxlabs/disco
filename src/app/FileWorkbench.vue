@@ -1,8 +1,10 @@
 <script setup>
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, ref, toRef, watch, nextTick } from 'vue'
 import RecordMetadataForm from '../records/RecordMetadataForm.vue'
 import AssistantPanel from './AssistantPanel.vue'
+ 
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
+import { generateMarkdownView } from '../records/markdownView'
 import { useRecordValidator } from '../records/recordValidator'
 
 const props = defineProps({
@@ -45,7 +47,15 @@ const metadataDirty = ref(false)
 const bodyDirty = ref(false)
 const plainTextDirty = ref(false)
 const validationState = ref({ status: 'idle', issues: [], ok: false })
-const isHydrating = ref(false)
+const hydrationDepth = ref(0)
+const isHydrating = computed(() => hydrationDepth.value > 0)
+function beginHydration() {
+  hydrationDepth.value += 1
+}
+async function endHydration() {
+  await nextTick()
+  hydrationDepth.value = Math.max(0, hydrationDepth.value - 1)
+}
 
 const isFile = computed(() => currentNode.value?.kind === 'file')
 const filePath = computed(() => (currentNode.value ? currentNode.value.path : ''))
@@ -54,6 +64,13 @@ const isDirty = computed(() => metadataDirty.value || bodyDirty.value || plainTe
 const schemaBundle = computed(() => props.schemaLoader.schemaBundle?.value)
 const activeSchema = computed(() => (isRecord.value ? schemaBundle.value?.recordSchemas?.[recordType.value] : null))
 const activeUiConfig = computed(() => (isRecord.value ? schemaBundle.value?.uiConfigs?.[recordType.value] : null))
+const namingRule = computed(() => (isRecord.value ? schemaBundle.value?.naming?.[recordType.value] : null))
+const tipTapRecordTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
+const supportsTipTap = computed(() => {
+  if (!isRecord.value) return false
+  if (!tipTapRecordTypes.value.length) return false
+  return tipTapRecordTypes.value.includes(recordType.value)
+})
 const validator = useRecordValidator(props.schemaLoader)
 const metadataModel = computed({
   get: () => recordMetadata.value,
@@ -84,6 +101,31 @@ const assistantDefinition = computed(() => {
   if (!isRecord.value) return null
   const assistant = schemaBundle.value?.assistant
   return assistant?.[recordType.value] || null
+})
+const metadataFieldList = computed(() => {
+  if (!isRecord.value) return []
+  return schemaBundle.value?.metadataFields?.[recordType.value] || []
+})
+const canOpenTipTap = computed(() => {
+  if (!isRecord.value || !isFile.value) return false
+  if (!supportsTipTap.value) return false
+  if (!activeSchema.value) return false
+  if (isLoading.value) return false
+  if (isImmutable.value) return false
+  return !isDirty.value
+})
+const tipTapDisabledReason = computed(() => {
+  if (!isRecord.value || !isFile.value) return 'Open a metadata-backed record first.'
+  if (!supportsTipTap.value) return 'TapTab is not enabled for this record type.'
+  if (!activeSchema.value) return 'This record type is missing a schema definition.'
+  if (isLoading.value) return 'Wait for the file to finish loading.'
+  if (isImmutable.value) return 'This record is immutable in the current workflow state.'
+  if (isDirty.value) return 'Save or discard your pending changes before opening TapTab.'
+  return ''
+})
+const markdownWarning = computed(() => {
+  if (!isRecord.value || !supportsTipTap.value) return ''
+  return 'Markdown is automatically generated from the YAML metadata/form data. Use TapTab or the form to edit.'
 })
 
 function evaluateGuard(name) {
@@ -185,7 +227,7 @@ async function loadFile(node) {
   if (!node) return
   try {
     isLoading.value = true
-    isHydrating.value = true
+    beginHydration()
     const content = await props.repo.readFile(node.path)
     if (content?.startsWith('---')) {
       const { data, body } = parseFrontMatter(content)
@@ -205,7 +247,7 @@ async function loadFile(node) {
   } catch (err) {
     error.value = err?.message || 'Unable to load file.'
   } finally {
-    isHydrating.value = false
+    await endHydration()
     isLoading.value = false
   }
 }
@@ -214,9 +256,21 @@ async function saveFile() {
   if (!isFile.value) return
   try {
     isSaving.value = true
-    const payload = isRecord.value
-      ? serializeFrontMatter(recordMetadata.value, recordBody.value)
-      : plainTextContent.value
+    let payload
+    if (isRecord.value && supportsTipTap.value) {
+      const markdownView = generateMarkdownView(
+        recordType.value,
+        recordMetadata.value,
+        recordMetadata.value.formData || {},
+        schemaBundle.value || {}
+      )
+      payload = serializeFrontMatter(recordMetadata.value, markdownView)
+      refreshMarkdownPreview(markdownView)
+    } else if (isRecord.value) {
+      payload = serializeFrontMatter(recordMetadata.value, recordBody.value)
+    } else {
+      payload = plainTextContent.value
+    }
     await props.repo.writeFile(filePath.value, payload)
     props.recordGraph?.rebuild?.()
     props.searchIndex?.rebuild?.()
@@ -228,6 +282,43 @@ async function saveFile() {
     error.value = err?.message || 'Failed to save file.'
   } finally {
     isSaving.value = false
+  }
+}
+
+function refreshMarkdownPreview(nextBody) {
+  if (!isRecord.value || !supportsTipTap.value) return
+  if (typeof nextBody === 'string') {
+    recordBody.value = nextBody
+    return
+  }
+  try {
+    recordBody.value = generateMarkdownView(
+      recordType.value,
+      recordMetadata.value,
+      recordMetadata.value.formData || {},
+      schemaBundle.value || {}
+    )
+  } catch (err) {
+    console.warn('[workbench] Unable to refresh markdown preview', err)
+  }
+}
+
+async function regenerateMarkdown() {
+  if (!isRecord.value || !supportsTipTap.value || !filePath.value) return
+  try {
+    status.value = 'Regenerating markdown…'
+    const markdownView = generateMarkdownView(
+      recordType.value,
+      recordMetadata.value,
+      recordMetadata.value.formData || {},
+      schemaBundle.value || {}
+    )
+    await props.repo.writeFile(filePath.value, serializeFrontMatter(recordMetadata.value, markdownView))
+    refreshMarkdownPreview(markdownView)
+    status.value = 'Markdown refreshed.'
+  } catch (err) {
+    status.value = ''
+    error.value = err?.message || 'Unable to regenerate markdown.'
   }
 }
 
@@ -267,26 +358,33 @@ function runRecordValidation() {
   }
   validationState.value = { status: 'pending', issues: [], ok: false }
   const result = validator.validate(recordType.value, recordMetadata.value)
+  const formattedIssues = (result.issues || []).map((issue) =>
+    typeof issue === 'string' ? issue : `${issue.path || 'root'}: ${issue.message}`
+  )
   validationState.value = {
     status: result.ok ? 'ok' : 'error',
-    issues: result.issues || [],
+    issues: formattedIssues,
     ok: result.ok
   }
 }
 
 function assignWorkflowState(nextState, markDirty = true) {
   if (!nextState) return
-  const previousHydration = isHydrating.value
+  // Don't mark dirty if we're not actually changing the state
+  const isActuallyChanging = recordMetadata.value?.state !== nextState
+  
   if (!markDirty) {
-    isHydrating.value = true
+    beginHydration()
   }
   recordMetadata.value = {
     ...(recordMetadata.value || {}),
     state: nextState
   }
   if (!markDirty) {
-    isHydrating.value = previousHydration
-  } else {
+    nextTick(() => {
+      hydrationDepth.value = Math.max(0, hydrationDepth.value - 1)
+    })
+  } else if (isActuallyChanging) {
     metadataDirty.value = true
   }
 }
@@ -380,13 +478,68 @@ function applyAssistantMetadata(payload) {
     ...sanitized
   }
   metadataDirty.value = true
+  refreshMarkdownPreview()
   status.value = stripped ? 'Applied assistant metadata (identifiers preserved).' : 'Applied assistant metadata.'
 }
 
-function applyAssistantBody(body) {
-  if (!body) return
-  recordBody.value = body
-  bodyDirty.value = true
+function applyAssistantFormData(formUpdates) {
+  if (!formUpdates || typeof formUpdates !== 'object') return
+  const currentFormData = { ...(recordMetadata.value.formData || {}) }
+  let changed = false
+  Object.entries(formUpdates).forEach(([key, value]) => {
+    if (!valuesEqual(currentFormData[key], value)) {
+      if (value === undefined) {
+        delete currentFormData[key]
+      } else {
+        currentFormData[key] = value
+      }
+      changed = true
+    }
+  })
+
+  if (!changed) {
+    status.value = 'Assistant form data matched current record.'
+    return
+  }
+
+  recordMetadata.value = {
+    ...recordMetadata.value,
+    formData: currentFormData
+  }
+  metadataDirty.value = true
+  refreshMarkdownPreview()
+  status.value = 'Applied assistant form data.'
+}
+
+function valuesEqual(a, b) {
+  if (a === b) return true
+  try {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  } catch {
+    return false
+  }
+}
+
+function openTipTapEditor() {
+  if (!canOpenTipTap.value) {
+    if (tipTapDisabledReason.value) {
+      status.value = tipTapDisabledReason.value
+    }
+    return
+  }
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('tiptapPath')
+  url.searchParams.delete('tiptapType')
+  url.searchParams.delete('tiptapBundle')
+  url.searchParams.set('tiptapPath', filePath.value || '')
+  url.searchParams.set('tiptapType', recordType.value || '')
+  const bundle = props.schemaLoader.selectedBundle?.value
+  if (bundle) {
+    url.searchParams.set('tiptapBundle', bundle)
+  }
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  status.value = 'Opened TapTab in a new tab.'
 }
 </script>
 
@@ -408,12 +561,31 @@ function applyAssistantBody(body) {
           Reload
         </button>
         <button
+          v-if="supportsTipTap"
+          class="secondary"
+          type="button"
+          :disabled="!canOpenTipTap"
+          :title="tipTapDisabledReason"
+          @click="openTipTapEditor"
+        >
+          Edit in TapTab
+        </button>
+        <button
           class="primary"
           type="button"
           :disabled="!isFile || !isDirty || isSaving"
           @click="saveFile"
         >
           {{ isSaving ? 'Saving…' : 'Save changes' }}
+        </button>
+        <button
+          v-if="isRecord && supportsTipTap"
+          class="secondary"
+          type="button"
+          :disabled="isLoading || isSaving"
+          @click="regenerateMarkdown"
+        >
+          Regenerate markdown
         </button>
       </div>
     </header>
@@ -551,11 +723,11 @@ function applyAssistantBody(body) {
       v-if="isRecord && assistantDefinition"
       :record-type="recordType"
       :metadata="recordMetadata"
-      :body="recordBody"
+      :metadata-fields="metadataFieldList"
       :graph-node="graphNode"
       :assistant-config="assistantDefinition"
-      @apply="applyAssistantMetadata"
-      @apply-body="applyAssistantBody"
+      @apply-metadata="applyAssistantMetadata"
+      @apply-formdata="applyAssistantFormData"
     />
 
     <div v-if="isRecord && isFile" class="record-editor">
@@ -577,6 +749,9 @@ function applyAssistantBody(body) {
         <header class="record-section-header">
           <p class="section-label">Markdown body</p>
         </header>
+        <p v-if="markdownWarning" class="markdown-warning">
+          {{ markdownWarning }}
+        </p>
         <textarea
           class="file-textarea"
           :value="recordBody"
@@ -732,6 +907,12 @@ function applyAssistantBody(body) {
   margin-top: 0.75rem;
   font-size: 0.85rem;
   color: #94a3b8;
+}
+
+.markdown-warning {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: #c2410c;
 }
 
 .file-textarea {

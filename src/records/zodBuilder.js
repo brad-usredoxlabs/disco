@@ -50,19 +50,14 @@ export function buildZodSchema(schemaNode, context) {
       return schema
     }
 
-    if (node.allOf?.length) {
-      const schemas = node.allOf.map(fromSchema)
-      const merged = schemas.reduce((acc, entry) => acc.merge(entry), z.object({}))
-      cache.set(node, merged)
-      return merged
-    }
-
     if (Array.isArray(node.enum)) {
       const enumValues = node.enum.map((value) => (value ?? '').toString())
       const schema = z.enum(enumValues)
       cache.set(node, schema)
       return schema
     }
+
+    let baseSchema = null
 
     switch (node.type) {
       case 'object': {
@@ -76,14 +71,13 @@ export function buildZodSchema(schemaNode, context) {
         if (node.additionalProperties === false) {
           objectSchema = objectSchema.strict()
         }
-        cache.set(node, objectSchema)
-        return objectSchema
+        baseSchema = objectSchema
+        break
       }
       case 'array': {
         const itemSchema = fromSchema(node.items || {})
-        const arr = z.array(itemSchema)
-        cache.set(node, arr)
-        return arr
+        baseSchema = z.array(itemSchema)
+        break
       }
       case 'number':
       case 'integer': {
@@ -94,13 +88,12 @@ export function buildZodSchema(schemaNode, context) {
         if (typeof node.maximum === 'number') {
           num = num.max(node.maximum)
         }
-        cache.set(node, num)
-        return num
+        baseSchema = num
+        break
       }
       case 'boolean': {
-        const boolSchema = z.boolean()
-        cache.set(node, boolSchema)
-        return boolSchema
+        baseSchema = z.boolean()
+        break
       }
       case 'string':
       default: {
@@ -119,10 +112,24 @@ export function buildZodSchema(schemaNode, context) {
             console.warn('[zodBuilder] Invalid regex pattern', node.pattern, err)
           }
         }
-        cache.set(node, str)
-        return str
+        baseSchema = str
+        break
       }
     }
+
+    if (!baseSchema) {
+      baseSchema = z.any()
+    }
+
+    if (node.allOf?.length) {
+      const merged = node.allOf
+        .map(fromSchema)
+        .reduce((acc, entry) => acc.merge(entry), baseSchema || z.object({}))
+      baseSchema = merged
+    }
+
+    cache.set(node, baseSchema)
+    return baseSchema
   }
 
   return fromSchema(schemaNode)

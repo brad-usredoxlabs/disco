@@ -34,6 +34,8 @@ layout:
       ui:
         collapsible: true
         summaryField: "label"
+        fieldType: "ontology"
+        vocab: "reagents"
 
     designDescriptors:
       group: "ontology"
@@ -41,6 +43,8 @@ layout:
       ui:
         collapsible: true
         display: "chips"
+        fieldType: "ontology"
+        vocab: "reagents"
 
     objectives:
       group: "details"
@@ -82,3 +86,5 @@ layout:
       ui:
         collapsible: true
         summaryField: "label"
+        fieldType: "ontology"
+        vocab: "reagents"

@@ -2,6 +2,12 @@ import { computed, ref, watch } from 'vue'
 import YAML from 'yaml'
 import { buildRelationshipIndex } from '../domain/schema/relationship-index'
 
+function inferMetadataFields(schema) {
+  if (!schema || typeof schema !== 'object') return []
+  const props = schema.properties || {}
+  return Object.keys(props)
+}
+
 function deriveRecordType(filename, suffix) {
   return filename.replace(new RegExp(`${suffix}$`), '')
 }
@@ -112,7 +118,27 @@ export function useSchemaBundle(repoConnection) {
         }
       }
 
+      const vocabSchemas = {}
+      for (const filename of manifest?.vocabSchemas || []) {
+        try {
+          const vocab = await readYaml(`/vocab/schema/${filename}`)
+          const key = vocab?.name || filename.replace(/\.ya?ml$/i, '')
+          vocabSchemas[key] = vocab
+        } catch (err) {
+          validationIssues.value.push(`Failed to load vocab schema ${filename}: ${err?.message}`)
+        }
+      }
+
       const relationshipIndex = relationships ? buildRelationshipIndex(relationships) : { all: [], byFromType: {}, byToType: {} }
+      const metadataConfig = manifest?.metadataFields || {}
+      const defaultMetadata = metadataConfig.default || inferMetadataFields(recordSchemas.common)
+      const metadataFields = {}
+      Object.keys(recordSchemas).forEach((recordType) => {
+        const override = metadataConfig[recordType]
+        metadataFields[recordType] = Array.from(
+          new Set((override && override.length ? override : defaultMetadata) || [])
+        )
+      })
 
       schemaBundle.value = {
         schemaSet: bundleName,
@@ -122,7 +148,9 @@ export function useSchemaBundle(repoConnection) {
         relationships,
         naming,
         assistant,
-        relationshipIndex
+        vocabSchemas,
+        relationshipIndex,
+        metadataFields
       }
 
       status.value = validationIssues.value.length ? 'warning' : 'ready'

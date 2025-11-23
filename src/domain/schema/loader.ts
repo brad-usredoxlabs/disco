@@ -64,7 +64,20 @@ export async function loadSchemaBundle(
     )) as AssistantConfig;
   }
 
-  // 7. Build relationship index
+  // 7. Load vocabulary schemas if present
+  let vocabSchemas: Record<string, unknown> | undefined;
+  if (manifest.vocabSchemas?.length) {
+    vocabSchemas = {};
+    for (const fname of manifest.vocabSchemas) {
+      const schema = await loadYaml(`vocab/schema/${fname}`);
+      if (schema && typeof schema === "object") {
+        const key = (schema as any).name || fname.replace(/\.ya?ml$/, "");
+        vocabSchemas[key] = schema;
+      }
+    }
+  }
+
+  // 8. Build relationship index
   const relationshipIndex = buildRelationshipIndex(relationships);
 
   return {
@@ -75,6 +88,7 @@ export async function loadSchemaBundle(
     naming,
     ontology,
     assistant,
+    vocabSchemas,
     relationshipIndex,
   };
 }

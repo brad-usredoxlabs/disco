@@ -41,7 +41,9 @@ export function buildDefaultFrontMatter(recordType, namingRule = {}, workflowDef
     recordType,
     state: workflowDefinition?.config?.initial || 'draft',
     id: '',
-    title: ''
+    title: '',
+    createdAt: new Date().toISOString(),
+    createdBy: ''
   }
 
   if (namingRule?.shortSlugField) {

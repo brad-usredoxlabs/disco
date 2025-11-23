@@ -1,6 +1,6 @@
 <template>
   <div class="modal-backdrop" role="dialog" aria-modal="true">
-    <div class="modal-panel">
+    <div class="modal-panel" :style="{ maxWidth: maxWidthComputed }">
       <header class="modal-header" v-if="title || showClose">
         <h2 v-if="title">{{ title }}</h2>
         <button v-if="showClose" class="icon-button" type="button" aria-label="Close dialog" @click="$emit('close')">
@@ -20,7 +20,9 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   title: {
     type: String,
     default: ''
@@ -28,10 +30,18 @@ defineProps({
   showClose: {
     type: Boolean,
     default: true
+  },
+  maxWidth: {
+    type: [String, Number],
+    default: '520px'
   }
 })
 
 defineEmits(['close'])
+
+const maxWidthComputed = computed(() =>
+  typeof props.maxWidth === 'number' ? `${props.maxWidth}px` : props.maxWidth || '520px'
+)
 </script>
 
 <style scoped>
@@ -47,7 +57,8 @@ defineEmits(['close'])
 }
 
 .modal-panel {
-  width: min(520px, 100%);
+  width: 100%;
+  max-width: 520px;
   background: #fff;
   border-radius: 20px;
   border: 1px solid #e5e7eb;
