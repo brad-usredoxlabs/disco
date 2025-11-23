@@ -1,4 +1,6 @@
 recordSchemas:
+  - common.schema.yaml
+  - ontology-term.schema.yaml
   - project.schema.yaml
   - experiment.schema.yaml
   - run.schema.yaml
@@ -8,3 +10,4 @@ uiConfigs:
   - run.ui.yaml
   - common.ui.yaml
   - ontology-term.ui.yaml
+assistantConfig: assistant.yaml

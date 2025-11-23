@@ -1,0 +1,28 @@
+id: experimentWorkflow
+initial: draft
+meta:
+  label: Experiment workflow
+states:
+  draft:
+    meta:
+      description: Authoring metadata and procedure details
+    on:
+      READY_FOR_REVIEW:
+        target: review
+        guard: validation.passed
+  review:
+    meta:
+      description: Awaiting scientist review
+    on:
+      REQUEST_CHANGES:
+        target: draft
+      APPROVE:
+        target: approved
+        guard: signoff.atLeastOne
+  approved:
+    meta:
+      description: Finalized experiment
+      immutable: true
+    on:
+      REOPEN:
+        target: draft

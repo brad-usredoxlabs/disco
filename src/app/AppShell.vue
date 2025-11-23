@@ -5,13 +5,23 @@ import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import FileWorkbench from './FileWorkbench.vue'
 import SchemaBundlePanel from './SchemaBundlePanel.vue'
+import RecordGraphPanel from './RecordGraphPanel.vue'
+import RecordSearchPanel from './RecordSearchPanel.vue'
+import RecordCreatorModal from './RecordCreatorModal.vue'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
 import { useSchemaBundle } from '../schema-bundles/useSchemaBundle'
+import { useWorkflowBundle } from '../workflows/useWorkflowBundle'
+import { useRecordGraph } from '../graph/useRecordGraph'
+import { useSearchIndex } from '../search/useSearchIndex'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
 const schemaLoader = useSchemaBundle(repo)
+const workflowLoader = useWorkflowBundle(repo, schemaLoader)
+const recordGraph = useRecordGraph(repo, schemaLoader)
+const searchIndex = useSearchIndex(recordGraph)
+const showCreator = ref(false)
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
 
@@ -63,8 +73,32 @@ function closePrompt() {
   showPrompt.value = false
 }
 
+function openCreator() {
+  showCreator.value = true
+}
+
+function closeCreator() {
+  showCreator.value = false
+}
+
 function handleSelect(node) {
   selectedNode.value = node
+}
+
+function openPath(path) {
+  if (!path) return
+  selectedNode.value = {
+    kind: 'file',
+    path,
+    name: path.split('/').pop() || path
+  }
+}
+
+function handleRecordCreated(path) {
+  showCreator.value = false
+  if (path) {
+    openPath(path)
+  }
 }
 
 async function handleExpand(node) {
@@ -80,9 +114,12 @@ async function handleExpand(node) {
         <h1>DIsCo Pages 2.0</h1>
         <p class="app-subtitle">Schema-driven LIS/QMS shell powered by Vue + Vite</p>
       </div>
-      <div class="connection-pill" :class="{ 'is-connected': isReady }">
-        <span>{{ connectionLabel }}</span>
-        <button class="pill-button" type="button" @click="reopenPrompt">Choose folder</button>
+      <div class="header-actions">
+        <button class="primary" type="button" @click="openCreator" :disabled="!isReady">New record</button>
+        <div class="connection-pill" :class="{ 'is-connected': isReady }">
+          <span>{{ connectionLabel }}</span>
+          <button class="pill-button" type="button" @click="reopenPrompt">Choose folder</button>
+        </div>
       </div>
     </header>
 
@@ -145,8 +182,21 @@ async function handleExpand(node) {
         <AppPanel>
           <SchemaBundlePanel :loader="schemaLoader" />
         </AppPanel>
+        <AppPanel>
+          <RecordSearchPanel :search="searchIndex" @open="openPath" />
+        </AppPanel>
+        <AppPanel>
+          <RecordGraphPanel :graph-state="recordGraph" />
+        </AppPanel>
         <AppPanel class="workbench-panel">
-          <FileWorkbench :repo="repo" :node="selectedNode" />
+          <FileWorkbench
+            :repo="repo"
+            :node="selectedNode"
+            :schema-loader="schemaLoader"
+            :workflow-loader="workflowLoader"
+            :record-graph="recordGraph"
+            :on-open-path="openPath"
+          />
         </AppPanel>
       </div>
     </main>
@@ -169,6 +219,17 @@ async function handleExpand(node) {
         </button>
       </template>
     </BaseModal>
+    <component
+      v-if="showCreator"
+      :is="RecordCreatorModal"
+      :open="showCreator"
+      :repo="repo"
+      :schema-loader="schemaLoader"
+      :workflow-loader="workflowLoader"
+      :record-graph="recordGraph"
+      :on-created="handleRecordCreated"
+      @close="closeCreator"
+    />
   </div>
 </template>
 
@@ -186,6 +247,12 @@ async function handleExpand(node) {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 1.5rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .app-kicker {

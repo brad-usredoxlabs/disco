@@ -1,0 +1,25 @@
+id: runWorkflow
+initial: planned
+meta:
+  label: Run workflow
+states:
+  planned:
+    meta:
+      description: Run planned, editable
+    on:
+      START:
+        target: in_progress
+        guard: validation.passed
+  in_progress:
+    meta:
+      description: Data collection in progress
+    on:
+      COMPLETE:
+        target: completed
+  completed:
+    meta:
+      description: Results locked
+      immutable: true
+    on:
+      REOPEN:
+        target: planned

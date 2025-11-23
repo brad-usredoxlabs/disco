@@ -7,6 +7,7 @@ import {
   RelationshipsConfig,
   NamingConfig,
   OntologyConfig,
+  AssistantConfig,
 } from "./types";
 import { buildRelationshipIndex } from "./relationship-index";
 import { loadManifest } from "./manifest";
@@ -55,7 +56,15 @@ export async function loadSchemaBundle(
     )) as OntologyConfig;
   }
 
-  // 6. Build relationship index
+  // 6. Load assistant config if present
+  let assistant: AssistantConfig | undefined;
+  if (manifest.assistantConfig) {
+    assistant = (await loadYaml(
+      `schema/${schemaSet}/${manifest.assistantConfig}`
+    )) as AssistantConfig;
+  }
+
+  // 7. Build relationship index
   const relationshipIndex = buildRelationshipIndex(relationships);
 
   return {
@@ -65,6 +74,7 @@ export async function loadSchemaBundle(
     relationships,
     naming,
     ontology,
+    assistant,
     relationshipIndex,
   };
 }

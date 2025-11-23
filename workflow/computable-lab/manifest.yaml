@@ -1,0 +1,4 @@
+machines:
+  - project.machine.yaml
+  - experiment.machine.yaml
+  - run.machine.yaml

@@ -103,6 +103,15 @@ export function useSchemaBundle(repoConnection) {
         validationIssues.value.push(`naming/${bundleName}.yaml missing or invalid: ${err?.message}`)
       }
 
+      let assistant = null
+      if (manifest?.assistantConfig) {
+        try {
+          assistant = await readYaml(`/schema/${bundleName}/${manifest.assistantConfig}`)
+        } catch (err) {
+          validationIssues.value.push(`assistant config missing or invalid: ${err?.message}`)
+        }
+      }
+
       const relationshipIndex = relationships ? buildRelationshipIndex(relationships) : { all: [], byFromType: {}, byToType: {} }
 
       schemaBundle.value = {
@@ -112,6 +121,7 @@ export function useSchemaBundle(repoConnection) {
         uiConfigs,
         relationships,
         naming,
+        assistant,
         relationshipIndex
       }
 

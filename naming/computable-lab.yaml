@@ -12,11 +12,17 @@ experiment:
   idField: "id"
   shortSlugField: "shortSlug"
   baseDir: "07_EXPERIMENTS"
-  filenamePattern: "{{id}}_{{title_sanitized}}.md"
+  filenamePattern: "{{projectShortSlug}}_{{shortSlug}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "EXP"
     format: "EXP-{counter:0000}"
     counterFile: ".counters/experiment.counter"
+  derivedFields:
+    projectShortSlug:
+      sourceRecordType: "project"
+      sourceField: "shortSlug"
+      linkage:
+        viaField: "projectId"
 
 run:
   idField: "id"

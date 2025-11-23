@@ -74,6 +74,21 @@ export interface SchemaManifest {
   recordSchemas: string[];
   uiConfigs?: string[];
   ontology?: string;
+  assistantConfig?: string;
+}
+
+export interface AssistantAction {
+  id: string;
+  label: string;
+  systemPrompt?: string;
+  userTemplate?: string;
+  include?: string[];
+}
+
+export interface AssistantConfig {
+  [recordType: string]: {
+    actions: AssistantAction[];
+  };
 }
 
 export interface SchemaBundle {
@@ -84,4 +99,5 @@ export interface SchemaBundle {
   naming: NamingConfig;
   ontology?: OntologyConfig;
   relationshipIndex: RelationshipIndex;
+  assistant?: AssistantConfig;
 }

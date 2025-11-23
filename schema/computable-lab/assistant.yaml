@@ -1,0 +1,42 @@
+project:
+  actions:
+    - id: summarize
+      label: "Summarize project"
+      systemPrompt: |
+        You are a lab documentation assistant. Summarize the project using its metadata and any child experiments.
+      userTemplate: |
+        Provide a concise summary focusing on objectives and current state.
+      include:
+        - self
+        - children
+    - id: suggest_next
+      label: "Suggest next experiment"
+      systemPrompt: |
+        You are helping plan the next experiment in a project.
+      userTemplate: |
+        Based on current experiments, suggest the next logical experiment.
+      include:
+        - self
+        - children
+experiment:
+  actions:
+    - id: summarize
+      label: "Summarize experiment"
+      systemPrompt: |
+        Summarize the experiment for lab notes.
+      userTemplate: |
+        Summarize current experiment focusing on objectives and status.
+      include:
+        - self
+        - parents
+        - children
+run:
+  actions:
+    - id: qa
+      label: "QA run data"
+      systemPrompt: |
+        Review the run details and highlight any missing data.
+      userTemplate: |
+        List missing data fields or TODOs for this run.
+      include:
+        - self

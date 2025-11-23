@@ -1,6 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
-import { useFileValidation } from '../fs/useFileValidation'
+import { computed, ref, toRef, watch } from 'vue'
+import RecordMetadataForm from '../records/RecordMetadataForm.vue'
+import AssistantPanel from './AssistantPanel.vue'
+import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
+import { useRecordValidator } from '../records/recordValidator'
 
 const props = defineProps({
   repo: {
@@ -10,30 +13,166 @@ const props = defineProps({
   node: {
     type: Object,
     default: null
+  },
+  schemaLoader: {
+    type: Object,
+    required: true
+  },
+  workflowLoader: {
+    type: Object,
+    required: true
+  },
+  recordGraph: {
+    type: [Object, Function],
+    default: () => ({ nodesByPath: {}, nodesById: {} })
+  },
+  onOpenPath: {
+    type: Function,
+    default: null
   }
 })
 
 const currentNode = toRef(props, 'node')
-const fileContent = ref('')
+const plainTextContent = ref('')
+const recordMetadata = ref({})
+const recordBody = ref('')
+const recordType = ref('')
 const isLoading = ref(false)
 const isSaving = ref(false)
 const status = ref('')
 const error = ref('')
-const isDirty = ref(false)
+const metadataDirty = ref(false)
+const bodyDirty = ref(false)
+const plainTextDirty = ref(false)
+const validationState = ref({ status: 'idle', issues: [], ok: false })
+const isHydrating = ref(false)
 
 const isFile = computed(() => currentNode.value?.kind === 'file')
 const filePath = computed(() => (currentNode.value ? currentNode.value.path : ''))
-const validator = useFileValidation(props.repo)
-const validationStatus = validator.validationStatus
-const validationMessage = validator.validationMessage
+const isRecord = computed(() => !!recordType.value)
+const isDirty = computed(() => metadataDirty.value || bodyDirty.value || plainTextDirty.value)
+const schemaBundle = computed(() => props.schemaLoader.schemaBundle?.value)
+const activeSchema = computed(() => (isRecord.value ? schemaBundle.value?.recordSchemas?.[recordType.value] : null))
+const activeUiConfig = computed(() => (isRecord.value ? schemaBundle.value?.uiConfigs?.[recordType.value] : null))
+const validator = useRecordValidator(props.schemaLoader)
+const metadataModel = computed({
+  get: () => recordMetadata.value,
+  set: (val) => {
+    recordMetadata.value = val || {}
+  }
+})
+
+const workflowDefinition = computed(() => (isRecord.value ? props.workflowLoader.getMachine(recordType.value) : null))
+const workflowConfig = computed(() => workflowDefinition.value?.config || null)
+const workflowState = computed(() => {
+  if (!workflowConfig.value) return ''
+  return recordMetadata.value?.state || workflowConfig.value.initial || ''
+})
+const workflowStateMeta = computed(() => workflowConfig.value?.states?.[workflowState.value]?.meta || {})
+const workflowDescription = computed(() => workflowStateMeta.value?.description || '')
+const isImmutable = computed(() => !!workflowStateMeta.value?.immutable)
+const graphData = computed(() => (props.recordGraph?.value ? props.recordGraph.value : props.recordGraph))
+const graphNode = computed(() => {
+  const path = filePath.value
+  if (!path) return null
+  return graphData.value?.nodesByPath?.[path] || null
+})
+const parentRecords = computed(() => buildRelationList(graphNode.value?.parents))
+const childRecords = computed(() => buildRelationList(graphNode.value?.children))
+const backlinkRecords = computed(() => graphNode.value?.backlinks || { parents: [], children: [], related: [] })
+const assistantDefinition = computed(() => {
+  if (!isRecord.value) return null
+  const assistant = schemaBundle.value?.assistant
+  return assistant?.[recordType.value] || null
+})
+
+function evaluateGuard(name) {
+  if (!name) return true
+  if (name === 'validation.passed') {
+    return validationState.value.ok
+  }
+  if (name === 'signoff.atLeastOne') {
+    const signoff = recordMetadata.value?.signoff
+    return !!signoff && Object.values(signoff).some((value) => !!value)
+  }
+  return true
+}
+
+function resolveRecordById(id) {
+  if (!id) return null
+  return graphData.value?.nodesById?.[id] || null
+}
+
+function buildRelationList(list) {
+  if (!Array.isArray(list)) return []
+  return list.map((edge) => ({
+    ...edge,
+    targetNode: resolveRecordById(edge.targetId)
+  }))
+}
+
+function openRecordById(id) {
+  const node = resolveRecordById(id)
+  if (node && typeof props.onOpenPath === 'function') {
+    props.onOpenPath(node.path)
+  }
+}
+
+const workflowTransitions = computed(() => {
+  if (!workflowConfig.value || !workflowState.value) return []
+  const stateConfig = workflowConfig.value.states?.[workflowState.value]
+  if (!stateConfig) return []
+  const transitions = []
+  const onConfig = stateConfig.on || {}
+  for (const [eventName, definition] of Object.entries(onConfig)) {
+    const entries = Array.isArray(definition) ? definition : [definition]
+    entries.forEach((entry, index) => {
+      if (!entry) return
+      const target = entry.target || entry.to
+      if (!target) return
+      const guardName =
+        typeof entry.guard === 'string'
+          ? entry.guard
+          : entry.guard?.name || entry.guard?.type || ''
+      transitions.push({
+        id: `${eventName}-${index}-${target}`,
+        event: eventName,
+        target,
+        guard: guardName,
+        allowed: evaluateGuard(guardName),
+        description: entry.description || ''
+      })
+    })
+  }
+  return transitions
+})
+
+const validationStatus = computed(() => {
+  if (!isRecord.value) return 'idle'
+  return validationState.value.status
+})
+
+const validationMessage = computed(() => {
+  if (!isRecord.value) return 'File validation available for record types only.'
+  if (validationState.value.status === 'ok') return 'Metadata matches schema requirements.'
+  if (validationState.value.status === 'pending') return 'Validating metadata…'
+  if (validationState.value.issues.length) return validationState.value.issues[0]
+  return 'No validation results yet.'
+})
 
 watch(
   () => currentNode.value,
   async (node) => {
     status.value = ''
     error.value = ''
-    fileContent.value = ''
-    isDirty.value = false
+    plainTextContent.value = ''
+    recordMetadata.value = {}
+    recordBody.value = ''
+    recordType.value = ''
+    metadataDirty.value = false
+    bodyDirty.value = false
+    plainTextDirty.value = false
+    validationState.value = { status: 'idle', issues: [], ok: false }
 
     if (node?.kind === 'file') {
       await loadFile(node)
@@ -46,12 +185,27 @@ async function loadFile(node) {
   if (!node) return
   try {
     isLoading.value = true
+    isHydrating.value = true
     const content = await props.repo.readFile(node.path)
-    fileContent.value = content
+    if (content?.startsWith('---')) {
+      const { data, body } = parseFrontMatter(content)
+      recordMetadata.value = data || {}
+      recordBody.value = body || ''
+      recordType.value = inferRecordType(data, node.path)
+      plainTextContent.value = content
+      runRecordValidation()
+      ensureWorkflowState()
+    } else {
+      plainTextContent.value = content
+      recordMetadata.value = {}
+      recordBody.value = ''
+      recordType.value = ''
+    }
     status.value = `Loaded ${node.name}`
   } catch (err) {
     error.value = err?.message || 'Unable to load file.'
   } finally {
+    isHydrating.value = false
     isLoading.value = false
   }
 }
@@ -60,9 +214,16 @@ async function saveFile() {
   if (!isFile.value) return
   try {
     isSaving.value = true
-    await props.repo.writeFile(filePath.value, fileContent.value)
+    const payload = isRecord.value
+      ? serializeFrontMatter(recordMetadata.value, recordBody.value)
+      : plainTextContent.value
+    await props.repo.writeFile(filePath.value, payload)
+    props.recordGraph?.rebuild?.()
+    props.searchIndex?.rebuild?.()
     status.value = 'Saved changes'
-    isDirty.value = false
+    metadataDirty.value = false
+    bodyDirty.value = false
+    plainTextDirty.value = false
   } catch (err) {
     error.value = err?.message || 'Failed to save file.'
   } finally {
@@ -70,19 +231,163 @@ async function saveFile() {
   }
 }
 
-function onInput(event) {
-  fileContent.value = event.target.value
-  isDirty.value = true
+function onPlainTextInput(event) {
+  plainTextContent.value = event.target.value
+  metadataDirty.value = false
+  bodyDirty.value = false
+  plainTextDirty.value = true
 }
+
+function updateRecordBody(event) {
+  if (isImmutable.value) return
+  recordBody.value = event.target.value
+  bodyDirty.value = true
+}
+
+function inferRecordType(frontMatter, path) {
+  if (!frontMatter) return ''
+  const explicit =
+    frontMatter.recordType || frontMatter.record_type || frontMatter.type || frontMatter.record_type_id
+  if (explicit) return explicit
+
+  const naming = schemaBundle.value?.naming || {}
+  const normalizedPath = path || ''
+  for (const [type, rule] of Object.entries(naming)) {
+    if (rule?.baseDir && normalizedPath.includes(`/${rule.baseDir}/`)) {
+      return type
+    }
+  }
+  return ''
+}
+
+function runRecordValidation() {
+  if (!isRecord.value) {
+    validationState.value = { status: 'idle', issues: [], ok: false }
+    return
+  }
+  validationState.value = { status: 'pending', issues: [], ok: false }
+  const result = validator.validate(recordType.value, recordMetadata.value)
+  validationState.value = {
+    status: result.ok ? 'ok' : 'error',
+    issues: result.issues || [],
+    ok: result.ok
+  }
+}
+
+function assignWorkflowState(nextState, markDirty = true) {
+  if (!nextState) return
+  const previousHydration = isHydrating.value
+  if (!markDirty) {
+    isHydrating.value = true
+  }
+  recordMetadata.value = {
+    ...(recordMetadata.value || {}),
+    state: nextState
+  }
+  if (!markDirty) {
+    isHydrating.value = previousHydration
+  } else {
+    metadataDirty.value = true
+  }
+}
+
+function ensureWorkflowState() {
+  if (!isRecord.value || !workflowConfig.value) return
+  if (!recordMetadata.value?.state) {
+    assignWorkflowState(workflowConfig.value.initial, false)
+  }
+}
+
+function applyTransition(transition) {
+  if (!transition?.allowed || isImmutable.value) return
+  assignWorkflowState(transition.target, true)
+  runRecordValidation()
+}
+
+watch(
+  () => recordMetadata.value,
+  () => {
+    if (!isRecord.value) return
+    if (isHydrating.value) return
+    metadataDirty.value = true
+    runRecordValidation()
+  },
+  { deep: true }
+)
+
+watch(
+  () => recordBody.value,
+  () => {
+    if (!isRecord.value) return
+    if (isHydrating.value) return
+    bodyDirty.value = true
+  }
+)
+
+watch(
+  () => schemaBundle.value,
+  () => {
+    if (isRecord.value) {
+      runRecordValidation()
+    }
+  }
+)
+
+watch(
+  () => recordType.value,
+  () => {
+    if (isRecord.value) {
+      runRecordValidation()
+      ensureWorkflowState()
+    }
+  }
+)
+
+watch(
+  () => workflowConfig.value,
+  () => {
+    ensureWorkflowState()
+  }
+)
 
 function revalidate() {
-  if (!isFile.value) return
-  validator.runValidation(filePath.value, fileContent.value)
+  runRecordValidation()
 }
 
-onBeforeUnmount(() => {
-  validator.dispose()
-})
+function applyAssistantMetadata(payload) {
+  if (!payload || typeof payload !== 'object') return
+  const namingRule = schemaBundle.value?.naming?.[recordType.value]
+  const protectedFields = new Set(['id', 'recordType', 'title', 'shortSlug'])
+  if (namingRule?.idField) protectedFields.add(namingRule.idField)
+  if (namingRule?.shortSlugField) protectedFields.add(namingRule.shortSlugField)
+
+  const sanitized = { ...payload }
+  let stripped = false
+  protectedFields.forEach((field) => {
+    if (field in sanitized && sanitized[field] !== recordMetadata.value[field]) {
+      delete sanitized[field]
+      stripped = true
+    }
+  })
+
+  if (!Object.keys(sanitized).length) {
+    status.value = 'Assistant suggestion ignored (protected identifiers).'
+    return
+  }
+
+  recordMetadata.value = {
+    ...recordMetadata.value,
+    ...sanitized
+  }
+  metadataDirty.value = true
+  status.value = stripped ? 'Applied assistant metadata (identifiers preserved).' : 'Applied assistant metadata.'
+}
+
+function applyAssistantBody(body) {
+  if (!body) return
+  recordBody.value = body
+  bodyDirty.value = true
+}
 </script>
 
 <template>
@@ -97,8 +402,8 @@ onBeforeUnmount(() => {
         <button
           class="secondary"
           type="button"
-        :disabled="!isFile || isLoading"
-        @click="loadFile(currentNode)"
+          :disabled="!isFile || isLoading"
+          @click="loadFile(currentNode)"
         >
           Reload
         </button>
@@ -117,7 +422,7 @@ onBeforeUnmount(() => {
     <div v-else-if="status" class="workbench-alert ok">{{ status }}</div>
 
     <div
-      v-if="isFile"
+      v-if="isRecord"
       class="validation-banner"
       :class="{
         'is-ok': validationStatus === 'ok',
@@ -134,12 +439,159 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
+    <section v-if="isRecord && workflowConfig" class="workflow-panel">
+      <div class="workflow-header">
+        <div>
+          <p class="section-label">Workflow state</p>
+          <div class="workflow-state-pill" :class="{ 'is-immutable': isImmutable }">
+            {{ workflowState || 'unknown' }}
+          </div>
+        </div>
+        <span v-if="workflowDescription" class="workflow-description">{{ workflowDescription }}</span>
+      </div>
+      <div class="workflow-transitions" v-if="workflowTransitions.length">
+        <button
+          v-for="transition in workflowTransitions"
+          :key="transition.id"
+          class="secondary"
+          type="button"
+          :disabled="!transition.allowed || isImmutable"
+          @click="applyTransition(transition)"
+        >
+          {{ transition.event }} → {{ transition.target }}
+        </button>
+      </div>
+      <p v-else class="workflow-muted">No transitions available.</p>
+      <p v-if="isImmutable" class="workflow-muted">This record is immutable in the current state.</p>
+    </section>
+
+    <section v-if="graphNode" class="relationships-panel">
+      <header class="record-section-header">
+        <p class="section-label">Relationships</p>
+      </header>
+      <div class="relationship-columns">
+        <div>
+          <h5>Parents</h5>
+          <p v-if="!parentRecords.length" class="relationship-empty">No parents listed.</p>
+          <ul v-else>
+            <li v-for="parent in parentRecords" :key="`${parent.relName}-${parent.targetId}`">
+              <div>
+                <strong>{{ parent.targetNode?.title || parent.targetId }}</strong>
+                <span class="relationship-meta">{{ parent.recordType }}</span>
+              </div>
+              <button class="text-button" type="button" @click="openRecordById(parent.targetId)">
+                Open
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h5>Children</h5>
+          <p v-if="!childRecords.length" class="relationship-empty">No children listed.</p>
+          <ul v-else>
+            <li v-for="child in childRecords" :key="`${child.relName}-${child.targetId}`">
+              <div>
+                <strong>{{ child.targetNode?.title || child.targetId }}</strong>
+                <span class="relationship-meta">{{ child.recordType }}</span>
+              </div>
+              <button class="text-button" type="button" @click="openRecordById(child.targetId)">
+                Open
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h5>Referenced by</h5>
+          <p v-if="!(backlinkRecords.parents?.length || backlinkRecords.children?.length || backlinkRecords.related?.length)" class="relationship-empty">
+            No backlinks yet.
+          </p>
+          <ul>
+            <li
+              v-for="parent in backlinkRecords.parents || []"
+              :key="`b-parent-${parent.fromId}-${parent.field}`"
+            >
+              <div>
+                <strong>{{ parent.fromId }}</strong>
+                <span class="relationship-meta">parent reference</span>
+              </div>
+              <button class="text-button" type="button" @click="openRecordById(parent.fromId)">
+                Open
+              </button>
+            </li>
+            <li
+              v-for="child in backlinkRecords.children || []"
+              :key="`b-child-${child.fromId}-${child.field}`"
+            >
+              <div>
+                <strong>{{ child.fromId }}</strong>
+                <span class="relationship-meta">child reference</span>
+              </div>
+              <button class="text-button" type="button" @click="openRecordById(child.fromId)">
+                Open
+              </button>
+            </li>
+            <li
+              v-for="rel in backlinkRecords.related || []"
+              :key="`b-related-${rel.fromId}-${rel.field}`"
+            >
+              <div>
+                <strong>{{ rel.fromId }}</strong>
+                <span class="relationship-meta">related reference</span>
+              </div>
+              <button class="text-button" type="button" @click="openRecordById(rel.fromId)">
+                Open
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <AssistantPanel
+      v-if="isRecord && assistantDefinition"
+      :record-type="recordType"
+      :metadata="recordMetadata"
+      :body="recordBody"
+      :graph-node="graphNode"
+      :assistant-config="assistantDefinition"
+      @apply="applyAssistantMetadata"
+      @apply-body="applyAssistantBody"
+    />
+
+    <div v-if="isRecord && isFile" class="record-editor">
+      <section>
+        <header class="record-section-header">
+          <div>
+            <p class="section-label">Metadata</p>
+            <h4>{{ recordType }}</h4>
+          </div>
+        </header>
+        <RecordMetadataForm
+          :schema="activeSchema"
+          :ui-config="activeUiConfig"
+          :read-only="isImmutable"
+          v-model="metadataModel"
+        />
+      </section>
+      <section>
+        <header class="record-section-header">
+          <p class="section-label">Markdown body</p>
+        </header>
+        <textarea
+          class="file-textarea"
+          :value="recordBody"
+          :disabled="isLoading || isImmutable"
+          @input="updateRecordBody"
+        ></textarea>
+      </section>
+    </div>
+
     <textarea
-      v-if="isFile"
+      v-else-if="isFile"
       class="file-textarea"
-      :value="fileContent"
+      :value="plainTextContent"
       :disabled="isLoading"
-      @input="onInput"
+      @input="onPlainTextInput"
     ></textarea>
     <div v-else class="workbench-placeholder">
       <p>Use the repository tree to choose a Markdown, YAML, or JSON file.</p>
@@ -233,6 +685,55 @@ onBeforeUnmount(() => {
   color: #c2410c;
 }
 
+.workflow-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.workflow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.workflow-state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  text-transform: capitalize;
+}
+
+.workflow-state-pill.is-immutable {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #b91c1c;
+}
+
+.workflow-description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.workflow-transitions {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.workflow-muted {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
 .file-textarea {
   margin-top: 1rem;
   width: 100%;
@@ -253,6 +754,64 @@ onBeforeUnmount(() => {
   border: 1px dashed #cbd5f5;
   border-radius: 12px;
   text-align: center;
+  color: #94a3b8;
+}
+
+.record-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.record-section-header {
+  margin-bottom: 0.5rem;
+}
+
+.section-label {
+  margin: 0;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.relationships-panel {
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.relationship-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.relationship-columns ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.relationship-columns li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.relationship-empty {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.relationship-meta {
+  display: block;
+  font-size: 0.75rem;
   color: #94a3b8;
 }
 </style>
