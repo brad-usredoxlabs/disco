@@ -2,23 +2,36 @@ import YAML from 'yaml'
 
 const VOCAB_DIR = '/vocab'
 
-function defaultVocab(name) {
-  return {
+function defaultVocab(name, { missing = false } = {}) {
+  const vocab = {
     name,
     cached_terms: [],
     local_extensions: []
   }
+  Object.defineProperty(vocab, '__missing', {
+    value: missing,
+    enumerable: false,
+    configurable: true
+  })
+  return vocab
 }
 
 function vocabPath(name) {
   return `${VOCAB_DIR}/${name}.yaml`
 }
 
-function normalizeTerm(term = {}) {
-  const now = new Date().toISOString()
+function normalizeTerm(term) {
+  if (!term) return null
+  if (typeof term === 'string') {
+    return { id: term, label: term, cached_at: new Date().toISOString() }
+  }
+  const { id, label, cached_at } = term
+  if (!id && !label) return null
   return {
     ...term,
-    cached_at: term.cached_at || now
+    id: id || label,
+    label: label || id,
+    cached_at: cached_at || new Date().toISOString()
   }
 }
 
@@ -30,7 +43,7 @@ export function createVocabStore(repoConnection) {
       const parsed = YAML.parse(payload) || {}
       return hydrateVocab(name, parsed)
     } catch {
-      return defaultVocab(name)
+      return defaultVocab(name, { missing: true })
     }
   }
 
@@ -43,12 +56,19 @@ export function createVocabStore(repoConnection) {
 
   function hydrateVocab(name, data = {}) {
     const base = defaultVocab(name)
-    return {
+    const hydrated = {
       ...base,
       ...data,
+      name: data.name || name,
       cached_terms: Array.isArray(data.cached_terms) ? data.cached_terms : [],
       local_extensions: Array.isArray(data.local_extensions) ? data.local_extensions : []
     }
+    Object.defineProperty(hydrated, '__missing', {
+      value: false,
+      enumerable: false,
+      configurable: true
+    })
+    return hydrated
   }
 
   function isCacheExpired(entry, maxAgeDays = 30) {
@@ -61,9 +81,10 @@ export function createVocabStore(repoConnection) {
   }
 
   async function upsertCachedTerm(name, term, { maxAgeDays = 30 } = {}) {
-    if (!term?.id) throw new Error('Cached term requires an id')
+    if (!term?.id) return
     const vocab = await readVocab(name)
     const normalized = normalizeTerm(term)
+    if (!normalized) return
     const existingIndex = vocab.cached_terms.findIndex((entry) => entry.id === normalized.id)
     if (existingIndex >= 0) {
       vocab.cached_terms.splice(existingIndex, 1, normalized)

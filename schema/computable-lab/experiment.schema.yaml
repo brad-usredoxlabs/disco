@@ -55,10 +55,33 @@ properties:
   reagents:
     type: array
     description: >
-      Reagent record identifiers used in this Experiment.
+      Reagents and materials referenced by ontology ID or local vocab entry.
     items:
-      type: string
-      description: "Reagent record ID or path (e.g., lot-specific records)."
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: "Ontology or local vocab identifier (e.g., CHEBI:17234)."
+        label:
+          type: string
+          description: "Cached display label to avoid repeated lookups."
+        source:
+          type: string
+          description: "Ontology acronym or 'local' for lab-defined terms."
+        lot:
+          type: string
+          description: "Optional lot or batch identifier."
+        concentration:
+          type: string
+          description: "Optional concentration (e.g., '5.5 mM')."
+        volume:
+          type: string
+          description: "Optional volume or amount description."
+        notes:
+          type: string
+          description: "Free-form notes about reagent usage."
 
   instruments:
     type: array
@@ -137,20 +160,27 @@ properties:
         type: string
       items:
         type: array
+        minItems: 1
         items:
           type: object
-          required: [reagent]
+          required:
+            - reagent
           properties:
             quantity:
               type: string
+              description: "Amount (e.g., 10)."
             unit:
               type: string
+              description: "Unit for quantity (e.g., mL, mg)."
             reagent:
               $ref: "./ontology-term.schema.yaml"
             notes:
               type: string
+              description: "Optional free-form notes."
       steps:
         type: array
+        minItems: 1
         items:
           type: string
+          description: "Numbered preparation steps."
     required: []

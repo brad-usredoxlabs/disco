@@ -3,7 +3,13 @@
     <div class="ontology-display" v-if="currentLabel">
       <span class="ontology-text">{{ currentLabel }}</span>
       <span v-if="currentValue?.source" class="ontology-source">{{ currentValue.source }}</span>
-      <button type="button" class="ontology-clear" @click="clearSelection" title="Clear selection">
+      <button
+        v-if="!disabled"
+        type="button"
+        class="ontology-clear"
+        @click="clearSelection"
+        title="Clear selection"
+      >
         ×
       </button>
     </div>
@@ -11,8 +17,11 @@
       ref="inputRef"
       type="text"
       class="ontology-input"
+      :class="{ 'is-disabled': disabled }"
       :placeholder="placeholder"
       v-model="query"
+      :readonly="disabled"
+      :disabled="disabled"
       @focus="handleFocus"
       @input="handleInput"
       @keydown.down.prevent="highlightNext"
@@ -20,11 +29,10 @@
       @keydown.enter.prevent="selectHighlighted"
       @keydown.tab="selectHighlighted"
     />
-    <div class="ontology-dropdown" v-if="dropdownOpen">
-      <p v-if="!query" class="dropdown-hint">Type to search ontology terms…</p>
-      <p v-else-if="isLoading" class="dropdown-hint">Searching…</p>
+    <div class="ontology-dropdown" v-if="dropdownOpen && !disabled">
+      <p v-if="isLoading" class="dropdown-hint">Searching…</p>
       <p v-else-if="errorMessage" class="dropdown-error">{{ errorMessage }}</p>
-      <ul v-else>
+      <ul v-else-if="results.length">
         <li
           v-for="(result, index) in results"
           :key="result.id + index"
@@ -37,8 +45,8 @@
           </div>
           <p v-if="result.definition" class="result-definition">{{ result.definition }}</p>
         </li>
-        <li v-if="!results.length" class="dropdown-hint">No matches found.</li>
       </ul>
+      <p v-else class="dropdown-hint">Type to search ontology terms…</p>
     </div>
   </div>
 </template>
@@ -59,6 +67,10 @@ const props = defineProps({
   vocab: {
     type: String,
     default: ''
+  },
+  disabled: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -94,6 +106,7 @@ watch(
 )
 
 function handleFocus() {
+  if (props.disabled) return
   dropdownOpen.value = true
   if (!query.value && currentLabel.value) {
     query.value = currentLabel.value
@@ -102,12 +115,17 @@ function handleFocus() {
 }
 
 function handleInput() {
+  if (props.disabled) return
   dropdownOpen.value = true
   scheduleSearch()
 }
 
 function scheduleSearch() {
-  if (!props.vocab) return
+  if (!props.vocab) {
+    errorMessage.value = 'No vocabulary configured.'
+    results.value = []
+    return
+  }
   if (searchHandle) {
     clearTimeout(searchHandle)
   }
@@ -115,14 +133,21 @@ function scheduleSearch() {
 }
 
 async function runSearch() {
-  if (!props.vocab || !query.value.trim()) {
+  console.log('[OntologyFieldInput] runSearch called', { 
+    vocab: props.vocab, 
+    query: query.value,
+    hasVocab: !!props.vocab
+  })
+  
+  if (!props.vocab) {
+    console.warn('[OntologyFieldInput] No vocab prop!')
     results.value = []
     return
   }
   isLoading.value = true
   errorMessage.value = ''
   try {
-    const data = await searchOntologyTerms(props.vocab, query.value)
+    const data = await searchOntologyTerms(props.vocab, query.value || '')
     results.value = data
     highlightedIndex.value = 0
   } catch (err) {
@@ -152,6 +177,7 @@ function emitSelection(result) {
 }
 
 function clearSelection() {
+  if (props.disabled) return
   emit('update:value', null)
   query.value = ''
   dropdownOpen.value = false
@@ -198,24 +224,6 @@ onBeforeUnmount(() => {
   margin-bottom: 0.15rem;
 }
 
-.ontology-text {
-  font-weight: 600;
-}
-
-.ontology-source {
-  font-size: 0.75rem;
-  color: #475569;
-}
-
-.ontology-clear {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-  color: #94a3b8;
-}
-
 .ontology-input {
   border: none;
   border-bottom: 1px dotted #cbd5f5;
@@ -225,73 +233,9 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.ontology-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-}
-
-.ontology-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  z-index: 20;
-  max-height: 240px;
-  overflow: auto;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
-}
-
-.ontology-dropdown ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.ontology-dropdown li {
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.ontology-dropdown li:last-child {
-  border-bottom: none;
-}
-
-.ontology-dropdown li.is-active {
-  background: #e0f2fe;
-}
-
-.dropdown-hint {
-  margin: 0;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.85rem;
-  color: #475569;
-}
-
-.dropdown-error {
-  margin: 0;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.85rem;
-  color: #b91c1c;
-}
-
-.result-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.result-source {
-  font-size: 0.75rem;
-  color: #475569;
-}
-
-.result-definition {
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
-  color: #475569;
+.ontology-input.is-disabled {
+  border-bottom-style: solid;
+  border-bottom-color: #e2e8f0;
+  cursor: not-allowed;
 }
 </style>

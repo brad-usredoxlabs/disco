@@ -17,6 +17,8 @@
           class="recipe-input"
           v-model="item.quantity"
           placeholder="e.g. 10"
+          :readonly="props.readOnly"
+          :disabled="props.readOnly"
           @input="emitValue"
         />
         <input
@@ -24,6 +26,8 @@
           class="recipe-input"
           v-model="item.unit"
           placeholder="mL"
+          :readonly="props.readOnly"
+          :disabled="props.readOnly"
           @input="emitValue"
         />
         <OntologyFieldInput
@@ -31,6 +35,7 @@
           :value="item.reagent"
           :vocab="vocab"
           placeholder="Search reagent"
+          :disabled="props.readOnly"
           @update:value="(val) => updateReagent(index, val)"
         />
         <input
@@ -38,22 +43,37 @@
           class="recipe-input"
           v-model="item.notes"
           placeholder="Notes"
+          :readonly="props.readOnly"
+          :disabled="props.readOnly"
           @input="emitValue"
         />
-        <button type="button" class="recipe-remove" @click="removeItem(index)">×</button>
+        <button v-if="!props.readOnly" type="button" class="recipe-remove" @click="removeItem(index)">×</button>
       </div>
-      <button type="button" class="recipe-add" @click="addItem">+ Add ingredient</button>
+      <button v-if="!props.readOnly" type="button" class="recipe-add" @click="addItem">+ Add ingredient</button>
     </div>
 
     <div class="recipe-steps">
       <p class="steps-label">Steps</p>
       <ol>
         <li v-for="(step, index) in state.steps" :key="index">
-          <textarea v-model="state.steps[index]" rows="2" @input="emitValue"></textarea>
-          <button type="button" class="recipe-remove" @click="removeStep(index)">×</button>
+          <textarea
+            v-model="state.steps[index]"
+            rows="2"
+            :readonly="props.readOnly"
+            :disabled="props.readOnly"
+            @input="emitValue"
+          ></textarea>
+          <button
+            v-if="!props.readOnly"
+            type="button"
+            class="recipe-remove"
+            @click="removeStep(index)"
+          >
+            ×
+          </button>
         </li>
       </ol>
-      <button type="button" class="recipe-add" @click="addStep">+ Add step</button>
+      <button v-if="!props.readOnly" type="button" class="recipe-add" @click="addStep">+ Add step</button>
     </div>
   </div>
 </template>
@@ -70,6 +90,10 @@ const props = defineProps({
   vocab: {
     type: String,
     default: ''
+  },
+  readOnly: {
+    type: Boolean,
+    default: false
   }
 })
 

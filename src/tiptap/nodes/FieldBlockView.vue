@@ -18,6 +18,18 @@
         />
       </div>
     </template>
+    <template v-else-if="isOntologyListField">
+      <div class="field-inline field-inline--ontology-list">
+        <span class="field-label">{{ labelText }}</span>
+        <OntologyListField
+          class="ontology-list-field"
+          :value="node.attrs.value"
+          :vocab="node.attrs.vocab"
+          :columns="node.attrs.columns || []"
+          @update:value="(val) => updateFieldValue(val)"
+        />
+      </div>
+    </template>
     <template v-else-if="isRecipeCardField">
       <div class="recipe-field-wrapper">
         <span class="field-label">{{ labelText }}</span>
@@ -100,6 +112,7 @@ import { computed, ref, watch } from 'vue'
 import { NodeViewWrapper } from '@tiptap/vue-3'
 import OntologyFieldInput from './OntologyFieldInput.vue'
 import RecipeCardField from './RecipeCardField.vue'
+import OntologyListField from './OntologyListField.vue'
 
 const props = defineProps({
   node: {
@@ -110,6 +123,14 @@ const props = defineProps({
     type: Function,
     required: true
   }
+})
+
+console.log('[FieldBlockView] Rendering field:', {
+  fieldKey: props.node.attrs.fieldKey,
+  fieldType: props.node.attrs.fieldType,
+  vocab: props.node.attrs.vocab,
+  hasColumns: !!props.node.attrs.columns,
+  columns: props.node.attrs.columns
 })
 
 const localValue = ref(props.node.attrs.value ?? '')
@@ -127,6 +148,7 @@ const inputType = computed(() => {
 const fieldType = computed(() => props.node.attrs.fieldType || '')
 const isOntologyField = computed(() => fieldType.value === 'ontology')
 const isRecipeCardField = computed(() => fieldType.value === 'recipeCard')
+const isOntologyListField = computed(() => fieldType.value === 'ontologyList')
 
 const labelText = computed(() => humanizeLabel(props.node.attrs.fieldKey))
 const enumInput = ref(null)
@@ -141,7 +163,7 @@ const filteredOptions = computed(() => {
 watch(
   () => props.node.attrs.value,
   (val) => {
-    if (isOntologyField.value || isRecipeCardField.value) return
+    if (isOntologyField.value || isRecipeCardField.value || isOntologyListField.value) return
     const nextValue = val ?? ''
     if (nextValue === localValue.value) return
     localValue.value = nextValue
@@ -241,6 +263,10 @@ function updateOntologyValue(value) {
 function updateRecipeValue(value) {
   props.updateAttributes({ value })
 }
+
+function updateFieldValue(value) {
+  props.updateAttributes({ value })
+}
 </script>
 
 <style scoped>
@@ -287,6 +313,12 @@ function updateRecipeValue(value) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.field-inline--ontology-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .recipe-field-wrapper {

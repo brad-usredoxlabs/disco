@@ -1,5 +1,8 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
+import RecipeCardField from '../tiptap/nodes/RecipeCardField.vue'
+import OntologyListField from '../tiptap/nodes/OntologyListField.vue'
+import OntologyFieldInput from '../tiptap/nodes/OntologyFieldInput.vue'
 
 const props = defineProps({
   schema: {
@@ -62,6 +65,17 @@ function getFieldSchema(field) {
   return props.schema?.properties?.[field] || {}
 }
 
+function getFieldConfig(field) {
+  const layoutField = props.uiConfig?.layout?.fields?.[field]
+  if (!layoutField) return {}
+  return layoutField.ui || layoutField
+}
+
+function getFieldType(field) {
+  const config = getFieldConfig(field)
+  return config.fieldType || null
+}
+
 function inputTypeFor(fieldSchema) {
   const type = fieldSchema?.type
   if (type === 'string' && fieldSchema?.format === 'date-time') return 'datetime-local'
@@ -116,8 +130,34 @@ function parseValue(fieldSchema, rawValue, originalValue) {
     <div v-for="field in orderedFields" :key="field" class="field-row">
       <label :for="`field-${field}`">{{ field }}</label>
 
+      <template v-if="getFieldType(field) === 'recipeCard'">
+        <RecipeCardField
+          :value="localState[field]"
+          :vocab="getFieldConfig(field).vocab || ''"
+          :read-only="props.readOnly"
+          @update:value="(val) => updateField(field, val)"
+        />
+      </template>
+      <template v-else-if="getFieldType(field) === 'ontology'">
+        <OntologyFieldInput
+          :value="localState[field]"
+          :vocab="getFieldConfig(field).vocab || ''"
+          :disabled="props.readOnly"
+          placeholder="Search term"
+          @update:value="(val) => updateField(field, val)"
+        />
+      </template>
+      <template v-else-if="getFieldType(field) === 'ontologyList'">
+        <OntologyListField
+          :value="localState[field]"
+          :vocab="getFieldConfig(field).vocab || ''"
+          :columns="getFieldConfig(field).columns || []"
+          :read-only="props.readOnly"
+          @update:value="(val) => updateField(field, val)"
+        />
+      </template>
       <template
-        v-if="
+        v-else-if="
           getFieldSchema(field).type === 'array' ||
           (typeof localState[field] === 'object' &&
             getFieldSchema(field).type !== 'boolean' &&

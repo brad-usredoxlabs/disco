@@ -49,8 +49,18 @@ layout:
       group: "entities"
       order: 60
       ui:
-        display: "table"
         collapsible: true
+        fieldType: "ontologyList"
+        vocab: "reagents"
+        columns:
+          - key: "lot"
+            label: "Lot"
+          - key: "concentration"
+            label: "Concentration"
+          - key: "volume"
+            label: "Volume"
+          - key: "notes"
+            label: "Notes"
 
     instruments:
       group: "entities"
@@ -113,3 +123,4 @@ layout:
       order: 140
       ui:
         fieldType: "recipeCard"
+        vocab: "reagents"

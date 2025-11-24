@@ -35,7 +35,8 @@ export function buildFieldDescriptors(recordType, bundle = {}) {
       config: layoutConfig,
       label: layoutConfig.label || humanizeKey(name),
       fieldType: uiConfig.fieldType || layoutConfig.fieldType || schemaField.fieldType || null,
-      vocab: uiConfig.vocab || layoutConfig.vocab || schemaField.vocab || null
+      vocab: uiConfig.vocab || layoutConfig.vocab || schemaField.vocab || null,
+      columns: uiConfig.columns || layoutConfig.columns || []
     }
     if (metadataSet.has(name)) {
       metadataDescriptors.push(descriptor)
@@ -90,6 +91,10 @@ function formatBodyField(descriptor, metadata, bodyData) {
   }
   if (descriptor.fieldType === 'recipeCard') {
     const text = formatRecipeCardBody(value)
+    return `${heading}\n${text}\n`
+  }
+  if (descriptor.fieldType === 'ontologyList') {
+    const text = formatOntologyListBody(value)
     return `${heading}\n${text}\n`
   }
   if (Array.isArray(value) && value.length) {
@@ -155,5 +160,20 @@ function formatRecipeCardBody(value) {
       lines.push(`${index + 1}. ${step || ''}`)
     })
   }
+  return lines.join('\n')
+}
+
+function formatOntologyListBody(value) {
+  if (!Array.isArray(value) || !value.length) return ''
+  const lines = value.map((entry) => {
+    const label = entry?.label || entry?.id || ''
+    const id = entry?.id ? ` (${entry.id})` : ''
+    const extras = ['lot', 'concentration', 'volume', 'notes']
+      .map((key) => (entry?.[key] ? `${key}: ${entry[key]}` : ''))
+      .filter(Boolean)
+      .join('; ')
+    const details = extras ? ` — ${extras}` : ''
+    return `- ${label}${id}${details}`
+  })
   return lines.join('\n')
 }

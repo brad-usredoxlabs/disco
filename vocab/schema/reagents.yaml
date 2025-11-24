@@ -18,17 +18,6 @@ search_settings:
   include_properties: true
   include_definitions: true
 
-local_extensions:
-  - id: "LAB:CUSTOM001"
-    label: "Smith Lab Buffer A"
-    definition: "Proprietary lysis buffer (10mM Tris-HCl pH 7.5, 150mM NaCl, 1% Triton X-100)"
-    synonyms: ["Buffer A", "Lysis Buffer A"]
-    category: "buffer"
-  - id: "LAB:CUSTOM002"
-    label: "In-house Microplastic Standard Mix"
-    definition: "Polystyrene/polyethylene/PET blend at 100 µg/mL each"
-    category: "standard"
-
 validation:
   required_fields:
     - id

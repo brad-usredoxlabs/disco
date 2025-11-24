@@ -69,6 +69,33 @@ export const FieldBlock = Node.create({
         renderHTML: (attributes) => ({
           'data-errors': JSON.stringify(attributes.errors || [])
         })
+      },
+      fieldType: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-field-type') || null,
+        renderHTML: (attributes) => ({
+          'data-field-type': attributes.fieldType
+        })
+      },
+      vocab: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-vocab') || null,
+        renderHTML: (attributes) => ({
+          'data-vocab': attributes.vocab
+        })
+      },
+      columns: {
+        default: [],
+        parseHTML: (element) => {
+          try {
+            return JSON.parse(element.getAttribute('data-columns') || '[]')
+          } catch {
+            return []
+          }
+        },
+        renderHTML: (attributes) => ({
+          'data-columns': JSON.stringify(attributes.columns || [])
+        })
       }
     }
   },

@@ -286,6 +286,25 @@ async function loadRecord(path) {
     originalMetadata.value = { ...rawMetadata }
     formState.value = { ...initialFormData }
     const baseDoc = payload.tiptapDoc || buildDocFromRecord(payload.metadata, payload.body)
+    
+    console.log('[TipTapRecordEditor] About to ensureFieldBlocks with descriptors:', {
+      metadataDescriptors: metadataDescriptors.value.map(d => ({ 
+        name: d.name, 
+        fieldType: d.fieldType, 
+        vocab: d.vocab,
+        columns: d.columns 
+      })),
+      formFieldDescriptors: formFieldDescriptors.value.map(d => ({ 
+        name: d.name, 
+        fieldType: d.fieldType, 
+        vocab: d.vocab,
+        columns: d.columns 
+      }))
+    })
+    
+    const reagentsDescriptor = formFieldDescriptors.value.find(d => d.name === 'reagents')
+    console.log('[TipTapRecordEditor] REAGENTS DESCRIPTOR:', reagentsDescriptor)
+    
     tiptapDoc.value = ensureFieldBlocks(
       baseDoc,
       metadata.value,
@@ -432,6 +451,7 @@ function createFieldBlockNode(descriptor, value, errors = [], section = 'metadat
       value: formatFieldValue(value, schema, descriptor.fieldType),
       fieldType: descriptor.fieldType || null,
       vocab: descriptor.vocab || null,
+      columns: descriptor.columns || [],
       errors
     }
   }
@@ -447,7 +467,12 @@ function extractFieldBlockValues(doc, descriptorMap) {
     const key = node.attrs?.fieldKey
     if (!key) return
     const descriptor = descriptorMap.get(key)
-    updates[key] = coerceFieldValue(node.attrs?.value, descriptor?.schema, descriptor?.fieldType)
+    updates[key] = coerceFieldValue(
+      node.attrs?.value,
+      descriptor?.schema,
+      descriptor?.fieldType,
+      { columns: descriptor?.columns || [] }
+    )
   })
   return updates
 }
@@ -473,12 +498,19 @@ function mergeMetadata(metadata, updates) {
 }
 
 
-function formatFieldValue(value, schema = {}, fieldType) {
+function formatFieldValue(value, schema = {}, fieldType, config = {}) {
   if (fieldType === 'ontology') {
     if (Array.isArray(value)) {
       return value.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
     }
     return normalizeOntologyValue(value)
+  }
+  if (fieldType === 'ontologyList') {
+    if (Array.isArray(value)) {
+      return value.map((entry) => normalizeOntologyListEntry(entry, config)).filter(Boolean)
+    }
+    const normalized = normalizeOntologyListEntry(value, config)
+    return normalized ? [normalized] : []
   }
   if (fieldType === 'recipeCard') {
     return normalizeRecipeValue(value)
@@ -499,13 +531,17 @@ function formatFieldValue(value, schema = {}, fieldType) {
   return String(value)
 }
 
-function coerceFieldValue(rawValue, schema = {}, fieldType) {
+function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
   if (fieldType === 'ontology') {
     if (Array.isArray(rawValue)) {
       const list = rawValue.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
       return list
     }
     return normalizeOntologyValue(rawValue)
+  }
+  if (fieldType === 'ontologyList') {
+    if (!Array.isArray(rawValue)) return []
+    return rawValue.map((entry) => normalizeOntologyListEntry(entry, config)).filter(Boolean)
   }
   if (fieldType === 'recipeCard') {
     return normalizeRecipeValue(rawValue)
@@ -550,6 +586,21 @@ function normalizeOntologyValue(entry) {
     label,
     source: entry.source || entry.ontology || '',
     definition: entry.definition || entry.description || ''
+  }
+}
+
+function normalizeOntologyListEntry(entry, config = {}) {
+  if (!entry) return null
+  const base = normalizeOntologyValue(entry)
+  if (!base) return null
+  const extras = { ...entry }
+  delete extras.id
+  delete extras.label
+  delete extras.source
+  delete extras.definition
+  return {
+    ...extras,
+    ...base
   }
 }
 
