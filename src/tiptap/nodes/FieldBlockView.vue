@@ -1,11 +1,14 @@
 <template>
   <node-view-wrapper
+    ref="wrapperRef"
     class="field-block"
+    data-field-block="true"
     :class="{
       'field-block--error': hasErrors,
       'field-block--textarea': isTextarea,
       'field-block--body': node.attrs.section === 'body'
     }"
+    @focusin="handleFocus"
   >
     <template v-if="isOntologyField">
       <div class="field-inline field-inline--ontology">
@@ -125,15 +128,8 @@ const props = defineProps({
   }
 })
 
-console.log('[FieldBlockView] Rendering field:', {
-  fieldKey: props.node.attrs.fieldKey,
-  fieldType: props.node.attrs.fieldType,
-  vocab: props.node.attrs.vocab,
-  hasColumns: !!props.node.attrs.columns,
-  columns: props.node.attrs.columns
-})
-
 const localValue = ref(props.node.attrs.value ?? '')
+const wrapperRef = ref(null)
 
 const hasErrors = computed(() => Array.isArray(props.node.attrs.errors) && props.node.attrs.errors.length > 0)
 const placeholder = computed(() => props.node.attrs.placeholder || '')
@@ -267,6 +263,11 @@ function updateRecipeValue(value) {
 function updateFieldValue(value) {
   props.updateAttributes({ value })
 }
+
+function handleFocus() {
+  // Scroll management handled by useFieldNavigation to avoid conflicts.
+}
+
 </script>
 
 <style scoped>

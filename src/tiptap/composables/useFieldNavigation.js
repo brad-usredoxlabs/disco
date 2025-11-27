@@ -1,7 +1,9 @@
 import { onMounted, onBeforeUnmount } from 'vue'
 
 /**
- * Attach global keyboard shortcuts so Tab/Shift+Tab jump across TipTap field blocks.
+ * Attach global keyboard shortcuts so Tab/Shift+Tab jump across TipTap field blocks
+ * and keep the focused field centered in the scroll container.
+ *
  * @param {import('vue').Ref<import('@tiptap/vue-3').Editor | null>} editorRef
  */
 export function useFieldNavigation(editorRef) {
@@ -9,14 +11,37 @@ export function useFieldNavigation(editorRef) {
     const editor = editorRef.value
     if (!editor) return
     if (event.key !== 'Tab') return
-    if (!isFieldBlockSelection(editor)) return
+
+    // Only take over Tab if focus is currently inside a field block
+    const active = document.activeElement
+    if (!active) return
+
+    const currentField = active.closest('[data-field-block]')
+    if (!currentField) return
+
+    if (!shouldCaptureTabWithinField(currentField, active, event.shiftKey)) {
+      return
+    }
 
     event.preventDefault()
-    if (event.shiftKey) {
-      focusPreviousField(editor)
-    } else {
-      focusNextField(editor)
-    }
+
+    const root = editor.view.dom
+    const fields = Array.from(root.querySelectorAll('[data-field-block]'))
+
+    if (!fields.length) return
+
+    const currentIndex = fields.indexOf(currentField)
+    const direction = event.shiftKey ? -1 : 1
+
+    const nextIndex =
+      currentIndex === -1
+        ? 0
+        : (currentIndex + direction + fields.length) % fields.length
+
+    const nextField = fields[nextIndex]
+    if (!nextField) return
+
+    focusFieldCentered(nextField)
   }
 
   onMounted(() => {
@@ -28,66 +53,109 @@ export function useFieldNavigation(editorRef) {
   })
 }
 
-function isFieldBlockSelection(editor) {
-  const { state } = editor
-  const { from, to } = state.selection
-  let isField = false
-  state.doc.nodesBetween(from, to, (node) => {
-    if (node.type.name === 'fieldBlock') {
-      isField = true
-      return false
+/**
+ * Focus the input/textarea inside a field block and center that block
+ * inside the nearest scroll container.
+ */
+function focusFieldCentered(fieldElement) {
+  // 1) Focus the input WITHOUT scrolling
+  const inputElement = fieldElement.querySelector('input, textarea')
+  if (inputElement) {
+    inputElement.focus({ preventScroll: true })
+  } else {
+    // as a fallback, focus the field block itself
+    fieldElement.focus?.({ preventScroll: true })
+  }
+
+  // 2) Wait for focus to settle before scrolling
+  requestAnimationFrame(() => {
+    // Find scroll container
+    const container = findScrollContainer(fieldElement)
+    if (!container) return
+    const isDocumentContainer =
+      container === document.body ||
+      container === document.documentElement ||
+      container === document.scrollingElement
+
+    // Get fresh measurements after focus
+    const fieldRect = fieldElement.getBoundingClientRect()
+    const containerRect = isDocumentContainer
+      ? {
+          top: 0,
+          height: window.innerHeight
+        }
+      : container.getBoundingClientRect()
+    const currentScrollTop = isDocumentContainer ? window.scrollY : container.scrollTop
+    const viewportHeight = containerRect.height
+
+    // Calculate where the field currently is relative to the container's viewport
+    const fieldOffset = isDocumentContainer ? fieldRect.top : fieldRect.top - containerRect.top
+    const targetOffset = viewportHeight * 0.4
+    const tolerance = Math.max(8, viewportHeight * 0.05)
+
+    const desiredScrollTop =
+      currentScrollTop + fieldOffset - targetOffset + fieldRect.height / 2
+    const maxScrollTop = Math.max(
+      0,
+      (isDocumentContainer ? container.scrollHeight - viewportHeight : container.scrollHeight - container.clientHeight)
+    )
+    const clamped = Math.max(0, Math.min(desiredScrollTop, maxScrollTop))
+    const delta = clamped - currentScrollTop
+
+    if (Math.abs(delta) > tolerance) {
+      if (isDocumentContainer) {
+        window.scrollTo({
+          top: clamped,
+          behavior: 'smooth'
+        })
+      } else {
+        container.scrollTo({
+          top: clamped,
+          behavior: 'smooth'
+        })
+      }
     }
-    return undefined
   })
-  return isField
 }
 
-function focusNextField(editor) {
-  editor.commands.command(({ tr, state }) => {
-    const pos = findNextField(state, tr.selection.to + 1)
-    if (pos !== null) {
-      const resolved = tr.doc.resolve(pos)
-      tr.setSelection(state.selection.constructor.near(tr.doc.resolve(pos)))
-      editor.view.dispatch(tr)
-      editor.view.focus()
-      return true
+function findScrollContainer(element) {
+  let parent = element.parentElement
+  while (parent) {
+    const style = window.getComputedStyle(parent)
+    const overflowY = style.overflowY || style.overflow
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return parent
     }
+    parent = parent.parentElement
+  }
+  // Fallback: document scroll
+  return document.scrollingElement || document.documentElement || document.body
+}
+
+function shouldCaptureTabWithinField(fieldElement, activeElement, isShift) {
+  const focusable = getFocusableElements(fieldElement)
+  if (!focusable.length) return true
+  const index = focusable.indexOf(activeElement)
+  if (index === -1) return true
+  if (!isShift && index < focusable.length - 1) {
     return false
-  })
-}
-
-function focusPreviousField(editor) {
-  editor.commands.command(({ tr, state }) => {
-    const pos = findPreviousField(state, tr.selection.from - 1)
-    if (pos !== null) {
-      tr.setSelection(state.selection.constructor.near(tr.doc.resolve(pos)))
-      editor.view.dispatch(tr)
-      editor.view.focus()
-      return true
-    }
+  }
+  if (isShift && index > 0) {
     return false
-  })
+  }
+  return true
 }
 
-function findNextField(state, startPos) {
-  let found = null
-  state.doc.nodesBetween(startPos, state.doc.content.size, (node, pos) => {
-    if (node.type.name === 'fieldBlock') {
-      found = pos + 1
-      return false
-    }
-    return undefined
-  })
-  return found
-}
-
-function findPreviousField(state, startPos) {
-  let found = null
-  state.doc.nodesBetween(0, startPos, (node, pos, parent, index) => {
-    if (node.type.name === 'fieldBlock') {
-      found = pos + 1
-    }
-    return undefined
-  })
-  return found
+function getFocusableElements(container) {
+  const selectors = [
+    'input:not([disabled]):not([tabindex="-1"])',
+    'textarea:not([disabled]):not([tabindex="-1"])',
+    'select:not([disabled]):not([tabindex="-1"])',
+    'button:not([disabled]):not([tabindex="-1"])',
+    '[contenteditable="true"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ]
+  return Array.from(
+    container.querySelectorAll(selectors.join(','))
+  ).filter((el) => el.offsetParent !== null)
 }

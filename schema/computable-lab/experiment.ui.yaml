@@ -52,15 +52,6 @@ layout:
         collapsible: true
         fieldType: "ontologyList"
         vocab: "reagents"
-        columns:
-          - key: "lot"
-            label: "Lot"
-          - key: "concentration"
-            label: "Concentration"
-          - key: "volume"
-            label: "Volume"
-          - key: "notes"
-            label: "Notes"
 
     instruments:
       group: "entities"

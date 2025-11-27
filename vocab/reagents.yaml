@@ -1,23 +1,110 @@
 name: reagents
+cached_terms:
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C107693
+    label: Bullock County, AL
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-24T02:29:34.568Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_16236
+    label: ethanol
+    source: ontology
+    definition: A primary alcohol that is ethane in which one of the hydrogens is
+      substituted by a hydroxy group.
+    cached_at: 2025-11-26T03:06:28.387Z
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C80926
+    label: Ethanolamine Hydrochloride
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-26T02:12:46.639Z
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C80131
+    label: Polyethylene Glycol 3350
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-26T23:58:30.137Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_85174
+    label: prostaglandin D2 ethanolamide
+    source: ontology
+    definition: An <em>N</em>-acylethanolamine resulting from the formal
+      condensation of the carboxy group of prostaglandin
+      D<small><sub>2</sub></small> with the amino group of ethanolamine.
+    cached_at: 2025-11-26T02:55:18.883Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_85301
+    label: N-(decanoyl)ethanolamine
+    source: ontology
+    definition: An <em>N</em>-(saturated fatty acyl)ethanolamine that is the
+      ethanolamide of decanoic acid.
+    cached_at: 2025-11-26T03:11:49.179Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_85263
+    label: N-(dodecanoyl)ethanolamine
+    source: ontology
+    definition: An <em>N</em>-(long-chain-acyl)ethanolamine resulting from the
+      formal condensation of the carboxy group of dodecanoic acid (myristic
+      acid) with the amino group of ethanolamine.
+    cached_at: 2025-11-26T02:59:21.695Z
+  - id: LAB:BUFFER_A
+    label: Smith Lab Buffer A
+    source: local
+    definition: Proprietary lysis buffer (10mM Tris-HCl pH 7.5, 150mM NaCl, 1%
+      Triton X-100)
+    cached_at: 2025-11-26T03:32:34.518Z
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C66294
+    label: Palmidrol
+    source: ontology
+    definition: A natural fatty acid amide that is both a food component and an
+      endogenously synthesized compound, with potential analgesic and
+      anti-inflammatory activities. Upon administration, palmidrol may inhibit
+      the release of pro-inflammatory mediators from activated mast cells. This
+      may reduce inflammation and pain.
+    cached_at: 2025-11-26T03:03:34.401Z
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C80929
+    label: Gentisic Acid Ethanolamide
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-27T00:15:42.257Z
+  - id: LAB:STD_MICROPLASTIC
+    label: Microplastic Standard Mix
+    source: local
+    definition: Polystyrene/polyethylene/PET blend at 100 µg/mL each
+    cached_at: 2025-11-26T03:14:38.162Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_85281
+    label: N-(polyunsaturated fatty acyl)ethanolamine
+    source: ontology
+    definition: An <em>N</em>-acylethanolamine resulting from the formal
+      condensation of the carboxy group of any polyunsaturated fatty acid with
+      the amino group of ethanolamine.
+    cached_at: 2025-11-26T03:14:58.651Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_156180
+    label: R-Palmitoyl-(1-methyl) Ethanolamide
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-26T03:19:31.644Z
+  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C162660
+    label: Ethanol-containing Nasal Solution
+    source: ontology
+    definition: An intranasal solution containing ethanol with antimicrobial
+      activity. Upon intranasal application, ethanol-containing nasal solution
+      may prevent colonization of the nasal cavity. The antimicrobial effect of
+      ethanol is due, in part, to its denaturing of microbial proteins.
+    cached_at: 2025-11-27T00:12:49.306Z
 local_extensions:
-  - id: "LAB:BUFFER_A"
-    label: "Smith Lab Buffer A"
-    definition: "Proprietary lysis buffer (10mM Tris-HCl pH 7.5, 150mM NaCl, 1% Triton X-100)"
+  - id: LAB:BUFFER_A
+    label: Smith Lab Buffer A
+    definition: Proprietary lysis buffer (10mM Tris-HCl pH 7.5, 150mM NaCl, 1%
+      Triton X-100)
     synonyms:
-      - "Buffer A"
-      - "Lysis Buffer A"
-    category: "buffer"
-    source: "local"
-  - id: "LAB:STD_MICROPLASTIC"
-    label: "Microplastic Standard Mix"
-    definition: "Polystyrene/polyethylene/PET blend at 100 µg/mL each"
-    category: "standard"
-    source: "local"
-  - id: "LAB:DMEM_SUPPLEMENT"
-    label: "DMEM + 10% FBS"
-    definition: "Dulbecco's Modified Eagle Medium supplemented with 10% fetal bovine serum"
+      - Buffer A
+      - Lysis Buffer A
+    category: buffer
+    source: local
+  - id: LAB:STD_MICROPLASTIC
+    label: Microplastic Standard Mix
+    definition: Polystyrene/polyethylene/PET blend at 100 µg/mL each
+    category: standard
+    source: local
+  - id: LAB:DMEM_SUPPLEMENT
+    label: DMEM + 10% FBS
+    definition: Dulbecco's Modified Eagle Medium supplemented with 10% fetal bovine serum
     synonyms:
-      - "DMEM 10% FBS"
-    category: "media"
-    source: "local"
-cached_terms: []
+      - DMEM 10% FBS
+    category: media
+    source: local

@@ -46,14 +46,21 @@ function normalizeTerm(term = {}, source = 'local') {
   if (typeof term === 'string') {
     return { id: term, label: term, source }
   }
+  const definitionValue = Array.isArray(term.definition) ? term.definition[0] : term.definition || ''
   return {
     id: term.id || term['@id'] || term.prefLabel || '',
     label: term.label || term.prefLabel || term.name || term.id || '',
     source: term.source || term.ontology || source,
-    definition: Array.isArray(term.definition) ? term.definition[0] : term.definition || '',
+    definition: stripHtml(definitionValue),
     synonyms: term.synonyms || term.synonym || [],
     raw: term
   }
+}
+
+function stripHtml(value) {
+  if (!value || typeof value !== 'string') return ''
+  const withoutTags = value.replace(/<[^>]*>/g, ' ')
+  return withoutTags.replace(/\s+/g, ' ').trim()
 }
 
 export async function searchOntologyTerms(vocabName, query = '') {

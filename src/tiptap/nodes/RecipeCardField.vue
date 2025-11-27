@@ -55,8 +55,9 @@
     <div class="recipe-steps">
       <p class="steps-label">Steps</p>
       <ol>
-        <li v-for="(step, index) in state.steps" :key="index">
+        <li v-for="(step, index) in state.steps" :key="index" class="recipe-step-row">
           <textarea
+            :ref="(el) => setStepRef(el, index)"
             v-model="state.steps[index]"
             rows="2"
             :readonly="props.readOnly"
@@ -66,7 +67,7 @@
           <button
             v-if="!props.readOnly"
             type="button"
-            class="recipe-remove"
+            class="recipe-remove recipe-remove--step"
             @click="removeStep(index)"
           >
             ×
@@ -79,7 +80,7 @@
 </template>
 
 <script setup>
-import { reactive, watch } from 'vue'
+import { reactive, watch, nextTick } from 'vue'
 import OntologyFieldInput from './OntologyFieldInput.vue'
 
 const props = defineProps({
@@ -100,6 +101,8 @@ const props = defineProps({
 const emit = defineEmits(['update:value'])
 
 const state = reactive(normalizeRecipe(props.value))
+const stepRefs = []
+stepRefs.length = state.steps.length
 
 watch(
   () => props.value,
@@ -107,6 +110,7 @@ watch(
     const next = normalizeRecipe(val)
     state.items.splice(0, state.items.length, ...next.items)
     state.steps.splice(0, state.steps.length, ...next.steps)
+    stepRefs.length = state.steps.length
   }
 )
 
@@ -169,17 +173,82 @@ function updateReagent(index, value) {
   emitValue()
 }
 
-function addStep() {
+async function addStep() {
   state.steps.push('')
   emitValue()
+  await nextTick()
+  focusStep(state.steps.length - 1)
 }
 
 function removeStep(index) {
   state.steps.splice(index, 1)
+  stepRefs.splice(index, 1)
   if (!state.steps.length) {
     state.steps.push('')
   }
   emitValue()
+}
+
+function setStepRef(el, index) {
+  if (!el) return
+  stepRefs[index] = el
+}
+
+function focusStep(index) {
+  const el = stepRefs[index]
+  if (!el) return
+  el.focus({ preventScroll: true })
+  requestAnimationFrame(() => alignElement(el))
+}
+
+function alignElement(element) {
+  if (!element) return
+  const container = findScrollContainer(element)
+  if (!container) return
+
+  const isDocumentContainer =
+    container === document.body ||
+    container === document.documentElement ||
+    container === document.scrollingElement
+
+  const rect = element.getBoundingClientRect()
+  const containerRect = isDocumentContainer
+    ? { top: 0, height: window.innerHeight }
+    : container.getBoundingClientRect()
+  const currentScrollTop = isDocumentContainer ? window.scrollY : container.scrollTop
+  const targetOffset = containerRect.height * 0.4
+  const fieldOffset = isDocumentContainer ? rect.top : rect.top - containerRect.top
+  const desiredScrollTop = currentScrollTop + fieldOffset - targetOffset + rect.height / 2
+
+  const maxScrollTop = Math.max(
+    0,
+    (isDocumentContainer
+      ? container.scrollHeight - containerRect.height
+      : container.scrollHeight - container.clientHeight)
+  )
+  const clamped = Math.max(0, Math.min(desiredScrollTop, maxScrollTop))
+  const delta = clamped - currentScrollTop
+  const tolerance = Math.max(6, containerRect.height * 0.03)
+  if (Math.abs(delta) < tolerance) return
+
+  if (isDocumentContainer) {
+    window.scrollTo({ top: clamped, behavior: 'smooth' })
+  } else {
+    container.scrollTo({ top: clamped, behavior: 'smooth' })
+  }
+}
+
+function findScrollContainer(element) {
+  let parent = element.parentElement
+  while (parent) {
+    const style = window.getComputedStyle(parent)
+    const overflowY = style.overflowY || style.overflow
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return parent
+    }
+    parent = parent.parentElement
+  }
+  return document.scrollingElement || document.documentElement || document.body
 }
 </script>
 
@@ -221,6 +290,12 @@ function removeStep(index) {
   font-size: 1.1rem;
   cursor: pointer;
   color: #94a3b8;
+  align-self: center;
+  justify-self: end;
+}
+
+.recipe-remove--step {
+  margin-top: 0.15rem;
 }
 
 .recipe-add {
@@ -241,11 +316,19 @@ function removeStep(index) {
   gap: 0.4rem;
 }
 
+.recipe-step-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem;
+  align-items: start;
+}
+
 .recipe-steps textarea {
   width: 100%;
   border-radius: 6px;
   border: 1px solid #cbd5f5;
   padding: 0.35rem 0.5rem;
+  min-height: 3.5rem;
 }
 
 .steps-label {

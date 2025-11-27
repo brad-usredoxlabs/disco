@@ -60,6 +60,7 @@ properties:
       type: object
       required:
         - id
+      additionalProperties: false
       properties:
         id:
           type: string
@@ -70,18 +71,6 @@ properties:
         source:
           type: string
           description: "Ontology acronym or 'local' for lab-defined terms."
-        lot:
-          type: string
-          description: "Optional lot or batch identifier."
-        concentration:
-          type: string
-          description: "Optional concentration (e.g., '5.5 mM')."
-        volume:
-          type: string
-          description: "Optional volume or amount description."
-        notes:
-          type: string
-          description: "Free-form notes about reagent usage."
 
   instruments:
     type: array

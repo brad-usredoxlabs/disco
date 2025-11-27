@@ -1,6 +1,6 @@
 <template>
   <div class="ontology-field">
-    <div class="ontology-display" v-if="currentLabel">
+    <div class="ontology-display" v-if="props.showSelectionBadge && currentLabel">
       <span class="ontology-text">{{ currentLabel }}</span>
       <span v-if="currentValue?.source" class="ontology-source">{{ currentValue.source }}</span>
       <button
@@ -23,13 +23,14 @@
       :readonly="disabled"
       :disabled="disabled"
       @focus="handleFocus"
+      @blur="handleBlur"
       @input="handleInput"
       @keydown.down.prevent="highlightNext"
       @keydown.up.prevent="highlightPrev"
       @keydown.enter.prevent="selectHighlighted"
-      @keydown.tab="selectHighlighted"
+      @keydown.tab="handleTab"
     />
-    <div class="ontology-dropdown" v-if="dropdownOpen && !disabled">
+    <div class="ontology-dropdown" v-if="dropdownOpen && !disabled" ref="dropdownRef">
       <p v-if="isLoading" class="dropdown-hint">Searching…</p>
       <p v-else-if="errorMessage" class="dropdown-error">{{ errorMessage }}</p>
       <ul v-else-if="results.length">
@@ -41,7 +42,9 @@
         >
           <div class="result-line">
             <strong>{{ result.label || result.id }}</strong>
-            <span class="result-source">{{ result.source }}</span>
+            <span class="result-source">
+              {{ formatIdentifier(result.id) }}
+            </span>
           </div>
           <p v-if="result.definition" class="result-definition">{{ result.definition }}</p>
         </li>
@@ -52,7 +55,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { searchOntologyTerms, saveOntologySelection } from '../../ontology/service'
 
 const props = defineProps({
@@ -71,6 +74,10 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  showSelectionBadge: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -83,7 +90,9 @@ const dropdownOpen = ref(false)
 const highlightedIndex = ref(0)
 const errorMessage = ref('')
 const inputRef = ref(null)
+const dropdownRef = ref(null)
 let searchHandle = null
+let blurHandle = null
 
 const currentValue = computed(() => {
   if (!props.value) return null
@@ -107,6 +116,7 @@ watch(
 
 function handleFocus() {
   if (props.disabled) return
+  cancelBlur()
   dropdownOpen.value = true
   if (!query.value && currentLabel.value) {
     query.value = currentLabel.value
@@ -116,8 +126,25 @@ function handleFocus() {
 
 function handleInput() {
   if (props.disabled) return
+  cancelBlur()
   dropdownOpen.value = true
   scheduleSearch()
+}
+
+function handleBlur() {
+  if (props.disabled) return
+  cancelBlur()
+  blurHandle = setTimeout(() => {
+    dropdownOpen.value = false
+    blurHandle = null
+  }, 120)
+}
+
+function cancelBlur() {
+  if (blurHandle) {
+    clearTimeout(blurHandle)
+    blurHandle = null
+  }
 }
 
 function scheduleSearch() {
@@ -133,14 +160,7 @@ function scheduleSearch() {
 }
 
 async function runSearch() {
-  console.log('[OntologyFieldInput] runSearch called', { 
-    vocab: props.vocab, 
-    query: query.value,
-    hasVocab: !!props.vocab
-  })
-  
   if (!props.vocab) {
-    console.warn('[OntologyFieldInput] No vocab prop!')
     results.value = []
     return
   }
@@ -150,6 +170,8 @@ async function runSearch() {
     const data = await searchOntologyTerms(props.vocab, query.value || '')
     results.value = data
     highlightedIndex.value = 0
+    await nextTick()
+    scrollHighlightedIntoView()
   } catch (err) {
     errorMessage.value = err?.message || 'Search failed.'
     results.value = []
@@ -186,19 +208,45 @@ function clearSelection() {
 function highlightNext() {
   if (!results.value.length) return
   highlightedIndex.value = (highlightedIndex.value + 1) % results.value.length
+  nextTick(scrollHighlightedIntoView)
 }
 
 function highlightPrev() {
   if (!results.value.length) return
   highlightedIndex.value =
     highlightedIndex.value - 1 < 0 ? results.value.length - 1 : highlightedIndex.value - 1
+  nextTick(scrollHighlightedIntoView)
 }
 
 function selectHighlighted(event) {
   if (!dropdownOpen.value || !results.value.length) return
   selectResult(results.value[highlightedIndex.value])
-  if (event?.type === 'keydown' && event.key === 'Tab') {
-    event.preventDefault()
+}
+
+function handleTab(event) {
+  if (!dropdownOpen.value) return
+  event.preventDefault()
+  dropdownOpen.value = false
+}
+
+function scrollHighlightedIntoView() {
+  if (!dropdownOpen.value) return
+  const container = dropdownRef.value
+  if (!container) return
+  const list = container.querySelector('ul')
+  if (!list) return
+  const index = highlightedIndex.value
+  if (index < 0 || index >= list.children.length) return
+  const item = list.children[index]
+  const baseOffset = list.offsetTop
+  const itemTop = baseOffset + item.offsetTop
+  const itemBottom = itemTop + item.offsetHeight
+  const viewTop = container.scrollTop
+  const viewBottom = viewTop + container.clientHeight
+  if (itemTop < viewTop) {
+    container.scrollTop = itemTop
+  } else if (itemBottom > viewBottom) {
+    container.scrollTop = itemBottom - container.clientHeight
   }
 }
 
@@ -207,6 +255,26 @@ onBeforeUnmount(() => {
     clearTimeout(searchHandle)
     searchHandle = null
   }
+  cancelBlur()
+})
+
+function focusInput() {
+  if (props.disabled) return
+  inputRef.value?.focus()
+}
+
+function formatIdentifier(value) {
+  if (!value) return ''
+  const input = String(value)
+  const lastSlashIndex = input.lastIndexOf('/')
+  if (lastSlashIndex >= 0 && lastSlashIndex < input.length - 1) {
+    return input.slice(lastSlashIndex + 1)
+  }
+  return input
+}
+
+defineExpose({
+  focus: focusInput
 })
 </script>
 
@@ -237,5 +305,86 @@ onBeforeUnmount(() => {
   border-bottom-style: solid;
   border-bottom-color: #e2e8f0;
   cursor: not-allowed;
+}
+
+.ontology-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: max(100%, 520px);
+  max-width: calc(100% + 360px);
+  background: #fff;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  margin-top: 0.15rem;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  z-index: 10;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+  scrollbar-width: none;
+}
+
+.ontology-dropdown::-webkit-scrollbar {
+  display: none;
+}
+
+.ontology-dropdown ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ontology-dropdown li {
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+  line-height: 1.15;
+  display: block;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.ontology-dropdown li:first-child {
+  border-top: none;
+}
+
+.ontology-dropdown li.is-active {
+  background: rgba(191, 219, 254, 0.35);
+}
+
+.result-line {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.result-source {
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.result-definition {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #475569;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-hint,
+.dropdown-error {
+  padding: 0.5rem 0.6rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.dropdown-error {
+  color: #b91c1c;
 }
 </style>

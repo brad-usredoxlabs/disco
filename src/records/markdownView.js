@@ -165,12 +165,19 @@ function formatRecipeCardBody(value) {
 
 function formatOntologyListBody(value) {
   if (!Array.isArray(value) || !value.length) return ''
+  const reservedKeys = new Set(['id', 'label', 'source', 'definition', 'synonyms', 'raw'])
   const lines = value.map((entry) => {
     const label = entry?.label || entry?.id || ''
     const id = entry?.id ? ` (${entry.id})` : ''
-    const extras = ['lot', 'concentration', 'volume', 'notes']
-      .map((key) => (entry?.[key] ? `${key}: ${entry[key]}` : ''))
-      .filter(Boolean)
+    const extras = Object.entries(entry || {})
+      .filter(([key, extraValue]) => {
+        if (reservedKeys.has(key)) return false
+        if (extraValue === undefined || extraValue === null) return false
+        if (typeof extraValue === 'object') return false
+        const text = String(extraValue).trim()
+        return text.length > 0
+      })
+      .map(([key, extraValue]) => `${key}: ${extraValue}`)
       .join('; ')
     const details = extras ? ` — ${extras}` : ''
     return `- ${label}${id}${details}`

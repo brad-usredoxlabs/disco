@@ -733,6 +733,7 @@ function normalizeRecipeValue(value) {
 
 .tiptap-column--full {
   min-height: 60vh;
+  padding-bottom: 6rem;
 }
 
 .placeholder {
