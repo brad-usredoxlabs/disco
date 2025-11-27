@@ -1,0 +1,29 @@
+baseIri: "https://example.org"
+prefixes:
+  ex: "https://example.org/schema/"
+  schema: "http://schema.org/"
+  ncbitaxon: "http://purl.obolibrary.org/obo/NCBITaxon_"
+  uberon: "http://purl.obolibrary.org/obo/UBERON_"
+  cl: "http://purl.obolibrary.org/obo/CL_"
+  pato: "http://purl.obolibrary.org/obo/PATO_"
+  reactome: "http://purl.obolibrary.org/obo/REACT_"
+
+recordTypes:
+  project:
+    classIris:
+      - "ex:Project"
+      - "schema:Project"
+    pathSegment: "project"
+  experiment:
+    classIris:
+      - "ex:Experiment"
+      - "schema:Experiment"
+    pathSegment: "experiment"
+    biologyTypeMappings:
+      obiType:
+        target: "@type"
+  run:
+    classIris:
+      - "ex:Run"
+      - "schema:Action"
+    pathSegment: "run"

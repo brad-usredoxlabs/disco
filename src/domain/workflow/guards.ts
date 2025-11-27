@@ -14,7 +14,10 @@ export interface WorkflowContext {
 // These signatures match XState guard functions: (ctx, event) => boolean
 export const guards = {
   \"validation.passed\": (ctx: WorkflowContext, _event: any): boolean => {
-    const result = ctx.validator.validate(ctx.recordType, ctx.record.frontMatter);
+    const result = ctx.validator.validate(
+      ctx.recordType,
+      normalizeFrontMatterShape(ctx.record.frontMatter)
+    );
     return result.valid;
   },
 
@@ -26,3 +29,22 @@ export const guards = {
     return anyFilled;
   },
 };
+
+function normalizeFrontMatterShape(frontMatter: any): any {
+  if (!frontMatter || typeof frontMatter !== \"object\") {
+    return frontMatter;
+  }
+  if (!frontMatter.metadata && !frontMatter.data) {
+    return frontMatter;
+  }
+  const flattened: any = { ...(frontMatter.metadata || {}) };
+  const sections = frontMatter.data || {};
+  Object.values(sections).forEach((section: any) => {
+    if (section && typeof section === \"object\") {
+      Object.entries(section).forEach(([key, value]) => {
+        flattened[key] = value;
+      });
+    }
+  });
+  return flattened;
+}

@@ -6,6 +6,7 @@ import AssistantPanel from './AssistantPanel.vue'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { generateMarkdownView } from '../records/markdownView'
 import { useRecordValidator } from '../records/recordValidator'
+import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
 
 const props = defineProps({
   repo: {
@@ -93,6 +94,13 @@ const graphNode = computed(() => {
   const path = filePath.value
   if (!path) return null
   return graphData.value?.nodesByPath?.[path] || null
+})
+const derivedIri = computed(() => recordMetadata.value?.['@id'] || recordMetadata.value?.recordId || '')
+const derivedTypes = computed(() => {
+  const value = recordMetadata.value?.['@type']
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') return [value]
+  return []
 })
 const parentRecords = computed(() => buildRelationList(graphNode.value?.parents))
 const childRecords = computed(() => buildRelationList(graphNode.value?.children))
@@ -231,9 +239,12 @@ async function loadFile(node) {
     const content = await props.repo.readFile(node.path)
     if (content?.startsWith('---')) {
       const { data, body } = parseFrontMatter(content)
-      recordMetadata.value = data || {}
+      const frontMatter = data || {}
+      const inferredType = inferRecordType(frontMatter, node.path)
+      const { metadata: hydratedMetadata } = extractRecordData(inferredType, frontMatter, schemaBundle.value || {})
+      recordMetadata.value = hydratedMetadata || {}
       recordBody.value = body || ''
-      recordType.value = inferRecordType(data, node.path)
+      recordType.value = recordMetadata.value?.recordType || inferredType
       plainTextContent.value = content
       runRecordValidation()
       ensureWorkflowState()
@@ -258,16 +269,28 @@ async function saveFile() {
     isSaving.value = true
     let payload
     if (isRecord.value && supportsTipTap.value) {
+      const frontMatterPayload = composeRecordFrontMatter(
+        recordType.value,
+        recordMetadata.value,
+        recordMetadata.value.formData || {},
+        schemaBundle.value || {}
+      )
       const markdownView = generateMarkdownView(
         recordType.value,
         recordMetadata.value,
         recordMetadata.value.formData || {},
         schemaBundle.value || {}
       )
-      payload = serializeFrontMatter(recordMetadata.value, markdownView)
+      payload = serializeFrontMatter(frontMatterPayload, markdownView)
       refreshMarkdownPreview(markdownView)
     } else if (isRecord.value) {
-      payload = serializeFrontMatter(recordMetadata.value, recordBody.value)
+      const frontMatterPayload = composeRecordFrontMatter(
+        recordType.value,
+        recordMetadata.value,
+        recordMetadata.value.formData || {},
+        schemaBundle.value || {}
+      )
+      payload = serializeFrontMatter(frontMatterPayload, recordBody.value)
     } else {
       payload = plainTextContent.value
     }
@@ -307,13 +330,19 @@ async function regenerateMarkdown() {
   if (!isRecord.value || !supportsTipTap.value || !filePath.value) return
   try {
     status.value = 'Regenerating markdown…'
+    const frontMatterPayload = composeRecordFrontMatter(
+      recordType.value,
+      recordMetadata.value,
+      recordMetadata.value.formData || {},
+      schemaBundle.value || {}
+    )
     const markdownView = generateMarkdownView(
       recordType.value,
       recordMetadata.value,
       recordMetadata.value.formData || {},
       schemaBundle.value || {}
     )
-    await props.repo.writeFile(filePath.value, serializeFrontMatter(recordMetadata.value, markdownView))
+    await props.repo.writeFile(filePath.value, serializeFrontMatter(frontMatterPayload, markdownView))
     refreshMarkdownPreview(markdownView)
     status.value = 'Markdown refreshed.'
   } catch (err) {
@@ -338,7 +367,11 @@ function updateRecordBody(event) {
 function inferRecordType(frontMatter, path) {
   if (!frontMatter) return ''
   const explicit =
-    frontMatter.recordType || frontMatter.record_type || frontMatter.type || frontMatter.record_type_id
+    frontMatter.metadata?.recordType ||
+    frontMatter.recordType ||
+    frontMatter.record_type ||
+    frontMatter.type ||
+    frontMatter.record_type_id
   if (explicit) return explicit
 
   const naming = schemaBundle.value?.naming || {}
@@ -357,7 +390,8 @@ function runRecordValidation() {
     return
   }
   validationState.value = { status: 'pending', issues: [], ok: false }
-  const result = validator.validate(recordType.value, recordMetadata.value)
+  const schemaPayload = mergeMetadataAndFormData(recordMetadata.value)
+  const result = validator.validate(recordType.value, schemaPayload)
   const formattedIssues = (result.issues || []).map((issue) =>
     typeof issue === 'string' ? issue : `${issue.path || 'root'}: ${issue.message}`
   )
@@ -473,10 +507,16 @@ function applyAssistantMetadata(payload) {
     return
   }
 
-  recordMetadata.value = {
+  const next = {
     ...recordMetadata.value,
     ...sanitized
   }
+  const validation = validator.validate(recordType.value, mergeMetadataAndFormData(next))
+  if (!validation.ok) {
+    status.value = `Assistant metadata rejected: ${validation.issues?.[0] || 'validation failed'}`
+    return
+  }
+  recordMetadata.value = next
   metadataDirty.value = true
   refreshMarkdownPreview()
   status.value = stripped ? 'Applied assistant metadata (identifiers preserved).' : 'Applied assistant metadata.'
@@ -502,10 +542,16 @@ function applyAssistantFormData(formUpdates) {
     return
   }
 
-  recordMetadata.value = {
+  const next = {
     ...recordMetadata.value,
     formData: currentFormData
   }
+  const validation = validator.validate(recordType.value, mergeMetadataAndFormData(next))
+  if (!validation.ok) {
+    status.value = `Assistant form data rejected: ${validation.issues?.[0] || 'validation failed'}`
+    return
+  }
+  recordMetadata.value = next
   metadataDirty.value = true
   refreshMarkdownPreview()
   status.value = 'Applied assistant form data.'
@@ -744,6 +790,17 @@ function openTipTapEditor() {
           :read-only="isImmutable"
           v-model="metadataModel"
         />
+        <div v-if="derivedIri || derivedTypes.length" class="jsonld-summary">
+          <p v-if="derivedIri">
+            <strong>IRI:</strong>
+            <span class="jsonld-value">{{ derivedIri }}</span>
+            <button class="copy-button" type="button" @click="copyToClipboard(derivedIri)">Copy</button>
+          </p>
+          <p v-if="derivedTypes.length">
+            <strong>Types:</strong>
+            <span class="jsonld-value">{{ derivedTypes.join(', ') }}</span>
+          </p>
+        </div>
       </section>
       <section>
         <header class="record-section-header">

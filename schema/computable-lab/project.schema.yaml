@@ -11,6 +11,15 @@ required:
   - shortSlug
 
 properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'project'."
+  state:
+    type: string
+    description: "Workflow state identifier (e.g., draft, approved)."
+  recordId:
+    type: string
+    description: "Stable filesystem identifier generated from naming rules."
   identifier:
     type: string
     description: >
@@ -93,3 +102,13 @@ properties:
       label: "investigation"
       identifier: "OBI:0000066"
       ontology: "OBI"
+
+  jsonldContextOverrides:
+    type: object
+    description: "Optional prefixes to merge into the base JSON-LD context for child records."
+    additionalProperties: false
+    properties:
+      prefixes:
+        type: object
+        additionalProperties:
+          type: string

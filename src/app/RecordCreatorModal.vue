@@ -5,6 +5,7 @@ import { buildDefaultFrontMatter, computeRecordPath, sanitizeSlug } from '../rec
 import { generateMarkdownView, buildBodyDefaults } from '../records/markdownView'
 import { previewId, commitId } from '../records/idGenerator'
 import { serializeFrontMatter } from '../records/frontMatter'
+import { composeRecordFrontMatter } from '../records/jsonLdFrontmatter'
 
 const props = defineProps({
   open: {
@@ -193,7 +194,13 @@ async function handleCreate() {
       state.metadata.formData || {},
       bundle.value || {}
     )
-    const content = serializeFrontMatter(state.metadata, markdownView)
+    const frontMatterPayload = composeRecordFrontMatter(
+      state.recordType,
+      state.metadata,
+      state.metadata.formData || {},
+      bundle.value || {}
+    )
+    const content = serializeFrontMatter(frontMatterPayload, markdownView)
     await props.repo.writeFile(state.filePath, content)
     const namingRule = namingRules.value[state.recordType]
     if (state.metadata.id === state.autoId && state.pendingCounter) {

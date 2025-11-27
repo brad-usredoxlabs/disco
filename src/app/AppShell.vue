@@ -19,6 +19,7 @@ import { useSearchIndex } from '../search/useSearchIndex'
 import { useRecordValidator } from '../records/recordValidator'
 import { useSystemConfig } from '../config/useSystemConfig'
 import { configureOntologyService } from '../ontology/service'
+import { useOfflineStatus } from '../composables/useOfflineStatus'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -27,6 +28,7 @@ const workflowLoader = useWorkflowBundle(repo, schemaLoader)
 const recordGraph = useRecordGraph(repo, schemaLoader)
 const searchIndex = useSearchIndex(recordGraph)
 const systemConfig = useSystemConfig(repo)
+const offlineStatus = useOfflineStatus()
 const showCreator = ref(false)
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
@@ -42,6 +44,7 @@ const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle
 const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
 const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
+const isOnline = computed(() => offlineStatus.isOnline.value)
 const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
 const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
 const tiptapSchema = computed(() =>
@@ -206,6 +209,9 @@ function handleStandaloneSaved() {
         <button class="secondary" type="button" @click="clearTiptapTarget">Return to workspace</button>
       </div>
     </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
     <div class="tiptap-standalone__body">
       <p v-if="tiptapStatus" class="status status-ok">{{ tiptapStatus }}</p>
       <div v-if="!isReady" class="tiptap-standalone__message">
@@ -254,6 +260,9 @@ function handleStandaloneSaved() {
         </div>
       </div>
     </header>
+    <p v-if="!isOnline" class="offline-banner">
+      Offline mode: editing uses cached schemas and search results. Reconnect to sync with the repo.
+    </p>
 
     <main class="app-main-grid">
       <div class="column column-left">
@@ -502,5 +511,15 @@ code {
   background: #e2e8f0;
   border-radius: 6px;
   padding: 0.1rem 0.35rem;
+}
+
+.offline-banner {
+  margin: 0;
+  padding: 0.55rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(202, 138, 4, 0.4);
+  background: #fefce8;
+  color: #713f12;
+  font-size: 0.9rem;
 }
 </style>

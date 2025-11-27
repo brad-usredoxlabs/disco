@@ -1,5 +1,7 @@
 import { humanizeKey } from './utils.js'
 
+const BLANK_PLACEHOLDER = '_____'
+
 export function generateMarkdownView(recordType, metadata = {}, bodyData = {}, bundle = {}) {
   const descriptors = buildFieldDescriptors(recordType, bundle)
   const lines = []
@@ -36,7 +38,8 @@ export function buildFieldDescriptors(recordType, bundle = {}) {
       label: layoutConfig.label || humanizeKey(name),
       fieldType: uiConfig.fieldType || layoutConfig.fieldType || schemaField.fieldType || null,
       vocab: uiConfig.vocab || layoutConfig.vocab || schemaField.vocab || null,
-      columns: uiConfig.columns || layoutConfig.columns || []
+      columns: uiConfig.columns || layoutConfig.columns || [],
+      jsonLd: resolveJsonLdPlacement(name, metadataSet, layoutConfig.jsonLd || {})
     }
     if (metadataSet.has(name)) {
       metadataDescriptors.push(descriptor)
@@ -48,6 +51,35 @@ export function buildFieldDescriptors(recordType, bundle = {}) {
   metadataDescriptors.sort(byOrder)
   bodyDescriptors.sort(byOrder)
   return { metadata: metadataDescriptors, body: bodyDescriptors }
+}
+
+function resolveJsonLdPlacement(fieldName, metadataSet, jsonLdConfig = {}) {
+  if (jsonLdConfig.target === 'metadata') {
+    return {
+      target: 'metadata',
+      section: null,
+      key: jsonLdConfig.key || fieldName
+    }
+  }
+  if (jsonLdConfig.target === 'data') {
+    return {
+      target: 'data',
+      section: jsonLdConfig.section || 'operations',
+      key: jsonLdConfig.key || fieldName
+    }
+  }
+  if (metadataSet.has(fieldName)) {
+    return {
+      target: 'metadata',
+      section: null,
+      key: jsonLdConfig.key || fieldName
+    }
+  }
+  return {
+    target: 'data',
+    section: jsonLdConfig.section || 'operations',
+    key: jsonLdConfig.key || fieldName
+  }
 }
 
 export function buildBodyDefaults(recordType, bundle = {}) {
@@ -68,15 +100,23 @@ function byOrder(a, b) {
 }
 
 function formatMetadataField(descriptor, metadata) {
-  const value = metadata[descriptor.name]
+  const value = metadata?.[descriptor.name]
+  const text = formatMetadataValue(value)
+  return `**${descriptor.label}:** ${text}`
+}
+
+function formatMetadataValue(value) {
   if (Array.isArray(value)) {
-    if (value.length === 0) return `**${descriptor.label}:**`
-    return `**${descriptor.label}:** ${value.join(', ')}`
+    if (value.length === 0) return BLANK_PLACEHOLDER
+    return value.join(', ')
   }
   if (value === null || value === undefined || value === '') {
-    return `**${descriptor.label}:**`
+    return BLANK_PLACEHOLDER
   }
-  return `**${descriptor.label}:** ${value}`
+  if (typeof value === 'object') {
+    return '```yaml\n' + JSON.stringify(value, null, 2) + '\n```'
+  }
+  return String(value)
 }
 
 function formatBodyField(descriptor, metadata, bodyData) {
@@ -85,27 +125,26 @@ function formatBodyField(descriptor, metadata, bodyData) {
       ? bodyData[descriptor.name]
       : metadata[descriptor.name])
   const heading = `### ${descriptor.label}`
+  let text = ''
   if (descriptor.fieldType === 'ontology') {
-    const text = formatOntologyBodyValue(value)
-    return `${heading}\n${text}\n`
+    text = formatOntologyBodyValue(value)
+  } else if (descriptor.fieldType === 'recipeCard') {
+    text = formatRecipeCardBody(value)
+  } else if (descriptor.fieldType === 'ontologyList') {
+    text = formatOntologyListBody(value)
+  } else if (Array.isArray(value)) {
+    text = value.length ? value.map((item) => `- ${item || BLANK_PLACEHOLDER}`).join('\n') : `- ${BLANK_PLACEHOLDER}`
+  } else if (descriptor.schema?.type === 'object') {
+    const jsonValue = value && typeof value === 'object' ? JSON.stringify(value, null, 2) : '{}'
+    text = '```yaml\n' + jsonValue + '\n```'
+  } else if (value === null || value === undefined || value === '') {
+    text = BLANK_PLACEHOLDER
+  } else {
+    text = String(value)
   }
-  if (descriptor.fieldType === 'recipeCard') {
-    const text = formatRecipeCardBody(value)
-    return `${heading}\n${text}\n`
+  if (!text?.trim()) {
+    text = BLANK_PLACEHOLDER
   }
-  if (descriptor.fieldType === 'ontologyList') {
-    const text = formatOntologyListBody(value)
-    return `${heading}\n${text}\n`
-  }
-  if (Array.isArray(value) && value.length) {
-    const items = value.map((item) => `- ${item || ''}`).join('\n')
-    return `${heading}\n${items}`
-  }
-  if (descriptor.schema?.type === 'object') {
-    const jsonValue = value && typeof value === 'object' ? JSON.stringify(value, null, 2) : `${descriptor.name}: {}`
-    return `${heading}\n\`\`\`yaml\n${jsonValue}\n\`\`\``
-  }
-  const text = value ?? ''
   return `${heading}\n${text}\n`
 }
 
@@ -123,7 +162,7 @@ function cloneValue(value) {
 }
 
 function formatOntologyBodyValue(value) {
-  if (!value) return ''
+  if (!value) return BLANK_PLACEHOLDER
   const normalize = (entry) => {
     if (!entry) return ''
     if (typeof entry === 'string') return entry
@@ -133,13 +172,14 @@ function formatOntologyBodyValue(value) {
     return label || id
   }
   if (Array.isArray(value)) {
-    return value.map((entry) => `- ${normalize(entry)}`).join('\n')
+    if (!value.length) return `- ${BLANK_PLACEHOLDER}`
+    return value.map((entry) => `- ${normalize(entry) || BLANK_PLACEHOLDER}`).join('\n')
   }
-  return normalize(value)
+  return normalize(value) || BLANK_PLACEHOLDER
 }
 
 function formatRecipeCardBody(value) {
-  if (!value || typeof value !== 'object') return ''
+  if (!value || typeof value !== 'object') return BLANK_PLACEHOLDER
   const items = Array.isArray(value.items) ? value.items : []
   const steps = Array.isArray(value.steps) ? value.steps : []
   const lines = []
@@ -160,14 +200,17 @@ function formatRecipeCardBody(value) {
       lines.push(`${index + 1}. ${step || ''}`)
     })
   }
+  if (!items.length && !steps.length) {
+    lines.push(BLANK_PLACEHOLDER)
+  }
   return lines.join('\n')
 }
 
 function formatOntologyListBody(value) {
-  if (!Array.isArray(value) || !value.length) return ''
+  if (!Array.isArray(value) || !value.length) return `- ${BLANK_PLACEHOLDER}`
   const reservedKeys = new Set(['id', 'label', 'source', 'definition', 'synonyms', 'raw'])
   const lines = value.map((entry) => {
-    const label = entry?.label || entry?.id || ''
+    const label = entry?.label || entry?.id || BLANK_PLACEHOLDER
     const id = entry?.id ? ` (${entry.id})` : ''
     const extras = Object.entries(entry || {})
       .filter(([key, extraValue]) => {

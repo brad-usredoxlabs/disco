@@ -13,6 +13,15 @@ required:
   - shortSlug
 
 properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'experiment'."
+  state:
+    type: string
+    description: "Workflow state identifier (e.g., draft, approved)."
+  recordId:
+    type: string
+    description: "Stable filesystem identifier generated from naming rules."
   shortSlug:
     type: string
     description: >
@@ -35,6 +44,10 @@ properties:
     description: >
       Reference to the protocol record used for this experiment.
     # pattern: "^PR-[0-9]{4}(_[A-Z0-9_]+)?$"
+
+  projectShortSlug:
+    type: string
+    description: "Short slug inherited from the parent project for path generation."
 
   runs:
     type: array
@@ -112,6 +125,12 @@ properties:
           type: string
           description: "Optional MIME type (e.g., 'application/pdf', 'image/png')."
 
+  binaryDataFiles:
+    type: array
+    description: "External data file identifiers (DVC pointers, object storage paths)."
+    items:
+      type: string
+
   measurementType:
     $ref: "./ontology-term.schema.yaml"
     description: "Type of measurement (e.g. OBI:0000070)."
@@ -136,10 +155,6 @@ properties:
   obiType:
     $ref: "./ontology-term.schema.yaml"
     description: "High-level OBI type for this record."
-    default:
-      label: "study"
-      identifier: "OBI:0000067"
-      ontology: "OBI"
 
   recipeCard:
     type: object

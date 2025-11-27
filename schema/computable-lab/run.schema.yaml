@@ -9,6 +9,15 @@ required:
   - experimentId
 
 properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'run'."
+  state:
+    type: string
+    description: "Workflow state identifier (e.g., draft, approved)."
+  recordId:
+    type: string
+    description: "Stable filesystem identifier generated from naming rules."
   experimentId:
     type: string
     description: >
@@ -20,6 +29,10 @@ properties:
     description: >
       Optional human-friendly run identifier. If omitted, the system may
       auto-generate a canonical ID based on naming rules.
+
+  experimentShortSlug:
+    type: string
+    description: "Short slug inherited from the parent experiment for naming."
 
   startedAt:
     type: string
@@ -36,6 +49,10 @@ properties:
     description: >
       Optional plugin-owned JSON or YAML describing wells, plate layout, etc.
       Stored as a string and interpreted by plate editor plugins.
+
+  plateId:
+    type: string
+    description: "Identifier for the physical plate or instrument position."
 
   notes:
     type: string
@@ -54,6 +71,12 @@ properties:
       type: string
       description: "Data file path or identifier."
 
+  binaryDataFiles:
+    type: array
+    description: "External data file identifiers (pointers, object storage paths)."
+    items:
+      type: string
+
   outputType:
     $ref: "./ontology-term.schema.yaml"
     description: "Output data type or measurement ontology term."
@@ -65,3 +88,11 @@ properties:
       label: "assay"
       identifier: "OBI:0000663"
       ontology: "OBI"
+  operator:
+    type: object
+    description: "Operator or technician responsible for the run."
+    properties:
+      id:
+        type: string
+      label:
+        type: string

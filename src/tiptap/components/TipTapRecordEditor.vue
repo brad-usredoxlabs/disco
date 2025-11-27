@@ -27,6 +27,17 @@
     </p>
     <p v-if="statusMessage" class="status-message">{{ statusMessage }}</p>
     <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+    <div v-if="derivedIri || derivedTypes.length" class="jsonld-summary">
+      <p v-if="derivedIri">
+        <strong>IRI:</strong>
+        <span class="jsonld-value">{{ derivedIri }}</span>
+        <button class="copy-button" type="button" @click="copyToClipboard(derivedIri)">Copy</button>
+      </p>
+      <p v-if="derivedTypes.length">
+        <strong>Types:</strong>
+        <span class="jsonld-value">{{ derivedTypes.join(', ') }}</span>
+      </p>
+    </div>
 
     <div v-if="isLoading" class="loading-state">
       <p>Loading record…</p>
@@ -47,6 +58,13 @@ import TipTapEditor from './TipTapEditor.vue'
 import { useTipTapIO, buildDocFromRecord } from '../composables/useTipTapIO'
 import { generateMarkdownView, buildFieldDescriptors } from '../../records/markdownView'
 import { serializeFrontMatter } from '../../records/frontMatter'
+import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../../records/jsonLdFrontmatter'
+import {
+  normalizeOntologyListEntry,
+  normalizeOntologyListValue,
+  normalizeOntologyValue,
+  normalizeRecipeValue
+} from '../../records/fieldNormalization'
 
 const props = defineProps({
   repo: {
@@ -126,7 +144,18 @@ const protectedFields = computed(() => {
 
 const activeRecordType = computed(() => metadata.value?.recordType || props.recordType || '')
 const fieldDescriptorBundle = computed(() => buildFieldDescriptors(activeRecordType.value, props.schemaBundle || {}))
-const metadataDescriptors = computed(() => fieldDescriptorBundle.value.metadata)
+const metadataDescriptors = computed(() =>
+  fieldDescriptorBundle.value.metadata.filter(
+    (descriptor) => descriptor.name !== '@context' && descriptor.name !== '@id' && descriptor.name !== '@type'
+  )
+)
+const derivedIri = computed(() => metadata.value?.['@id'] || metadata.value?.recordId || '')
+const derivedTypes = computed(() => {
+  const value = metadata.value?.['@type']
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') return [value]
+  return []
+})
 const formFieldDescriptors = computed(() => fieldDescriptorBundle.value.body)
 const descriptorMap = computed(() => {
   const map = new Map()
@@ -279,32 +308,24 @@ async function loadRecord(path) {
     isHydrating.value = true
     statusMessage.value = ''
     const payload = await loadDocument(path, { sidecarName: 'body.tiptap.json' })
-    const rawMetadata = { ...(payload.metadata || {}) }
-    const initialFormData = rawMetadata.formData || {}
-    delete rawMetadata.formData
-    metadata.value = rawMetadata
-    originalMetadata.value = { ...rawMetadata }
-    formState.value = { ...initialFormData }
-    const baseDoc = payload.tiptapDoc || buildDocFromRecord(payload.metadata, payload.body)
-    
-    console.log('[TipTapRecordEditor] About to ensureFieldBlocks with descriptors:', {
-      metadataDescriptors: metadataDescriptors.value.map(d => ({ 
-        name: d.name, 
-        fieldType: d.fieldType, 
-        vocab: d.vocab,
-        columns: d.columns 
-      })),
-      formFieldDescriptors: formFieldDescriptors.value.map(d => ({ 
-        name: d.name, 
-        fieldType: d.fieldType, 
-        vocab: d.vocab,
-        columns: d.columns 
-      }))
-    })
-    
-    const reagentsDescriptor = formFieldDescriptors.value.find(d => d.name === 'reagents')
-    console.log('[TipTapRecordEditor] REAGENTS DESCRIPTOR:', reagentsDescriptor)
-    
+    const frontMatter = payload.metadata || {}
+    const inferredType =
+      frontMatter.metadata?.recordType ||
+      frontMatter.recordType ||
+      metadata.value?.recordType ||
+      props.recordType ||
+      ''
+    const { metadata: normalizedMetadata, formData } = extractRecordData(
+      inferredType,
+      frontMatter,
+      props.schemaBundle || {}
+    )
+    metadata.value = normalizedMetadata || {}
+    originalMetadata.value = cloneJson(normalizedMetadata || {})
+    formState.value = { ...(formData || {}) }
+    const schemaRecord = mergeMetadataAndFormData(normalizedMetadata, formData)
+    const baseDoc = payload.tiptapDoc || buildDocFromRecord(schemaRecord, payload.body)
+
     tiptapDoc.value = ensureFieldBlocks(
       baseDoc,
       metadata.value,
@@ -313,7 +334,7 @@ async function loadRecord(path) {
       formFieldDescriptors.value,
       metadataIssues.value
     )
-    originalDoc.value = cloneDoc(tiptapDoc.value)
+    originalDoc.value = cloneJson(tiptapDoc.value)
     metadataDirty.value = false
     formDirty.value = false
     docDirty.value = false
@@ -339,16 +360,24 @@ async function saveRecord() {
       saving.value = false
       return
     }
-    const metadataPayload = { ...metadata.value, formData: { ...formState.value } }
+    const schemaRecord = mergeMetadataAndFormData(metadata.value || {}, formState.value || {})
+    const metadataPayload = composeRecordFrontMatter(
+      activeRecordType.value,
+      metadata.value || {},
+      formState.value || {},
+      props.schemaBundle || {},
+      props.projectContextOverrides || {}
+    )
     await saveDocument({
       recordPath: props.recordPath,
       metadata: metadataPayload,
       tiptapDoc: tiptapDoc.value,
-      sidecarName: 'body.tiptap.json'
+      sidecarName: 'body.tiptap.json',
+      validationRecord: schemaRecord
     })
     const markdown = generateMarkdownView(
       activeRecordType.value,
-      metadataPayload,
+      metadata.value,
       formState.value || {},
       props.schemaBundle || {}
     )
@@ -356,8 +385,8 @@ async function saveRecord() {
       props.recordPath,
       serializeFrontMatter(metadataPayload, markdown)
     )
-    originalMetadata.value = { ...metadata.value }
-    originalDoc.value = cloneDoc(tiptapDoc.value)
+    originalMetadata.value = cloneJson(metadata.value)
+    originalDoc.value = cloneJson(tiptapDoc.value)
     metadataDirty.value = false
     docDirty.value = false
     statusMessage.value = 'Record saved.'
@@ -378,7 +407,7 @@ function updateField(field, value) {
   }
 }
 
-function cloneDoc(doc) {
+function cloneJson(doc) {
   return doc ? JSON.parse(JSON.stringify(doc)) : null
 }
 
@@ -387,7 +416,8 @@ function runMetadataValidation() {
     metadataIssues.value = {}
     return { ok: true }
   }
-  const result = props.validateRecord(activeRecordType.value, metadata.value || {})
+  const schemaPayload = mergeMetadataAndFormData(metadata.value || {}, formState.value || {})
+  const result = props.validateRecord(activeRecordType.value, schemaPayload)
   if (result.ok) {
     metadataIssues.value = {}
     return result
@@ -410,7 +440,7 @@ function runMetadataValidation() {
 }
 
 function ensureFieldBlocks(doc, metadata, formData, metadataDescriptors, bodyDescriptors, errorsMap = {}) {
-  const baseDoc = doc ? cloneDoc(doc) : { type: 'doc', content: [] }
+  const baseDoc = doc ? cloneJson(doc) : { type: 'doc', content: [] }
   const metadataNodes = metadataDescriptors.map((descriptor) =>
     createFieldBlockNode(descriptor, metadata?.[descriptor.name], errorsMap[descriptor.name] || [], 'metadata')
   )
@@ -497,6 +527,15 @@ function mergeMetadata(metadata, updates) {
   return { changed, data: next }
 }
 
+function copyToClipboard(value) {
+  if (!value || typeof navigator === 'undefined') return
+  try {
+    navigator.clipboard?.writeText?.(value)
+  } catch {
+    /* ignore */
+  }
+}
+
 
 function formatFieldValue(value, schema = {}, fieldType, config = {}) {
   if (fieldType === 'ontology') {
@@ -541,7 +580,7 @@ function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
   }
   if (fieldType === 'ontologyList') {
     if (!Array.isArray(rawValue)) return []
-    return rawValue.map((entry) => normalizeOntologyListEntry(entry, config)).filter(Boolean)
+    return normalizeOntologyListValue(rawValue, config)
   }
   if (fieldType === 'recipeCard') {
     return normalizeRecipeValue(rawValue)
@@ -572,59 +611,6 @@ function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
   return rawValue
 }
 
-function normalizeOntologyValue(entry) {
-  if (!entry) return null
-  if (typeof entry === 'string') {
-    return { id: entry, label: entry, source: '' }
-  }
-  if (typeof entry !== 'object') return null
-  const id = entry.id || entry['@id'] || ''
-  const label = entry.label || entry.prefLabel || entry.name || id
-  if (!id && !label) return null
-  return {
-    id,
-    label,
-    source: entry.source || entry.ontology || '',
-    definition: entry.definition || entry.description || ''
-  }
-}
-
-function normalizeOntologyListEntry(entry, config = {}) {
-  if (!entry) return null
-  const base = normalizeOntologyValue(entry)
-  if (!base) return null
-  const extras = { ...entry }
-  delete extras.id
-  delete extras.label
-  delete extras.source
-  delete extras.definition
-  return {
-    ...extras,
-    ...base
-  }
-}
-
-function normalizeRecipeValue(value) {
-  if (!value || typeof value !== 'object') {
-    return {
-      items: [],
-      steps: []
-    }
-  }
-  const items = Array.isArray(value.items)
-    ? value.items.map((item) => ({
-        quantity: item.quantity || '',
-        unit: item.unit || '',
-        notes: item.notes || '',
-        reagent: item.reagent ? normalizeOntologyValue(item.reagent) : null
-      }))
-    : []
-  const steps = Array.isArray(value.steps) ? value.steps.slice() : []
-  return {
-    items,
-    steps
-  }
-}
 </script>
 
 <style scoped>
@@ -743,5 +729,35 @@ function normalizeRecipeValue(value) {
   border-radius: 12px;
   color: #94a3b8;
   text-align: center;
+}
+
+.jsonld-summary {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.9rem;
+}
+
+.jsonld-summary p {
+  margin: 0.2rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.jsonld-value {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', monospace;
+  color: #334155;
+}
+
+.copy-button {
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 </style>

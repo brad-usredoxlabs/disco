@@ -71,7 +71,10 @@ export async function createRecord(
       recordType.toUpperCase() + "-TEMP-" + Date.now();
   }
 
-  const validationResult = validator.validate(recordType, frontMatter);
+  const validationResult = validator.validate(
+    recordType,
+    normalizeFrontMatterShape(frontMatter)
+  );
   if (!validationResult.valid) {
     throw new Error(
       "Validation failed for new " +
@@ -115,7 +118,10 @@ export async function updateRecord(
     console.warn("No schema registered for recordType=" + recordType);
   }
 
-  const result = validator.validate(recordType, frontMatter);
+  const result = validator.validate(
+    recordType,
+    normalizeFrontMatterShape(frontMatter)
+  );
   if (!result.valid) {
     throw new Error(
       "Validation failed for " +
@@ -137,6 +143,25 @@ export async function deleteRecord(
 ): Promise<void> {
   const { storage } = ctx;
   await storage.deleteFile(params.path);
+}
+
+function normalizeFrontMatterShape(frontMatter: any): any {
+  if (!frontMatter || typeof frontMatter !== "object") {
+    return frontMatter;
+  }
+  if (!frontMatter.metadata && !frontMatter.data) {
+    return frontMatter;
+  }
+  const flattened: any = { ...(frontMatter.metadata || {}) };
+  const sections = frontMatter.data || {};
+  Object.values(sections).forEach((section: any) => {
+    if (section && typeof section === "object") {
+      Object.entries(section).forEach(([key, value]) => {
+        flattened[key] = value;
+      });
+    }
+  });
+  return flattened;
 }
 
 export async function cloneRecord(

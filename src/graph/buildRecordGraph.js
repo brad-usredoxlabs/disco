@@ -1,4 +1,5 @@
 import { parseFrontMatter } from '../records/frontMatter'
+import { extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
 
 function normalizeDir(input = '') {
   if (!input) return null
@@ -111,8 +112,10 @@ export async function buildRecordGraph(repoConnection, schemaBundle) {
         const text = await repoConnection.readFile(path)
         if (!text?.startsWith('---')) continue
         const { data, body } = parseFrontMatter(text)
-        const id = data?.id
-        const resolvedType = data?.recordType || data?.type || recordType
+        const { metadata: hydratedMetadata, formData } = extractRecordData(recordType, data, schemaBundle)
+        const schemaRecord = mergeMetadataAndFormData(hydratedMetadata, formData)
+        const id = schemaRecord?.id
+        const resolvedType = schemaRecord?.recordType || recordType
         if (!id || resolvedType !== recordType) {
           continue
         }
@@ -120,8 +123,8 @@ export async function buildRecordGraph(repoConnection, schemaBundle) {
           id,
           recordType,
           path,
-          title: data?.title || id,
-          frontMatter: data,
+          title: schemaRecord?.title || id,
+          frontMatter: schemaRecord,
           markdown: body || '',
           parents: [],
           children: [],

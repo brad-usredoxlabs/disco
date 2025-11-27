@@ -140,6 +140,8 @@ export function useSchemaBundle(repoConnection) {
         )
       })
 
+      const jsonLdConfig = await readYaml(`/schema/${bundleName}/jsonld-config.yaml`).catch(() => null)
+
       schemaBundle.value = {
         schemaSet: bundleName,
         manifest,
@@ -150,7 +152,8 @@ export function useSchemaBundle(repoConnection) {
         assistant,
         vocabSchemas,
         relationshipIndex,
-        metadataFields
+        metadataFields,
+        jsonLdConfig
       }
 
       status.value = validationIssues.value.length ? 'warning' : 'ready'

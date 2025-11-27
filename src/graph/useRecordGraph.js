@@ -5,6 +5,7 @@ export function useRecordGraph(repoConnection, schemaLoader) {
   const status = ref('idle')
   const error = ref('')
   const graph = ref({ nodes: [], nodesById: {}, nodesByPath: {}, stats: { total: 0 } })
+  let rebuildTimer = null
 
   async function rebuild() {
     if (!repoConnection.directoryHandle.value || !schemaLoader.schemaBundle?.value) {
@@ -30,11 +31,21 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     error.value = ''
   }
 
+  function scheduleRebuild(delay = 200) {
+    if (rebuildTimer) {
+      clearTimeout(rebuildTimer)
+    }
+    rebuildTimer = setTimeout(() => {
+      rebuildTimer = null
+      rebuild()
+    }, delay)
+  }
+
   watch(
     () => repoConnection.directoryHandle.value,
     (handle) => {
       if (handle) {
-        rebuild()
+        scheduleRebuild(0)
       } else {
         reset()
       }
@@ -46,14 +57,14 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     () => schemaLoader.schemaBundle?.value,
     (bundle) => {
       if (bundle && repoConnection.directoryHandle.value) {
-        rebuild()
+        scheduleRebuild()
       }
     }
   )
 
   repoConnection.on?.('fs:write', () => {
     if (status.value === 'ready') {
-      rebuild()
+      scheduleRebuild()
     }
   })
 

@@ -3,6 +3,35 @@ recordType: "experiment"
 
 layout:
   fields:
+    recordType:
+      group: "metadata"
+      order: 0
+      ui:
+        readOnly: true
+    state:
+      group: "metadata"
+      order: 5
+      ui:
+        component: select
+        options: ["draft", "in_review", "approved", "archived"]
+    recordId:
+      group: "metadata"
+      order: 8
+      ui:
+        readOnly: true
+    projectShortSlug:
+      group: "metadata"
+      order: 9
+      ui:
+        readOnly: true
+    createdAt:
+      group: "metadata"
+      order: 10
+      ui:
+        readOnly: true
+    createdBy:
+      group: "metadata"
+      order: 12
     shortSlug:
       group: "header"
       order: 10
@@ -28,6 +57,10 @@ layout:
     runs:
       group: "relationships"
       order: 40
+      jsonLd:
+        target: data
+        section: links
+        key: runs
       ui:
         collapsible: true
         display: "list"
@@ -41,6 +74,10 @@ layout:
     samples:
       group: "entities"
       order: 50
+      jsonLd:
+        target: data
+        section: links
+        key: samples
       ui:
         display: "table"
         collapsible: false
@@ -48,6 +85,10 @@ layout:
     reagents:
       group: "entities"
       order: 60
+      jsonLd:
+        target: data
+        section: operations
+        key: reagents
       ui:
         collapsible: true
         fieldType: "ontologyList"
@@ -56,6 +97,10 @@ layout:
     instruments:
       group: "entities"
       order: 70
+      jsonLd:
+        target: data
+        section: operations
+        key: instruments
       ui:
         display: "table"
         collapsible: true
@@ -63,6 +108,10 @@ layout:
     qcResults:
       group: "qc"
       order: 80
+      jsonLd:
+        target: data
+        section: links
+        key: qcResults
       ui:
         display: "table"
         collapsible: true
@@ -70,13 +119,31 @@ layout:
     attachments:
       group: "attachments"
       order: 90
+      jsonLd:
+        target: data
+        section: links
+        key: binaryDataFiles
       ui:
         display: "table"
+        collapsible: true
+    binaryDataFiles:
+      group: "attachments"
+      order: 95
+      jsonLd:
+        target: data
+        section: links
+        key: binaryDataFiles
+      ui:
+        display: "list"
         collapsible: true
 
     measurementType:
       group: "ontology"
       order: 100
+      jsonLd:
+        target: data
+        section: biology
+        key: measurementType
       ui:
         collapsible: true
         summaryField: "label"
@@ -86,6 +153,10 @@ layout:
     technologyType:
       group: "ontology"
       order: 110
+      jsonLd:
+        target: data
+        section: biology
+        key: technologyType
       ui:
         collapsible: true
         summaryField: "label"
@@ -95,6 +166,10 @@ layout:
     factorValues:
       group: "ontology"
       order: 120
+      jsonLd:
+        target: data
+        section: biology
+        key: factorValues
       ui:
         collapsible: true
         fieldType: "ontology"
@@ -103,6 +178,10 @@ layout:
     obiType:
       group: "ontology"
       order: 130
+      jsonLd:
+        target: data
+        section: biology
+        key: obiType
       ui:
         collapsible: true
         summaryField: "label"
@@ -112,6 +191,10 @@ layout:
     recipeCard:
       group: "details"
       order: 140
+      jsonLd:
+        target: data
+        section: operations
+        key: recipeCard
       ui:
         fieldType: "recipeCard"
         vocab: "reagents"

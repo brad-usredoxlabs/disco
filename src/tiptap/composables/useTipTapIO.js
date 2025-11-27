@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { parseFrontMatter, serializeFrontMatter } from '../../records/frontMatter'
 import { getParentPath, joinPath, normalizePath } from '../../fs/pathUtils'
+import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../../records/jsonLdFrontmatter'
 
 export function useTipTapIO(repo, validateRecord) {
   const loading = ref(false)
@@ -73,7 +74,13 @@ export function useTipTapIO(repo, validateRecord) {
     }
   }
 
-  async function saveDocument({ recordPath, metadata = {}, tiptapDoc, sidecarName = 'body.tiptap.json' }) {
+  async function saveDocument({
+    recordPath,
+    metadata = {},
+    tiptapDoc,
+    sidecarName = 'body.tiptap.json',
+    validationRecord = null
+  }) {
     if (!tiptapDoc) {
       throw new Error('Cannot save TipTap document without content.')
     }
@@ -87,7 +94,7 @@ export function useTipTapIO(repo, validateRecord) {
       const body = projectTipTapToMarkdown(tiptapDoc)
       const payload = { ...(metadata || {}) }
       if (validateRecord) {
-        validateRecord(payload)
+        validateRecord(validationRecord || payload)
       }
       await repo.writeFile(normalized, serializeFrontMatter(payload, body))
       await repo.writeFile(sidecarPath, JSON.stringify(tiptapDoc, null, 2))
@@ -105,21 +112,32 @@ export function useTipTapIO(repo, validateRecord) {
   }
 
   async function seedRecord(recordPath, sidecarPath, template = {}) {
-    const metadata = {
+    const baseMetadata = {
       state: 'draft',
       title: template.title || 'Untitled protocol',
       recordType: template.recordType || 'protocol',
       ...template
     }
-    if (validateRecord) {
-      validateRecord(metadata)
+    let frontMatterPayload
+    let inferredType = baseMetadata.recordType || 'record'
+    if (hasJsonLdShape(template)) {
+      frontMatterPayload = template
+      inferredType = template.metadata?.recordType || template.recordType || inferredType
+    } else {
+      const formData = isPlainObject(baseMetadata.formData) ? baseMetadata.formData : {}
+      frontMatterPayload = composeRecordFrontMatter(inferredType, baseMetadata, formData, {})
     }
-    const tiptapDoc = buildDocFromRecord(metadata, '')
+    const { metadata: hydratedMetadata, formData } = extractRecordData(inferredType, frontMatterPayload, {})
+    const schemaRecord = mergeMetadataAndFormData(hydratedMetadata, formData)
+    if (validateRecord) {
+      validateRecord(schemaRecord)
+    }
+    const tiptapDoc = buildDocFromRecord(schemaRecord, '')
     const body = projectTipTapToMarkdown(tiptapDoc)
-    await repo.writeFile(recordPath, serializeFrontMatter(metadata, body))
+    await repo.writeFile(recordPath, serializeFrontMatter(frontMatterPayload, body))
     await repo.writeFile(sidecarPath, JSON.stringify(tiptapDoc, null, 2))
     return {
-      metadata,
+      metadata: frontMatterPayload,
       body,
       tiptapDoc,
       recordPath,
@@ -135,6 +153,14 @@ export function useTipTapIO(repo, validateRecord) {
     buildDocFromRecord,
     projectTipTapToMarkdown
   }
+}
+
+function hasJsonLdShape(input = {}) {
+  return Boolean(input && typeof input === 'object' && (input.metadata || input.data))
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
 }
 
 export function buildDocFromRecord(metadata = {}, body = '') {

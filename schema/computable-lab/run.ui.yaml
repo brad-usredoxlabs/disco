@@ -1,52 +1,149 @@
 title: "Run UI Configuration"
 recordType: "run"
+
 layout:
   fields:
+    recordType:
+      group: "metadata"
+      order: 0
+      ui:
+        readOnly: true
+    state:
+      group: "metadata"
+      order: 5
+      ui:
+        component: select
+        options: ["draft", "in_review", "approved", "archived"]
+    recordId:
+      group: "metadata"
+      order: 8
+      ui:
+        readOnly: true
+    experimentShortSlug:
+      group: "metadata"
+      order: 9
+      ui:
+        readOnly: true
+    createdAt:
+      group: "metadata"
+      order: 10
+      ui:
+        readOnly: true
+    createdBy:
+      group: "metadata"
+      order: 12
+
     experimentId:
       group: "header"
-      order: 10
+      order: 20
+      jsonLd:
+        target: data
+        section: links
+        key: experiment
       ui:
         width: 6
     runId:
       group: "header"
-      order: 20
+      order: 30
+      jsonLd:
+        target: metadata
+        key: runId
       ui:
         width: 6
+    plateId:
+      group: "header"
+      order: 40
+      jsonLd:
+        target: data
+        section: operations
+        key: plateId
+      ui:
+        width: 6
+
     startedAt:
       group: "timeline"
-      order: 30
+      order: 50
+      jsonLd:
+        target: data
+        section: operations
+        key: startedAt
       ui:
         width: 6
     completedAt:
       group: "timeline"
-      order: 40
+      order: 60
+      jsonLd:
+        target: data
+        section: operations
+        key: completedAt
       ui:
         width: 6
+
     notes:
       group: "details"
-      order: 50
+      order: 70
+      jsonLd:
+        target: data
+        section: operations
+        key: notes
       ui:
         component: textarea
         props:
           rows: 4
     plateLayout:
       group: "details"
-      order: 60
+      order: 80
+      jsonLd:
+        target: data
+        section: operations
+        key: plateLayout
       ui:
         component: code
         language: yaml
-    dataFiles:
+    operator:
+      group: "details"
+      order: 90
+      jsonLd:
+        target: data
+        section: operations
+        key: operator
+      ui:
+        display: "table"
+
+    binaryDataFiles:
       group: "artifacts"
-      order: 70
+      order: 100
+      jsonLd:
+        target: data
+        section: links
+        key: binaryDataFiles
       ui:
         component: list
+
     assayType:
       group: "ontology"
-      order: 80
+      order: 110
+      jsonLd:
+        target: data
+        section: biology
+        key: assayType
       ui:
         summaryField: label
     outputType:
       group: "ontology"
-      order: 90
+      order: 120
+      jsonLd:
+        target: data
+        section: biology
+        key: outputType
+      ui:
+        summaryField: label
+    obiType:
+      group: "ontology"
+      order: 130
+      jsonLd:
+        target: data
+        section: biology
+        key: obiType
       ui:
         summaryField: label

@@ -29,6 +29,7 @@ metadataFields:
     - createdAt
     - createdBy
     - updatedAt
+    - recordId
   experiment:
     - id
     - recordType
@@ -38,6 +39,33 @@ metadataFields:
     - description
     - projectId
     - protocolId
+    - projectShortSlug
     - createdAt
     - createdBy
     - updatedAt
+    - recordId
+  run:
+    - id
+    - recordType
+    - state
+    - title
+    - shortSlug
+    - runId
+    - experimentId
+    - experimentShortSlug
+    - plateId
+    - createdAt
+    - createdBy
+    - updatedAt
+    - recordId
+  project:
+    - id
+    - recordType
+    - state
+    - title
+    - shortSlug
+    - identifier
+    - createdAt
+    - createdBy
+    - updatedAt
+    - recordId

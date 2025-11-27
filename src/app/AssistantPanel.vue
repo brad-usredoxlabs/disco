@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import YAML from 'yaml'
 import { useAssistantClient } from '../assistant/useAssistantClient'
+import { mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
 
 const props = defineProps({
   recordType: {
@@ -80,15 +81,17 @@ function buildContext(include = []) {
   const rawMetadata = props.metadata || {}
   const metadataOnly = { ...rawMetadata }
   const formData = metadataOnly.formData || {}
+  const flattened = mergeMetadataAndFormData(metadataOnly, formData)
   delete metadataOnly.formData
   const metadataYaml = YAML.stringify(metadataOnly || {}, { indent: 2 }).trim()
   const formYaml = YAML.stringify(formData || {}, { indent: 2 }).trim()
+  const flattenedYaml = YAML.stringify(flattened || {}, { indent: 2 }).trim()
 
   if (!include.length || include.includes('self')) {
     sections.push(
       `# Current ${props.recordType}\n\n## Metadata\n${metadataYaml || '{}'}\n\n## Form data\n${
         formYaml || '{}'
-      }`
+      }\n\n## JSON-LD snapshot\n${flattenedYaml || '{}'}` 
     )
   }
   if (include.includes('parents')) {

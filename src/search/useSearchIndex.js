@@ -1,48 +1,113 @@
 import { computed, ref, watch } from 'vue'
 
+const INDEX_MANIFEST_PATH = '/index/manifest.json'
+const SHARD_CACHE_KEY = 'disco-shard-cache'
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24 // 24 hours
+
 export function useSearchIndex(recordGraph) {
   const query = ref('')
   const results = ref([])
   const isIndexing = ref(false)
   const error = ref('')
   const index = ref([])
+  const source = ref('shards')
 
-  function getGraph() {
-    return recordGraph.graph?.value || recordGraph.graph || { nodes: [] }
+  async function loadManifest() {
+    try {
+      const response = await fetch(INDEX_MANIFEST_PATH, { cache: 'no-store' })
+      if (!response.ok) return null
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+
+  async function loadShards(manifest) {
+    if (!manifest?.files?.length) return []
+    const docs = []
+    for (const filename of manifest.files) {
+      try {
+        const response = await fetch(`/index/${filename}`, { cache: 'no-store' })
+        if (!response.ok) {
+          throw new Error(`Failed to load ${filename} (${response.status})`)
+        }
+        const payload = await response.json()
+        docs.push(...(payload.docs || []))
+      } catch (err) {
+        throw new Error(`Unable to load search shard ${filename}: ${err.message || err}`)
+      }
+    }
+    return docs
+  }
+
+  function applyDocs(docs, nextSource) {
+    index.value = docs.map((doc) => ({
+      id: doc.id,
+      path: doc.path,
+      title: doc.title || doc.id,
+      recordType: doc.recordType || '',
+      snippet: doc.snippet || '',
+      text: doc.text || ''
+    }))
+    source.value = nextSource
+    runSearch()
+  }
+
+  async function rebuildFromShards() {
+    const manifest = await loadManifest()
+    if (!manifest || !manifest.files?.length) {
+      throw new Error('No search shards available. Run npm run build:index.')
+    }
+    const docs = await loadShards(manifest)
+    saveShardCache(manifest, docs)
+    applyDocs(docs, 'shards')
+  }
+
+  function fallbackToGraph() {
+    const graphValue = recordGraph.graph?.value || recordGraph.graph || { nodes: [] }
+    const nodes = graphValue.nodes || []
+    index.value = nodes.map((node) => {
+      const textParts = [node.title || '', JSON.stringify(node.frontMatter || {}), node.markdown || '']
+      const text = textParts.join('\n').toLowerCase()
+      return {
+        id: node.id,
+        path: node.path,
+        title: node.title || node.id,
+        recordType: node.recordType,
+        snippet: (node.markdown || '').slice(0, 200),
+        text
+      }
+    })
+    source.value = 'graph'
+    runSearch()
+  }
+
+  function useCachedShards() {
+    const cached = loadShardCache()
+    if (!cached) return false
+    applyDocs(cached.docs || [], 'cache')
+    return true
   }
 
   async function rebuild() {
-    const graphValue = getGraph()
-    const nodes = graphValue.nodes || []
-    if (!nodes.length) {
-      index.value = []
-      results.value = []
-      return
-    }
     isIndexing.value = true
+    error.value = ''
     try {
-      index.value = nodes.map((node) => {
-        const textParts = [node.title || '', JSON.stringify(node.frontMatter || {}), node.markdown || '']
-        const text = textParts.join('\n').toLowerCase()
-        return {
-          id: node.id,
-          path: node.path,
-          title: node.title || node.id,
-          recordType: node.recordType,
-          snippet: (node.markdown || '').slice(0, 200),
-          text
-        }
-      })
-      try {
-        await window.localStorage.setItem('disco-search-index', JSON.stringify(index.value))
-      } catch (err) {
-        /* ignore */
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      if (offline && useCachedShards()) {
+        return
       }
+      await rebuildFromShards()
+      return
     } catch (err) {
-      error.value = err?.message || 'Unable to build search index.'
+      if (!useCachedShards()) {
+        error.value = err?.message || 'Unable to load search index from shards. Falling back to local graph.'
+        fallbackToGraph()
+      } else {
+        error.value = err?.message || 'Loaded cached search shards (offline).'
+      }
     } finally {
       isIndexing.value = false
-      runSearch()
     }
   }
 
@@ -67,17 +132,18 @@ export function useSearchIndex(recordGraph) {
     results.value = matches.slice(0, 50)
   }
 
-  watch(
-    () => recordGraph.graph?.value,
-    () => {
-      rebuild()
-    },
-    { immediate: true }
-  )
-
   watch(query, () => {
     runSearch()
   })
+
+  watch(
+    () => recordGraph.graph?.value,
+    () => {
+      if (source.value === 'graph') {
+        fallbackToGraph()
+      }
+    }
+  )
 
   const hasResults = computed(() => results.value.length > 0)
 
@@ -90,6 +156,38 @@ export function useSearchIndex(recordGraph) {
     isIndexing,
     error,
     hasResults,
-    rebuild
+    rebuild,
+    source
+  }
+}
+
+function saveShardCache(manifest, docs) {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    const payload = {
+      savedAt: Date.now(),
+      manifest,
+      docs
+    }
+    window.localStorage?.setItem(SHARD_CACHE_KEY, JSON.stringify(payload))
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadShardCache() {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null
+    const raw = window.localStorage.getItem(SHARD_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed?.docs || !parsed.savedAt) return null
+    if (Date.now() - parsed.savedAt > CACHE_TTL_MS) {
+      window.localStorage.removeItem(SHARD_CACHE_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
   }
 }
