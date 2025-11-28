@@ -96,6 +96,20 @@ export const FieldBlock = Node.create({
         renderHTML: (attributes) => ({
           'data-columns': JSON.stringify(attributes.columns || [])
         })
+      },
+      component: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-component') || null,
+        renderHTML: (attributes) => ({
+          'data-component': attributes.component
+        })
+      },
+      valuePath: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-value-path') || null,
+        renderHTML: (attributes) => ({
+          'data-value-path': attributes.valuePath
+        })
       }
     }
   },

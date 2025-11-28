@@ -45,6 +45,9 @@
 
     <div v-else class="editor-grid">
       <section class="tiptap-column tiptap-column--full">
+        <p v-if="generatedBodyHint" class="generated-hint">
+          {{ generatedBodyHint }}
+        </p>
         <TipTapEditor v-if="tiptapDoc" v-model="tiptapDoc" :editable="!effectiveReadOnly" />
         <p v-else class="placeholder">No document content yet.</p>
       </section>
@@ -104,6 +107,10 @@ const props = defineProps({
     default: null
   },
   schemaBundle: {
+    type: Object,
+    default: () => ({})
+  },
+  projectContextOverrides: {
     type: Object,
     default: () => ({})
   }
@@ -171,6 +178,12 @@ const metadataFieldSet = computed(() => new Set(metadataDescriptors.value.map((d
 const errorMessage = computed(() => error.value || '')
 const isLoading = computed(() => loading.value || isHydrating.value)
 const displayTitle = computed(() => metadata.value?.title || metadata.value?.id || 'Untitled record')
+const generatedBodyHint = computed(() => {
+  const supported = props.schemaBundle?.manifest?.tiptap?.recordTypes || []
+  if (!activeRecordType.value) return ''
+  if (!supported.includes(activeRecordType.value)) return ''
+  return 'Markdown body is generated from these fields and will be regenerated on save.'
+})
 
 const formState = ref({})
 const metadataDirty = ref(false)
@@ -246,7 +259,12 @@ watch(
     if (isHydrating.value) return
     if (isSyncingFromMetadata.value) return
     docDirty.value = true
-    const updates = extractFieldBlockValues(doc, descriptorMap.value)
+    const updates = extractFieldBlockValues(
+      doc,
+      descriptorMap.value,
+      metadataFieldSet.value,
+      { metadata: metadata.value, formData: formState.value }
+    )
     if (Object.keys(updates).length) {
       const metadataUpdates = {}
       const bodyUpdates = {}
@@ -478,16 +496,18 @@ function createFieldBlockNode(descriptor, value, errors = [], section = 'metadat
       placeholder,
       section,
       enumOptions,
-      value: formatFieldValue(value, schema, descriptor.fieldType),
+      value: formatFieldValue(value, schema, descriptor.fieldType, descriptor.component, descriptor.valuePath, descriptor.config),
       fieldType: descriptor.fieldType || null,
       vocab: descriptor.vocab || null,
       columns: descriptor.columns || [],
+      component: descriptor.component || null,
+      valuePath: descriptor.valuePath || null,
       errors
     }
   }
 }
 
-function extractFieldBlockValues(doc, descriptorMap) {
+function extractFieldBlockValues(doc, descriptorMap, metadataFieldSet, currentValues = {}) {
   const updates = {}
   if (!doc || !Array.isArray(doc.content)) {
     return updates
@@ -497,11 +517,18 @@ function extractFieldBlockValues(doc, descriptorMap) {
     const key = node.attrs?.fieldKey
     if (!key) return
     const descriptor = descriptorMap.get(key)
+    const isMetadataField = metadataFieldSet?.has(key)
+    const baseValue = isMetadataField ? currentValues.metadata?.[key] : currentValues.formData?.[key]
     updates[key] = coerceFieldValue(
       node.attrs?.value,
       descriptor?.schema,
       descriptor?.fieldType,
-      { columns: descriptor?.columns || [] }
+      { columns: descriptor?.columns || [] },
+      {
+        component: node.attrs?.component || descriptor?.component,
+        valuePath: node.attrs?.valuePath || descriptor?.valuePath,
+        baseValue
+      }
     )
   })
   return updates
@@ -537,7 +564,20 @@ function copyToClipboard(value) {
 }
 
 
-function formatFieldValue(value, schema = {}, fieldType, config = {}) {
+function formatFieldValue(value, schema = {}, fieldType, component, valuePath, config = {}) {
+  if (component === 'BiologyEntitiesField') {
+    if (Array.isArray(value)) {
+      return normalizeBiologyEntityList(value)
+    }
+    if (valuePath && value && typeof value === 'object') {
+      const extracted = readPath(value, valuePath)
+      return normalizeBiologyEntityList(extracted)
+    }
+    if (value && typeof value === 'object' && Array.isArray(value.entities)) {
+      return normalizeBiologyEntityList(value.entities)
+    }
+    return []
+  }
   if (fieldType === 'ontology') {
     if (Array.isArray(value)) {
       return value.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
@@ -570,7 +610,17 @@ function formatFieldValue(value, schema = {}, fieldType, config = {}) {
   return String(value)
 }
 
-function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
+function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}, options = {}) {
+  if (options.component === 'BiologyEntitiesField') {
+    const normalized = normalizeBiologyEntityList(rawValue)
+    const base = isPlainObject(options.baseValue) ? { ...options.baseValue } : {}
+    if (options.valuePath) {
+      writePath(base, options.valuePath, normalized)
+    } else {
+      base.entities = normalized
+    }
+    return base
+  }
   if (fieldType === 'ontology') {
     if (Array.isArray(rawValue)) {
       const list = rawValue.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
@@ -609,6 +659,50 @@ function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
   }
   if (rawValue === undefined || rawValue === null) return undefined
   return rawValue
+}
+
+function normalizeBiologyEntityList(list) {
+  if (!Array.isArray(list)) return []
+  return list.map((entry) => ({
+    domain: entry?.domain || '',
+    role: entry?.role || '',
+    ontology: entry?.ontology || '',
+    '@id': entry?.['@id'] || '',
+    label: entry?.label || ''
+  }))
+}
+
+function readPath(target, path) {
+  if (!target || typeof target !== 'object' || !path) return undefined
+  const segments = path.split('.')
+  let current = target
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object') return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function writePath(target, path, value) {
+  if (!target || typeof target !== 'object' || !path) return
+  const segments = path.split('.')
+  if (segments.length === 1) {
+    target[segments[0]] = value
+    return
+  }
+  let current = target
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const segment = segments[i]
+    if (!current[segment] || typeof current[segment] !== 'object') {
+      current[segment] = {}
+    }
+    current = current[segment]
+  }
+  current[segments.at(-1)] = value
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
 }
 
 </script>
@@ -720,6 +814,12 @@ function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}) {
 .tiptap-column--full {
   min-height: 60vh;
   padding-bottom: 6rem;
+}
+
+.generated-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: #475569;
 }
 
 .placeholder {

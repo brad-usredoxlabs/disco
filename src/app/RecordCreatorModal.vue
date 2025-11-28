@@ -6,6 +6,7 @@ import { generateMarkdownView, buildBodyDefaults } from '../records/markdownView
 import { previewId, commitId } from '../records/idGenerator'
 import { serializeFrontMatter } from '../records/frontMatter'
 import { composeRecordFrontMatter } from '../records/jsonLdFrontmatter'
+import { buildRecordContextOverrides, mergeContextOverrides } from '../records/biologyInheritance'
 
 const props = defineProps({
   open: {
@@ -52,6 +53,21 @@ const namingRules = computed(() => bundle.value?.naming || {})
 const relationships = computed(() => bundle.value?.relationships || { recordTypes: {} })
 const workflowMachines = computed(() => props.workflowLoader.workflowBundle?.value?.machines || {})
 const graphData = computed(() => props.recordGraph?.graph?.value || { nodes: [], nodesById: {} })
+const creatorContextOverrides = computed(() => {
+  const nodesById = graphData.value?.nodesById || {}
+  let overrides = {}
+  parentDefinitions.value.forEach((parent) => {
+    const parentId = state.metadata?.[parent.field]
+    if (!parentId) return
+    const parentNode = nodesById[parentId]
+    if (!parentNode) return
+    const parentOverride = buildRecordContextOverrides(parentNode)
+    if (parentOverride && Object.keys(parentOverride).length) {
+      overrides = mergeContextOverrides(overrides, parentOverride)
+    }
+  })
+  return overrides
+})
 const tiptapRecordTypes = computed(() => bundle.value?.manifest?.tiptap?.recordTypes || [])
 
 const loaderStatus = computed(() => props.schemaLoader?.status?.value || 'idle')
@@ -198,7 +214,8 @@ async function handleCreate() {
       state.recordType,
       state.metadata,
       state.metadata.formData || {},
-      bundle.value || {}
+      bundle.value || {},
+      creatorContextOverrides.value || {}
     )
     const content = serializeFrontMatter(frontMatterPayload, markdownView)
     await props.repo.writeFile(state.filePath, content)

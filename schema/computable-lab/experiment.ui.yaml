@@ -198,3 +198,14 @@ layout:
       ui:
         fieldType: "recipeCard"
         vocab: "reagents"
+    biology:
+      group: "biology"
+      order: 150
+      ui:
+        component: "BiologyEntitiesField"
+        valuePath: "entities"
+        helpText: "Attach experiment-specific biological entities (cells, tissues, pathways, etc.)."
+      jsonLd:
+        target: data
+        section: biology
+        key: entities

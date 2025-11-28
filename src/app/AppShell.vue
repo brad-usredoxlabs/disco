@@ -10,6 +10,7 @@ import SchemaBundlePanel from './SchemaBundlePanel.vue'
 import RecordGraphPanel from './RecordGraphPanel.vue'
 import RecordSearchPanel from './RecordSearchPanel.vue'
 import RecordCreatorModal from './RecordCreatorModal.vue'
+import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
 import { useSchemaBundle } from '../schema-bundles/useSchemaBundle'
@@ -66,6 +67,11 @@ const tiptapBundleMismatch = computed(() => {
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
 )
+const tiptapGraphNode = computed(() => {
+  if (!tiptapTarget.value?.path) return null
+  return recordGraph.graph?.value?.nodesByPath?.[tiptapTarget.value.path] || null
+})
+const tiptapContextOverrides = computed(() => buildRecordContextOverrides(tiptapGraphNode.value))
 
 watch(
   () => tiptapTarget.value?.bundle,
@@ -121,6 +127,15 @@ watch(
       showPrompt.value = false
     } else {
       selectedNode.value = null
+    }
+  }
+)
+
+watch(
+  () => offlineStatus.isOnline.value,
+  (online) => {
+    if (online) {
+      searchIndex?.rebuild?.()
     }
   }
 )
@@ -239,6 +254,7 @@ function handleStandaloneSaved() {
           :workflow-definition="tiptapWorkflowDefinition"
           :schema-bundle="schemaLoader.schemaBundle?.value || {}"
           :validate-record="recordValidator.validate"
+          :project-context-overrides="tiptapContextOverrides.value || {}"
           @close="clearTiptapTarget"
           @saved="handleStandaloneSaved"
         />

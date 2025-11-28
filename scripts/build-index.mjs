@@ -3,7 +3,6 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { promises as fs } from 'fs'
-import YAML from 'yaml'
 import { parseFrontMatter } from '../src/records/frontMatter.js'
 import {
   extractRecordData,
@@ -11,10 +10,10 @@ import {
   mergeMetadataAndFormData
 } from '../src/records/jsonLdFrontmatter.js'
 import { buildZodSchema } from '../src/records/zodBuilder.js'
+import { loadSchemaBundle, readYaml, projectRoot } from './lib/loadSchemaBundle.mjs'
+import { flattenFrontMatter } from './lib/jsonld.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..')
-
 const DEFAULT_BUNDLE = process.env.SCHEMA_BUNDLE || 'computable-lab'
 const MAX_DOCS_PER_SHARD = Number(process.env.MAX_DOCS_PER_SHARD || 500)
 
@@ -70,6 +69,12 @@ async function processRecord({ filePath, relativePath, inferredType, bundle, val
 
   const { metadata, formData } = extractRecordData(recordType, frontMatter, bundle)
   const schemaPayload = mergeMetadataAndFormData(metadata, formData)
+  enforceBiologyRequirements({
+    recordType,
+    schemaPayload,
+    relativePath,
+    bundle
+  })
   if (validator) {
     const schemaDef = bundle.recordSchemas?.[recordType]
     const validationInput = stripUnknownFields(schemaPayload, schemaDef)
@@ -84,7 +89,11 @@ async function processRecord({ filePath, relativePath, inferredType, bundle, val
   }
 
   const normalizedFrontMatter = composeRecordFrontMatter(recordType, schemaPayload, formData, bundle)
-  const jsonLdNode = mergeJsonLdNode(normalizedFrontMatter)
+  const jsonLdNode = flattenFrontMatter(normalizedFrontMatter)
+  if (!jsonLdNode['@id']) {
+    console.warn(`[build-index] Skipping ${relativePath} because @id is missing after normalization.`)
+    return null
+  }
   const indexDoc = buildIndexDoc({
     jsonLdNode,
     recordType,
@@ -95,22 +104,34 @@ async function processRecord({ filePath, relativePath, inferredType, bundle, val
   return indexDoc
 }
 
-function mergeJsonLdNode(frontMatter) {
-  const metadata = frontMatter.metadata || {}
-  const dataSections = frontMatter.data || {}
-  const node = { ...metadata }
-  Object.values(dataSections).forEach((section) => {
-    if (!section || typeof section !== 'object') return
-    Object.entries(section).forEach(([key, value]) => {
-      if (value === undefined) return
-      node[key] = value
-    })
-  })
-  return node
+function enforceBiologyRequirements({ recordType, schemaPayload, relativePath, bundle }) {
+  const requirements = bundle?.manifest?.biologyRequirements || {}
+  if (requirements.requireProjectEntities && recordType === 'project') {
+    const entities = schemaPayload?.biology?.entities
+    if (!Array.isArray(entities) || entities.length === 0) {
+      throw new Error(
+        `[build-index] ${relativePath} is missing data.biology.entities; project records must declare at least one biological entity.`
+      )
+    }
+  }
 }
 
 function buildIndexDoc({ jsonLdNode, recordType, schemaPayload, relativePath, body }) {
   const id = jsonLdNode['@id'] || schemaPayload.id || schemaPayload.recordId || `${recordType}:${relativePath}`
+  const biologyEntities = Array.isArray(jsonLdNode.biologyEntities) ? jsonLdNode.biologyEntities : []
+  const biologyDomains = biologyEntities.map((entity) => entity?.domain || '').filter(Boolean)
+  const biologyRoles = biologyEntities.map((entity) => entity?.role || '').filter(Boolean)
+  const biologyOntologies = biologyEntities.map((entity) => entity?.ontology || '').filter(Boolean)
+  const biologyIds = biologyEntities.map((entity) => entity?.['@id'] || entity?.id || '').filter(Boolean)
+  const biologyLabels = biologyEntities.map((entity) => entity?.label || '').filter(Boolean)
+  const biologyText = biologyEntities
+    .map((entity) =>
+      [entity?.label, entity?.domain, entity?.role, entity?.['@id'] || entity?.id]
+        .filter((part) => typeof part === 'string' && part.trim().length)
+        .join(' ')
+    )
+    .filter(Boolean)
+    .join(' ')
   const doc = {
     id,
     recordType,
@@ -133,6 +154,12 @@ function buildIndexDoc({ jsonLdNode, recordType, schemaPayload, relativePath, bo
     pathwayIds: extractIds(jsonLdNode.pathways),
     pathwayLabels: extractLabels(jsonLdNode.pathways),
     binaryDataFileIds: extractBinaryIds(jsonLdNode.binaryDataFiles),
+    biologyEntitiesDomain: biologyDomains,
+    biologyEntitiesRole: biologyRoles,
+    biologyEntitiesOntology: biologyOntologies,
+    biologyEntitiesId: biologyIds,
+    biologyEntitiesLabel: biologyLabels,
+    biologyEntitiesText: biologyText,
     path: relativePath,
     snippet: (body || '').slice(0, 240),
     text: buildSearchText(jsonLdNode, body)
@@ -200,59 +227,6 @@ function buildValidators(recordSchemas) {
     }
   }
   return validators
-}
-
-async function loadSchemaBundle(bundleName) {
-  const manifestPath = path.join(projectRoot, 'schema', bundleName, 'manifest.yaml')
-  const manifest = await readYaml(manifestPath)
-  if (!manifest) {
-    throw new Error(`Manifest missing for bundle "${bundleName}".`)
-  }
-  const recordSchemas = await loadYamlMap(manifest.recordSchemas || [], bundleName, 'schema')
-  const uiConfigs = await loadYamlMap(manifest.uiConfigs || [], bundleName, 'schema')
-  const metadataFields = buildMetadataFieldMap(manifest.metadataFields || {}, recordSchemas)
-  const bundle = {
-    manifest,
-    recordSchemas,
-    uiConfigs,
-    metadataFields
-  }
-  return bundle
-}
-
-async function loadYamlMap(files, bundleName, baseDir) {
-  const map = {}
-  for (const filename of files) {
-    const recordType = deriveRecordType(filename)
-    const filePath = path.join(projectRoot, baseDir, bundleName, filename)
-    const yaml = await readYaml(filePath)
-    if (yaml) {
-      map[recordType] = yaml
-    }
-  }
-  return map
-}
-
-function deriveRecordType(filename) {
-  return filename.replace(/\.schema\.ya?ml$/i, '').replace(/\.ui\.ya?ml$/i, '').replace(/\.ya?ml$/i, '')
-}
-
-function buildMetadataFieldMap(config = {}, recordSchemas = {}) {
-  const map = {}
-  const defaultFields = config.default || []
-  Object.keys(recordSchemas).forEach((recordType) => {
-    map[recordType] = config[recordType] || defaultFields
-  })
-  return map
-}
-
-async function readYaml(filePath) {
-  try {
-    const text = await fs.readFile(filePath, 'utf8')
-    return YAML.parse(text)
-  } catch (err) {
-    return null
-  }
 }
 
 async function collectMarkdownFiles(dir) {

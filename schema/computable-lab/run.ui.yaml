@@ -147,3 +147,14 @@ layout:
         key: obiType
       ui:
         summaryField: label
+    biology:
+      group: "biology"
+      order: 140
+      ui:
+        component: "BiologyEntitiesField"
+        valuePath: "entities"
+        helpText: "Override experiment biology when this run has unique entities."
+      jsonLd:
+        target: data
+        section: biology
+        key: entities

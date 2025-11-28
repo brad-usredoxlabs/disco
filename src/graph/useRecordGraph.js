@@ -1,4 +1,6 @@
 import { ref, watch } from 'vue'
+import { collectRecordFiles } from './collectRecordFiles'
+import { buildGraphSnapshot } from './graphBuilder'
 import { buildRecordGraph } from './buildRecordGraph'
 
 export function useRecordGraph(repoConnection, schemaLoader) {
@@ -6,6 +8,50 @@ export function useRecordGraph(repoConnection, schemaLoader) {
   const error = ref('')
   const graph = ref({ nodes: [], nodesById: {}, nodesByPath: {}, stats: { total: 0 } })
   let rebuildTimer = null
+  let worker = null
+  const workerQueue = new Map()
+
+  function supportsWorker() {
+    return typeof window !== 'undefined' && typeof window.Worker !== 'undefined'
+  }
+
+  function ensureWorker() {
+    if (!supportsWorker()) return null
+    if (worker) return worker
+    worker = new Worker(new URL('../workers/recordGraph.worker.js', import.meta.url), { type: 'module' })
+    worker.addEventListener('message', (event) => {
+      const { requestId, result, error: workerError } = event.data || {}
+      if (!requestId) return
+      const resolver = workerQueue.get(requestId)
+      if (!resolver) return
+      workerQueue.delete(requestId)
+      if (workerError) {
+        resolver.reject(new Error(workerError))
+      } else {
+        resolver.resolve(result)
+      }
+    })
+    worker.addEventListener('error', (err) => {
+      console.warn('[RecordGraphWorker] error', err)
+      workerQueue.forEach((resolver) => resolver.reject(err))
+      workerQueue.clear()
+      worker.terminate()
+      worker = null
+    })
+    return worker
+  }
+
+  function buildGraphViaWorker(files, schemaBundle) {
+    const activeWorker = ensureWorker()
+    if (!activeWorker) {
+      return Promise.reject(new Error('worker not supported'))
+    }
+    const requestId = `${Date.now()}-${Math.random()}`
+    return new Promise((resolve, reject) => {
+      workerQueue.set(requestId, { resolve, reject })
+      activeWorker.postMessage({ requestId, files, schemaBundle })
+    })
+  }
 
   async function rebuild() {
     if (!repoConnection.directoryHandle.value || !schemaLoader.schemaBundle?.value) {
@@ -16,7 +62,22 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     status.value = 'building'
     error.value = ''
     try {
-      graph.value = await buildRecordGraph(repoConnection, schemaLoader.schemaBundle.value)
+      const currentBundle = schemaLoader.schemaBundle.value
+      const files = await collectRecordFiles(repoConnection, currentBundle.naming || {})
+      let result
+      if (files.length && supportsWorker()) {
+        try {
+          result = await buildGraphViaWorker(files, currentBundle)
+        } catch (workerErr) {
+          console.warn('[RecordGraph] worker failed, falling back.', workerErr)
+          result = buildGraphSnapshot(files, currentBundle)
+        }
+      } else if (files.length) {
+        result = buildGraphSnapshot(files, currentBundle)
+      } else {
+        result = await buildRecordGraph(repoConnection, currentBundle)
+      }
+      graph.value = result
       status.value = 'ready'
     } catch (err) {
       console.error('[RecordGraph] Failed to build graph', err)

@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   search: {
     type: Object,
@@ -8,12 +10,32 @@ const props = defineProps({
 
 const emit = defineEmits(['open'])
 
+const FILTER_FIELDS = [
+  { key: 'recordType', label: 'Record type', placeholder: 'All record types' },
+  { key: 'taxonId', label: 'Taxon', placeholder: 'All taxa' },
+  { key: 'anatomicalContextId', label: 'Tissue', placeholder: 'All tissues' },
+  { key: 'pathwayId', label: 'Pathway', placeholder: 'All pathways' },
+  { key: 'operatorId', label: 'Operator', placeholder: 'All operators' },
+  { key: 'plateId', label: 'Plate', placeholder: 'All plates' }
+]
+
+const usingGraphFallback = computed(() => props.search.source?.value === 'graph')
+const usingCachedShards = computed(() => props.search.source?.value === 'cache')
+
 function handleInput(event) {
   props.search.setQuery(event.target.value)
 }
 
 function openResult(path) {
   emit('open', path)
+}
+
+function handleFilterChange(key, event) {
+  props.search.setFilter?.(key, event.target.value)
+}
+
+function clearFilters() {
+  props.search.clearFilters?.()
 }
 </script>
 
@@ -34,6 +56,38 @@ function openResult(path) {
       :value="search.query.value"
       @input="handleInput"
     />
+
+    <p v-if="usingGraphFallback" class="status status-muted">
+      Using local graph fallback. Re-run <code>npm run build:index</code> and click
+      <button class="text-button" type="button" @click="search.rebuild">refresh index</button>
+      once shards are available.
+    </p>
+    <p v-else-if="usingCachedShards" class="status status-muted">
+      Serving cached shards (offline). Refresh when connectivity returns.
+    </p>
+
+    <div class="filters-grid">
+      <label v-for="filter in FILTER_FIELDS" :key="filter.key">
+        <span>{{ filter.label }}</span>
+        <select
+          :value="props.search.filters.value?.[filter.key] || ''"
+          @change="(event) => handleFilterChange(filter.key, event)"
+        >
+          <option value="">{{ filter.placeholder }}</option>
+          <option
+            v-for="option in props.search.facetOptions.value?.[filter.key] || []"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }} ({{ option.count }})
+          </option>
+        </select>
+      </label>
+    </div>
+
+    <div v-if="props.search.hasActiveFilters.value" class="filter-actions">
+      <button class="text-button" type="button" @click="clearFilters">Clear filters</button>
+    </div>
 
     <p v-if="search.error.value" class="status status-error">{{ search.error.value }}</p>
     <p v-else-if="search.query.value && !search.results.value.length" class="status status-muted">No matches yet.</p>
@@ -68,6 +122,34 @@ function openResult(path) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.filters-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.filters-grid select {
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.filter-actions {
+  text-align: right;
+  margin-bottom: 0.5rem;
 }
 
 .search-results li {

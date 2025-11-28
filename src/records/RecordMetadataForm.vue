@@ -3,6 +3,7 @@ import { computed, reactive, watch } from 'vue'
 import RecipeCardField from '../tiptap/nodes/RecipeCardField.vue'
 import OntologyListField from '../tiptap/nodes/OntologyListField.vue'
 import OntologyFieldInput from '../tiptap/nodes/OntologyFieldInput.vue'
+import BiologyEntitiesField from '../components/fields/BiologyEntitiesField.vue'
 
 const props = defineProps({
   schema: {
@@ -20,6 +21,10 @@ const props = defineProps({
   readOnly: {
     type: Boolean,
     default: false
+  },
+  contextOverrides: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -42,8 +47,7 @@ watch(
 )
 
 function updateField(field, value) {
-  localState[field] = value
-  emit('update:modelValue', { ...localState })
+  setFieldValue(field, value)
 }
 
 const orderedFields = computed(() => {
@@ -62,7 +66,7 @@ const orderedFields = computed(() => {
 })
 
 function getFieldSchema(field) {
-  return props.schema?.properties?.[field] || {}
+  return resolveSchemaPath(field)
 }
 
 function getFieldConfig(field) {
@@ -71,9 +75,115 @@ function getFieldConfig(field) {
   return layoutField.ui || layoutField
 }
 
+function getFieldComponent(field) {
+  return getFieldConfig(field).component || null
+}
+
+function getFieldValuePath(field) {
+  return getFieldConfig(field).valuePath || null
+}
+
 function getFieldType(field) {
   const config = getFieldConfig(field)
   return config.fieldType || null
+}
+
+function isDataField(field) {
+  const layoutField = props.uiConfig?.layout?.fields?.[field]
+  if (layoutField?.jsonLd?.target === 'data') return true
+  return false
+}
+
+function ensureFormData() {
+  if (!localState.formData || typeof localState.formData !== 'object') {
+    localState.formData = {}
+  }
+  return localState.formData
+}
+
+function getFieldValue(field) {
+  const target = isDataField(field) ? ensureFormData() : localState
+  return target[field]
+}
+
+function getComponentValue(field) {
+  const base = getFieldValue(field)
+  const valuePath = getFieldValuePath(field)
+  if (valuePath) {
+    return readValueAtPath(base, valuePath)
+  }
+  return base
+}
+
+function setFieldValue(field, value) {
+  const target = isDataField(field) ? ensureFormData() : localState
+  target[field] = value
+  emit('update:modelValue', { ...localState })
+}
+
+function readValueAtPath(source, path) {
+  if (!path) return source
+  if (!source || typeof source !== 'object') return undefined
+  const segments = path.split('.')
+  let current = source
+  for (const segment of segments) {
+    if (current === undefined || current === null) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function writeValueAtPath(target, path, value) {
+  if (!path) return
+  const segments = path.split('.')
+  let current = target
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index]
+    if (!isPlainObject(current[segment])) {
+      current[segment] = {}
+    }
+    current = current[segment]
+  }
+  current[segments.at(-1)] = value
+}
+
+function resolveSchemaPath(field) {
+  if (!field || !props.schema) return {}
+  const segments = field.split('.')
+  let current = props.schema
+  for (const segment of segments) {
+    if (!current) return {}
+    const next =
+      current.properties?.[segment] ||
+      current?.items?.properties?.[segment] ||
+      current?.items
+    if (!next) return {}
+    current = next
+  }
+  return current
+}
+
+function updateBiologyEntities(field, entities) {
+  const existing = getFieldValue(field)
+  const base = isPlainObject(existing) ? { ...existing } : {}
+  const valuePath = getFieldValuePath(field)
+  if (valuePath) {
+    writeValueAtPath(base, valuePath, entities)
+  } else {
+    base.entities = entities
+  }
+  setFieldValue(field, base)
+}
+
+function getInheritedEntities(field) {
+  if (getFieldComponent(field) === 'BiologyEntitiesField') {
+    return props.contextOverrides?.biology?.entities || []
+  }
+  return []
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function inputTypeFor(fieldSchema) {
@@ -156,10 +266,20 @@ function parseValue(fieldSchema, rawValue, originalValue) {
           @update:value="(val) => updateField(field, val)"
         />
       </template>
+      <template v-else-if="getFieldComponent(field) === 'BiologyEntitiesField'">
+        <BiologyEntitiesField
+          :value="getComponentValue(field) || []"
+          :inherited="getInheritedEntities(field)"
+          :label="getFieldConfig(field).label || field"
+          :help-text="getFieldConfig(field).helpText || ''"
+          :read-only="props.readOnly"
+          @update:value="(val) => updateBiologyEntities(field, val)"
+        />
+      </template>
       <template
         v-else-if="
           getFieldSchema(field).type === 'array' ||
-          (typeof localState[field] === 'object' &&
+          (typeof getFieldValue(field) === 'object' &&
             getFieldSchema(field).type !== 'boolean' &&
             getFieldSchema(field).type !== 'number')
         "
@@ -167,10 +287,10 @@ function parseValue(fieldSchema, rawValue, originalValue) {
         <textarea
           :id="`field-${field}`"
           class="metadata-textarea"
-          :value="renderValue(getFieldSchema(field), localState[field])"
+          :value="renderValue(getFieldSchema(field), getFieldValue(field))"
           :readonly="props.readOnly"
           :disabled="props.readOnly"
-          @input="(event) => updateField(field, parseValue(getFieldSchema(field), event.target.value, localState[field]))"
+          @input="(event) => updateField(field, parseValue(getFieldSchema(field), event.target.value, getFieldValue(field)))"
         ></textarea>
       </template>
       <template v-else-if="getFieldSchema(field).type === 'boolean'">
@@ -187,10 +307,10 @@ function parseValue(fieldSchema, rawValue, originalValue) {
           :id="`field-${field}`"
           class="metadata-input"
           :type="inputTypeFor(getFieldSchema(field))"
-          :value="renderValue(getFieldSchema(field), localState[field])"
+          :value="renderValue(getFieldSchema(field), getFieldValue(field))"
           :readonly="props.readOnly"
           :disabled="props.readOnly"
-          @input="(event) => updateField(field, parseValue(getFieldSchema(field), event.target.value, localState[field]))"
+          @input="(event) => updateField(field, parseValue(getFieldSchema(field), event.target.value, getFieldValue(field)))"
         />
       </template>
     </div>

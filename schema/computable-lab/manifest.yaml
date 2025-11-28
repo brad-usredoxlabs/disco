@@ -16,6 +16,8 @@ tiptap:
     - project
     - experiment
     - run
+biologyRequirements:
+  requireProjectEntities: true
 vocabSchemas:
   - reagents.yaml
 metadataFields:

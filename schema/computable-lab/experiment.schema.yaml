@@ -188,3 +188,9 @@ properties:
           type: string
           description: "Numbered preparation steps."
     required: []
+  biology:
+    type: object
+    properties:
+      entities:
+        $ref: "./datatypes/biology-entity.schema.yaml#/definitions/BiologyEntityList"
+    additionalProperties: false

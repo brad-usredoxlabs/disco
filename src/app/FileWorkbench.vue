@@ -2,11 +2,11 @@
 import { computed, ref, toRef, watch, nextTick } from 'vue'
 import RecordMetadataForm from '../records/RecordMetadataForm.vue'
 import AssistantPanel from './AssistantPanel.vue'
- 
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { generateMarkdownView } from '../records/markdownView'
 import { useRecordValidator } from '../records/recordValidator'
 import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
+import { buildRecordContextOverrides } from '../records/biologyInheritance'
 
 const props = defineProps({
   repo: {
@@ -89,12 +89,17 @@ const workflowState = computed(() => {
 const workflowStateMeta = computed(() => workflowConfig.value?.states?.[workflowState.value]?.meta || {})
 const workflowDescription = computed(() => workflowStateMeta.value?.description || '')
 const isImmutable = computed(() => !!workflowStateMeta.value?.immutable)
-const graphData = computed(() => (props.recordGraph?.value ? props.recordGraph.value : props.recordGraph))
+const graphData = computed(() => {
+  if (props.recordGraph?.graph?.value) return props.recordGraph.graph.value
+  if (props.recordGraph?.value) return props.recordGraph.value
+  return props.recordGraph || {}
+})
 const graphNode = computed(() => {
   const path = filePath.value
   if (!path) return null
   return graphData.value?.nodesByPath?.[path] || null
 })
+const recordContextOverrides = computed(() => buildRecordContextOverrides(graphNode.value))
 const derivedIri = computed(() => recordMetadata.value?.['@id'] || recordMetadata.value?.recordId || '')
 const derivedTypes = computed(() => {
   const value = recordMetadata.value?.['@type']
@@ -273,7 +278,8 @@ async function saveFile() {
         recordType.value,
         recordMetadata.value,
         recordMetadata.value.formData || {},
-        schemaBundle.value || {}
+        schemaBundle.value || {},
+        recordContextOverrides.value || {}
       )
       const markdownView = generateMarkdownView(
         recordType.value,
@@ -288,7 +294,8 @@ async function saveFile() {
         recordType.value,
         recordMetadata.value,
         recordMetadata.value.formData || {},
-        schemaBundle.value || {}
+        schemaBundle.value || {},
+        recordContextOverrides.value || {}
       )
       payload = serializeFrontMatter(frontMatterPayload, recordBody.value)
     } else {
@@ -334,7 +341,8 @@ async function regenerateMarkdown() {
       recordType.value,
       recordMetadata.value,
       recordMetadata.value.formData || {},
-      schemaBundle.value || {}
+      schemaBundle.value || {},
+      recordContextOverrides.value || {}
     )
     const markdownView = generateMarkdownView(
       recordType.value,
@@ -772,6 +780,7 @@ function openTipTapEditor() {
       :metadata-fields="metadataFieldList"
       :graph-node="graphNode"
       :assistant-config="assistantDefinition"
+      :validate-record="validator.validate"
       @apply-metadata="applyAssistantMetadata"
       @apply-formdata="applyAssistantFormData"
     />
@@ -788,6 +797,7 @@ function openTipTapEditor() {
           :schema="activeSchema"
           :ui-config="activeUiConfig"
           :read-only="isImmutable"
+          :context-overrides="recordContextOverrides.value || {}"
           v-model="metadataModel"
         />
         <div v-if="derivedIri || derivedTypes.length" class="jsonld-summary">

@@ -124,3 +124,14 @@ layout:
       ui:
         display: "table"
         description: "Optional prefix overrides merged into child records"
+    biology:
+      group: "biology"
+      order: 130
+      ui:
+        component: "BiologyEntitiesField"
+        valuePath: "entities"
+        helpText: "Describe default biological entities (taxon, tissue, pathways, etc.). Child records inherit these unless overridden."
+      jsonLd:
+        target: data
+        section: biology
+        key: entities

@@ -5,6 +5,7 @@ import {
   normalizeOntologyValue,
   normalizeRecipeValue
 } from './fieldNormalization.js'
+import { mergeContextOverrides } from './biologyInheritance.js'
 
 export const DEFAULT_JSON_LD_CONTEXT = Object.freeze({
   ex: 'https://example.org/schema/',
@@ -13,10 +14,23 @@ export const DEFAULT_JSON_LD_CONTEXT = Object.freeze({
   uberon: 'http://purl.obolibrary.org/obo/UBERON_',
   cl: 'http://purl.obolibrary.org/obo/CL_',
   pato: 'http://purl.obolibrary.org/obo/PATO_',
-  reactome: 'http://purl.obolibrary.org/obo/REACT_'
+  reactome: 'http://purl.obolibrary.org/obo/REACT_',
+  cellosaurus: 'https://cellosaurus.org/ontology/',
+  chebi: 'http://purl.obolibrary.org/obo/CHEBI_',
+  go: 'http://purl.obolibrary.org/obo/GO_'
 })
 
 const DEFAULT_DATA_SECTION = 'operations'
+export const KNOWN_BIOLOGY_PREFIX_IRIS = Object.freeze({
+  ncbitaxon: 'http://purl.obolibrary.org/obo/NCBITaxon_',
+  uberon: 'http://purl.obolibrary.org/obo/UBERON_',
+  cl: 'http://purl.obolibrary.org/obo/CL_',
+  pato: 'http://purl.obolibrary.org/obo/PATO_',
+  reactome: 'http://purl.obolibrary.org/obo/REACT_',
+  cellosaurus: 'https://cellosaurus.org/ontology/',
+  chebi: 'http://purl.obolibrary.org/obo/CHEBI_',
+  go: 'http://purl.obolibrary.org/obo/GO_'
+})
 
 export function composeRecordFrontMatter(recordType, metadataInput = {}, formDataInput = {}, bundle = {}, projectOverrides = {}) {
   const resolvedRecordType =
@@ -36,26 +50,29 @@ export function composeRecordFrontMatter(recordType, metadataInput = {}, formDat
     ...(isPlainObject(formDataInput) ? formDataInput : {})
   }
 
+  const combinedOverrides = mergeContextOverrides(projectOverrides || {}, metadataInput?.jsonldContextOverrides || {})
   const dataSections = {}
   descriptors.body.forEach((descriptor) => {
     const source =
       Object.prototype.hasOwnProperty.call(resolvedFormData, descriptor.name) && resolvedFormData[descriptor.name] !== undefined
         ? resolvedFormData
         : metadataInput
-    const rawValue = source?.[descriptor.name]
+    const rawValue = readDescriptorValue(source, descriptor)
     if (rawValue === undefined) return
     const normalized = normalizeValueForDescriptor(descriptor, rawValue)
     if (normalized === undefined) return
     assignDataValue(dataSections, descriptor, normalized)
   })
+  applyBiologyInheritance(dataSections, combinedOverrides)
 
   const normalizedMetadata = normalizeMetadataSection(
     resolvedRecordType,
     metadataSection,
     bundle,
-    projectOverrides,
+    combinedOverrides,
     formDataInput
   )
+  ensureBiologyPrefixes(normalizedMetadata, dataSections, bundle, combinedOverrides)
   return {
     metadata: normalizedMetadata,
     data: pruneEmptySections(dataSections)
@@ -89,7 +106,7 @@ export function extractRecordData(recordType, frontMatter = {}, bundle = {}) {
   descriptors.body.forEach((descriptor) => {
     const value = readDataValue(frontMatter, descriptor)
     if (value === undefined) return
-    formData[descriptor.name] = cloneValue(value)
+    writeDescriptorFormValue(formData, descriptor, value)
   })
 
   // Capture any remaining data entries that weren't mapped by descriptors.
@@ -185,11 +202,10 @@ function normalizeTypesArray(existingValue, jsonLdConfig = {}, recordType = '', 
   return Array.from(typeSet)
 }
 
-function computeContextPrefixes(metadataSection, bundle = {}) {
+function computeContextPrefixes(projectOverrides = {}, bundle = {}) {
   const basePrefixes = { ...DEFAULT_JSON_LD_CONTEXT, ...(bundle?.jsonLdConfig?.prefixes || {}) }
-  const overrides = bundle?.projectContextOverrides || {}
-  const merged = { ...basePrefixes, ...(overrides.prefixes || {}) }
-  return merged
+  const prefOverrides = (projectOverrides && projectOverrides.prefixes) || {}
+  return { ...basePrefixes, ...prefOverrides }
 }
 
 function assignDataValue(target, descriptor, value) {
@@ -217,6 +233,9 @@ function readDataValue(frontMatter, descriptor) {
 
 function normalizeValueForDescriptor(descriptor, value) {
   if (value === undefined) return undefined
+  if (descriptor.component === 'BiologyEntitiesField' || descriptor.valuePath === 'entities') {
+    return normalizeBiologyEntityList(value)
+  }
   if (descriptor.fieldType === 'ontology') {
     return normalizeOntologyValue(value)
   }
@@ -253,4 +272,147 @@ function cloneValue(value) {
 
 function isPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readDescriptorValue(source = {}, descriptor = {}) {
+  if (!source || typeof source !== 'object') return undefined
+  if (!Object.prototype.hasOwnProperty.call(source, descriptor.name)) return undefined
+  const entry = source[descriptor.name]
+  if (descriptor.valuePath) {
+    return readValueAtPath(entry, descriptor.valuePath)
+  }
+  return entry
+}
+
+function writeDescriptorFormValue(target = {}, descriptor = {}, value) {
+  if (!target || typeof target !== 'object') return
+  if (descriptor.valuePath) {
+    const base = isPlainObject(target[descriptor.name]) ? cloneValue(target[descriptor.name]) : {}
+    writeValueAtPath(base, descriptor.valuePath, cloneValue(value))
+    target[descriptor.name] = base
+    return
+  }
+  target[descriptor.name] = cloneValue(value)
+}
+
+function readValueAtPath(source, path = '') {
+  if (!path) return source
+  if (!source || typeof source !== 'object') return undefined
+  const segments = path.split('.')
+  let current = source
+  for (const segment of segments) {
+    if (current === undefined || current === null) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function writeValueAtPath(target, path = '', value) {
+  if (!path) return
+  const segments = path.split('.')
+  let current = target
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index]
+    if (!isPlainObject(current[segment])) {
+      current[segment] = {}
+    }
+    current = current[segment]
+  }
+  current[segments.at(-1)] = value
+}
+
+function normalizeBiologyEntity(entity = {}) {
+  if (!entity || typeof entity !== 'object') return null
+  const normalized = {
+    domain: typeof entity.domain === 'string' ? entity.domain.trim() : '',
+    role: typeof entity.role === 'string' ? entity.role.trim() : '',
+    ontology: typeof entity.ontology === 'string' ? entity.ontology.trim() : '',
+    '@id':
+      typeof entity['@id'] === 'string'
+        ? entity['@id'].trim()
+        : typeof entity.id === 'string'
+          ? entity.id.trim()
+          : '',
+    label: typeof entity.label === 'string' ? entity.label.trim() : typeof entity.name === 'string' ? entity.name.trim() : ''
+  }
+  return normalized
+}
+
+function normalizeBiologyEntityList(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((entry) => normalizeBiologyEntity(entry))
+    .filter(
+      (entry) =>
+        entry &&
+        Object.values(entry).some((token) => token !== '' && token !== null && token !== undefined)
+    )
+}
+
+function biologyEntityKey(entity = {}) {
+  return [
+    entity.domain || '',
+    entity.role || '',
+    entity.ontology || '',
+    entity['@id'] || entity.id || '',
+    entity.label || ''
+  ].join('::')
+}
+
+function mergeBiologyEntities(local = [], inherited = []) {
+  const merged = []
+  const seen = new Set()
+  normalizeBiologyEntityList(local).forEach((entity) => {
+    const key = biologyEntityKey(entity)
+    if (seen.has(key)) return
+    seen.add(key)
+    merged.push(entity)
+  })
+  normalizeBiologyEntityList(inherited).forEach((entity) => {
+    const key = biologyEntityKey(entity)
+    if (seen.has(key)) return
+    seen.add(key)
+    merged.push(entity)
+  })
+  return merged
+}
+
+function applyBiologyInheritance(sections = {}, projectOverrides = {}) {
+  const inherited = readValueAtPath(projectOverrides, 'biology.entities')
+  if (!Array.isArray(inherited) || !inherited.length) return
+  const local = readValueAtPath(sections?.biology, 'entities') || []
+  const merged = mergeBiologyEntities(local, inherited)
+  if (!sections.biology) {
+    sections.biology = {}
+  }
+  sections.biology.entities = merged
+}
+
+function ensureBiologyPrefixes(metadata = {}, dataSections = {}, bundle = {}, contextOverrides = {}) {
+  const entities = dataSections?.biology?.entities
+  if (!Array.isArray(entities) || !entities.length) return
+  const context = metadata['@context'] || computeContextPrefixes(contextOverrides, bundle)
+  let mutated = false
+  const missing = new Set()
+  entities.forEach((entity) => {
+    const prefix = typeof entity?.ontology === 'string' ? entity.ontology.trim() : ''
+    if (!prefix || prefix === 'other') return
+    if (context[prefix]) return
+    const iri = KNOWN_BIOLOGY_PREFIX_IRIS[prefix]
+    if (iri) {
+      context[prefix] = iri
+      mutated = true
+    } else {
+      missing.add(prefix)
+    }
+  })
+  if (mutated) {
+    metadata['@context'] = context
+  }
+  if (missing.size && typeof console !== 'undefined' && console.warn) {
+    console.warn(
+      '[jsonld] Missing prefix definitions for biology ontologies:',
+      Array.from(missing).join(', ')
+    )
+  }
 }

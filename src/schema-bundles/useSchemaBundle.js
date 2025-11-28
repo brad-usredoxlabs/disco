@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import YAML from 'yaml'
 import { buildRelationshipIndex } from '../domain/schema/relationship-index'
+import { readSchemaBundleCache, writeSchemaBundleCache } from '../storage/cacheStore'
 
 function inferMetadataFields(schema) {
   if (!schema || typeof schema !== 'object') return []
@@ -51,6 +52,8 @@ export function useSchemaBundle(repoConnection) {
     }
   }
 
+  const repoKey = computed(() => repoConnection.directoryHandle.value?.name || 'disco-repo')
+
   async function loadSelectedBundle() {
     if (!selectedBundle.value) {
       schemaBundle.value = null
@@ -63,9 +66,16 @@ export function useSchemaBundle(repoConnection) {
     }
 
     const bundleName = selectedBundle.value
+    const cacheKey = `${repoKey.value}:${bundleName}`
     validationIssues.value = []
     status.value = 'loading'
     error.value = ''
+
+    const cached = await readSchemaBundleCache(cacheKey)
+    if (cached?.data && !schemaBundle.value) {
+      schemaBundle.value = cached.data
+      status.value = 'cached'
+    }
 
     try {
       const manifestPath = `/schema/${bundleName}/manifest.yaml`
@@ -155,6 +165,8 @@ export function useSchemaBundle(repoConnection) {
         metadataFields,
         jsonLdConfig
       }
+
+      await writeSchemaBundleCache(cacheKey, { data: schemaBundle.value })
 
       status.value = validationIssues.value.length ? 'warning' : 'ready'
       lastLoadedAt.value = new Date()

@@ -9,6 +9,10 @@ const projectRoot = path.resolve(__dirname, '..')
 
 const CHECKS = [
   {
+    name: 'TapTab smoke flow',
+    command: 'npm run test:smoke'
+  },
+  {
     name: 'Markdown form generator',
     command: 'npm run test:markdown'
   },
@@ -19,6 +23,18 @@ const CHECKS = [
   {
     name: 'RO-Crate export',
     command: 'npm run export:rocrate'
+  },
+  {
+    name: 'Artifact IRIs',
+    command: 'npm run check:artifacts'
+  },
+  {
+    name: 'Biology entities audit',
+    command: 'npm run check:biology'
+  },
+  {
+    name: 'JSON-LD compliance',
+    command: 'npm run check:jsonld'
   }
 ]
 

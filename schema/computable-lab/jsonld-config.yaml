@@ -7,6 +7,9 @@ prefixes:
   cl: "http://purl.obolibrary.org/obo/CL_"
   pato: "http://purl.obolibrary.org/obo/PATO_"
   reactome: "http://purl.obolibrary.org/obo/REACT_"
+  cellosaurus: "https://cellosaurus.org/ontology/"
+  chebi: "http://purl.obolibrary.org/obo/CHEBI_"
+  go: "http://purl.obolibrary.org/obo/GO_"
 
 recordTypes:
   project:

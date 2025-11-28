@@ -24,6 +24,10 @@ const props = defineProps({
   assistantConfig: {
     type: Object,
     default: () => ({})
+  },
+  validateRecord: {
+    type: Function,
+    default: null
   }
 })
 
@@ -36,6 +40,8 @@ const selectedAction = ref('')
 const parsedMetadata = ref(null)
 const parsedFormData = ref(null)
 const parseMessage = ref('')
+const validationStatus = ref('idle')
+const validationIssues = ref([])
 
 const actions = computed(() => props.assistantConfig?.actions || [])
 const models = ref([])
@@ -51,6 +57,34 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  [parsedMetadata, parsedFormData],
+  () => {
+    runSuggestionValidation()
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.metadata,
+  () => {
+    if (parsedMetadata.value || parsedFormData.value) {
+      runSuggestionValidation()
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.recordType,
+  () => {
+    runSuggestionValidation()
+  }
+)
+
+const canApplyMetadata = computed(() => !!parsedMetadata.value && validationStatus.value !== 'error')
+const canApplyFormData = computed(() => !!parsedFormData.value && validationStatus.value !== 'error')
 
 async function fetchModels() {
   if (!client.baseUrl.value) return
@@ -86,6 +120,9 @@ function buildContext(include = []) {
   const metadataYaml = YAML.stringify(metadataOnly || {}, { indent: 2 }).trim()
   const formYaml = YAML.stringify(formData || {}, { indent: 2 }).trim()
   const flattenedYaml = YAML.stringify(flattened || {}, { indent: 2 }).trim()
+  const biologyYaml = extractBiologyEntities(flattened)
+  const linksSummary = buildLinkedRecordsSummary(flattened)
+  const operationsSummary = buildOperationsSummary(flattened)
 
   if (!include.length || include.includes('self')) {
     sections.push(
@@ -93,6 +130,15 @@ function buildContext(include = []) {
         formYaml || '{}'
       }\n\n## JSON-LD snapshot\n${flattenedYaml || '{}'}` 
     )
+    if (biologyYaml) {
+      sections.push(`## Biology Entities\n${biologyYaml}`)
+    }
+    if (linksSummary) {
+      sections.push(`## Linked Records\n${linksSummary}`)
+    }
+    if (operationsSummary) {
+      sections.push(`## Operations & Timeline\n${operationsSummary}`)
+    }
   }
   if (include.includes('parents')) {
     (props.graphNode?.parents || []).forEach((edge) => {
@@ -116,6 +162,61 @@ function buildContext(include = []) {
     })
   }
   return sections.join('\n\n')
+}
+
+function extractBiologyEntities(flattened) {
+  const list = flattened?.biology?.entities
+  if (!Array.isArray(list) || !list.length) return ''
+  return YAML.stringify(list, { indent: 2 }).trim()
+}
+
+function buildLinkedRecordsSummary(flattened = {}) {
+  const lines = []
+  const project = flattened.project || flattened.projectId
+  if (project) lines.push(`- Project: ${formatReference(project)}`)
+  const runs = toArray(flattened.runs).concat(toArray(flattened.links?.runs))
+  if (runs.length) lines.push(`- Runs: ${runs.map(formatReference).join(', ')}`)
+  const samples = toArray(flattened.samples || flattened.links?.samples)
+  if (samples.length) lines.push(`- Samples: ${samples.map(formatReference).join(', ')}`)
+  const plates = toArray(flattened.plateId || flattened.links?.plates)
+  if (plates.length) lines.push(`- Plates: ${plates.map(formatReference).join(', ')}`)
+  const binaries = toArray(flattened.binaryDataFiles || flattened.links?.binaryDataFiles)
+  if (binaries.length) lines.push(`- Binary files: ${binaries.map(formatReference).join(', ')}`)
+  return lines.length ? lines.join('\n') : ''
+}
+
+function buildOperationsSummary(flattened = {}) {
+  const lines = []
+  if (flattened.operator) {
+    lines.push(`- Operator: ${formatReference(flattened.operator)}`)
+  }
+  if (flattened.runDate || flattened.startedAt) {
+    lines.push(`- Run start: ${flattened.runDate || flattened.startedAt}`)
+  }
+  if (flattened.completedAt) {
+    lines.push(`- Run completed: ${flattened.completedAt}`)
+  }
+  if (flattened.state) {
+    lines.push(`- Workflow state: ${flattened.state}`)
+  }
+  return lines.length ? lines.join('\n') : ''
+}
+
+function toArray(value) {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+function formatReference(entry) {
+  if (!entry) return ''
+  if (typeof entry === 'string') return entry
+  if (typeof entry === 'object') {
+    const label = entry.label || entry.title || entry.name || ''
+    const id = entry.id || entry.identifier || entry['@id'] || ''
+    if (label && id && label !== id) return `${label} (${id})`
+    return label || id || JSON.stringify(entry)
+  }
+  return String(entry)
 }
 
 async function runAction(action) {
@@ -286,16 +387,79 @@ function splitPayload(payload) {
   }
 }
 
+function runSuggestionValidation() {
+  if (!props.validateRecord || !props.recordType) {
+    validationStatus.value = 'idle'
+    validationIssues.value = []
+    return
+  }
+  if (!parsedMetadata.value && !parsedFormData.value) {
+    validationStatus.value = 'idle'
+    validationIssues.value = []
+    return
+  }
+  try {
+    const candidate = buildCandidateRecord()
+    const result = props.validateRecord(props.recordType, candidate)
+    if (result.ok) {
+      validationStatus.value = 'ok'
+      validationIssues.value = []
+    } else {
+      validationStatus.value = 'error'
+      validationIssues.value = result.issues || []
+    }
+  } catch (err) {
+    validationStatus.value = 'error'
+    validationIssues.value = [{ path: 'assistant', message: err?.message || 'Validation failed.' }]
+  }
+}
+
+function buildCandidateRecord() {
+  const baseMetadata = cloneValue(props.metadata) || {}
+  const baseForm = isPlainObject(baseMetadata.formData) ? cloneValue(baseMetadata.formData) : {}
+  if (parsedMetadata.value) {
+    Object.assign(baseMetadata, cloneValue(parsedMetadata.value))
+  }
+  if (parsedFormData.value) {
+    Object.assign(baseForm, cloneValue(parsedFormData.value))
+  }
+  baseMetadata.formData = baseForm
+  return mergeMetadataAndFormData(baseMetadata, baseForm)
+}
+
+function cloneValue(value) {
+  if (value === null || value === undefined) return value
+  return JSON.parse(JSON.stringify(value))
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+}
+
 const emit = defineEmits(['apply-metadata', 'apply-formdata'])
 
 function applyMetadata() {
   if (!parsedMetadata.value) return
   emit('apply-metadata', parsedMetadata.value)
+  parsedMetadata.value = null
+  if (!parsedFormData.value) {
+    validationStatus.value = 'idle'
+    validationIssues.value = []
+  } else {
+    runSuggestionValidation()
+  }
 }
 
 function applyFormData() {
   if (!parsedFormData.value) return
   emit('apply-formdata', parsedFormData.value)
+  parsedFormData.value = null
+  if (!parsedMetadata.value) {
+    validationStatus.value = 'idle'
+    validationIssues.value = []
+  } else {
+    runSuggestionValidation()
+  }
 }
 
 function saveApiKey(event) {
@@ -364,9 +528,34 @@ function saveBaseUrl(event) {
         <p v-else class="status status-muted">
           No structured YAML/JSON detected. Ask the assistant to respond with valid metadata.
         </p>
+        <p v-if="validationStatus === 'ok'" class="status status-ok">Suggestion passes schema validation.</p>
+        <div v-else-if="validationStatus === 'error'" class="validation-errors">
+          <p class="status status-error">Suggestion failed schema validation. Fix the following issues:</p>
+          <ul>
+            <li v-for="issue in validationIssues" :key="`${issue.path}-${issue.message}`">
+              <strong>{{ issue.path }}</strong>: {{ issue.message }}
+            </li>
+          </ul>
+        </div>
         <div class="assistant-actions">
-          <button v-if="parsedMetadata" class="primary" type="button" @click="applyMetadata">Apply metadata</button>
-          <button v-if="parsedFormData" class="secondary" type="button" @click="applyFormData">Apply form data</button>
+          <button
+            v-if="parsedMetadata"
+            class="primary"
+            type="button"
+            :disabled="!canApplyMetadata"
+            @click="applyMetadata"
+          >
+            Apply metadata
+          </button>
+          <button
+            v-if="parsedFormData"
+            class="secondary"
+            type="button"
+            :disabled="!canApplyFormData"
+            @click="applyFormData"
+          >
+            Apply form data
+          </button>
         </div>
       </div>
     </div>
@@ -405,5 +594,15 @@ textarea {
   padding: 0.75rem;
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   white-space: pre-wrap;
+}
+
+.validation-errors {
+  margin-top: 0.5rem;
+}
+
+.validation-errors ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.2rem;
+  color: #fecaca;
 }
 </style>

@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
+import { readShardCache, writeShardCache } from '../storage/cacheStore'
 
 const INDEX_MANIFEST_PATH = '/index/manifest.json'
-const SHARD_CACHE_KEY = 'disco-shard-cache'
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 // 24 hours
 
 export function useSearchIndex(recordGraph) {
@@ -11,6 +11,9 @@ export function useSearchIndex(recordGraph) {
   const error = ref('')
   const index = ref([])
   const source = ref('shards')
+  const filters = ref(initialFilters())
+  const facetOptions = ref(buildEmptyFacets())
+  const hasActiveFilters = computed(() => Object.values(filters.value).some(Boolean))
 
   async function loadManifest() {
     try {
@@ -47,9 +50,19 @@ export function useSearchIndex(recordGraph) {
       title: doc.title || doc.id,
       recordType: doc.recordType || '',
       snippet: doc.snippet || '',
-      text: doc.text || ''
+      text: doc.text || '',
+      taxonId: doc.taxonId || '',
+      taxonLabel: doc.taxonLabel || '',
+      anatomicalContextId: doc.anatomicalContextId || '',
+      anatomicalContextLabel: doc.anatomicalContextLabel || '',
+      pathwayIds: Array.isArray(doc.pathwayIds) ? doc.pathwayIds : [],
+      pathwayLabels: Array.isArray(doc.pathwayLabels) ? doc.pathwayLabels : [],
+      operatorId: doc.operatorId || '',
+      operatorLabel: doc.operatorLabel || '',
+      plateId: doc.plateId || ''
     }))
     source.value = nextSource
+    facetOptions.value = buildFacetOptions(index.value)
     runSearch()
   }
 
@@ -75,15 +88,25 @@ export function useSearchIndex(recordGraph) {
         title: node.title || node.id,
         recordType: node.recordType,
         snippet: (node.markdown || '').slice(0, 200),
-        text
+        text,
+        taxonId: '',
+        taxonLabel: '',
+        anatomicalContextId: '',
+        anatomicalContextLabel: '',
+        pathwayIds: [],
+        pathwayLabels: [],
+        operatorId: '',
+        operatorLabel: '',
+        plateId: ''
       }
     })
     source.value = 'graph'
+    facetOptions.value = buildFacetOptions(index.value)
     runSearch()
   }
 
-  function useCachedShards() {
-    const cached = loadShardCache()
+  async function useCachedShards() {
+    const cached = await loadShardCache()
     if (!cached) return false
     applyDocs(cached.docs || [], 'cache')
     return true
@@ -94,13 +117,13 @@ export function useSearchIndex(recordGraph) {
     error.value = ''
     try {
       const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-      if (offline && useCachedShards()) {
+      if (offline && (await useCachedShards())) {
         return
       }
       await rebuildFromShards()
       return
     } catch (err) {
-      if (!useCachedShards()) {
+      if (!(await useCachedShards())) {
         error.value = err?.message || 'Unable to load search index from shards. Falling back to local graph.'
         fallbackToGraph()
       } else {
@@ -113,19 +136,21 @@ export function useSearchIndex(recordGraph) {
 
   function runSearch() {
     const q = query.value.trim().toLowerCase()
-    if (!q) {
-      results.value = []
-      return
-    }
     const tokens = q.split(/\s+/).filter(Boolean)
-    if (!tokens.length) {
+    const filtersActive = hasActiveFilters.value
+    if (!tokens.length && !filtersActive) {
       results.value = []
       return
     }
     const matches = []
     for (const entry of index.value) {
-      const score = tokens.reduce((acc, token) => (entry.text.includes(token) ? acc + 1 : acc), 0)
-      if (score === tokens.length) {
+      if (!matchesFilters(entry, filters.value)) continue
+      if (tokens.length) {
+        const score = tokens.reduce((acc, token) => (entry.text.includes(token) ? acc + 1 : acc), 0)
+        if (score === tokens.length) {
+          matches.push({ ...entry })
+        }
+      } else {
         matches.push({ ...entry })
       }
     }
@@ -135,6 +160,14 @@ export function useSearchIndex(recordGraph) {
   watch(query, () => {
     runSearch()
   })
+
+  watch(
+    () => filters.value,
+    () => {
+      runSearch()
+    },
+    { deep: true }
+  )
 
   watch(
     () => recordGraph.graph?.value,
@@ -157,37 +190,125 @@ export function useSearchIndex(recordGraph) {
     error,
     hasResults,
     rebuild,
-    source
+    source,
+    filters,
+    facetOptions,
+    hasActiveFilters,
+    setFilter,
+    clearFilters
   }
 }
 
 function saveShardCache(manifest, docs) {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return
-    const payload = {
-      savedAt: Date.now(),
-      manifest,
-      docs
-    }
-    window.localStorage?.setItem(SHARD_CACHE_KEY, JSON.stringify(payload))
-  } catch {
-    /* ignore */
+  writeShardCache({
+    manifest,
+    docs,
+    savedAt: Date.now()
+  })
+}
+
+async function loadShardCache() {
+  const cached = await readShardCache()
+  if (!cached?.docs || !cached.savedAt) return null
+  if (Date.now() - cached.savedAt > CACHE_TTL_MS) {
+    return null
+  }
+  return cached
+}
+
+function initialFilters() {
+  return {
+    recordType: '',
+    taxonId: '',
+    anatomicalContextId: '',
+    pathwayId: '',
+    operatorId: '',
+    plateId: ''
   }
 }
 
-function loadShardCache() {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return null
-    const raw = window.localStorage.getItem(SHARD_CACHE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed?.docs || !parsed.savedAt) return null
-    if (Date.now() - parsed.savedAt > CACHE_TTL_MS) {
-      window.localStorage.removeItem(SHARD_CACHE_KEY)
-      return null
-    }
-    return parsed
-  } catch {
-    return null
+function buildEmptyFacets() {
+  return {
+    recordType: [],
+    taxonId: [],
+    anatomicalContextId: [],
+    pathwayId: [],
+    operatorId: [],
+    plateId: []
   }
+}
+
+function buildFacetOptions(docs = []) {
+  const buckets = {
+    recordType: new Map(),
+    taxonId: new Map(),
+    anatomicalContextId: new Map(),
+    pathwayId: new Map(),
+    operatorId: new Map(),
+    plateId: new Map()
+  }
+  docs.forEach((doc) => {
+    addFacet(buckets.recordType, doc.recordType, doc.recordType || doc.recordType)
+    addFacet(buckets.taxonId, doc.taxonId, doc.taxonLabel || doc.taxonId)
+    addFacet(buckets.anatomicalContextId, doc.anatomicalContextId, doc.anatomicalContextLabel || doc.anatomicalContextId)
+    ensureArray(doc.pathwayIds).forEach((value, index) => {
+      const label = Array.isArray(doc.pathwayLabels) ? doc.pathwayLabels[index] : null
+      addFacet(buckets.pathwayId, value, label || value)
+    })
+    addFacet(buckets.operatorId, doc.operatorId, doc.operatorLabel || doc.operatorId)
+    addFacet(buckets.plateId, doc.plateId, doc.plateId)
+  })
+  return {
+    recordType: mapToSortedList(buckets.recordType),
+    taxonId: mapToSortedList(buckets.taxonId),
+    anatomicalContextId: mapToSortedList(buckets.anatomicalContextId),
+    pathwayId: mapToSortedList(buckets.pathwayId),
+    operatorId: mapToSortedList(buckets.operatorId),
+    plateId: mapToSortedList(buckets.plateId)
+  }
+}
+
+function addFacet(map, value, label) {
+  if (!value) return
+  const key = String(value)
+  if (!map.has(key)) {
+    map.set(key, { value: key, label: label || key, count: 0 })
+  }
+  const entry = map.get(key)
+  entry.count += 1
+}
+
+function mapToSortedList(map) {
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
+}
+
+function ensureArray(value) {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  if (!value) return []
+  return [value]
+}
+
+function matchesFilters(doc, filters) {
+  if (filters.recordType && doc.recordType !== filters.recordType) return false
+  if (filters.taxonId && doc.taxonId !== filters.taxonId) return false
+  if (filters.anatomicalContextId && doc.anatomicalContextId !== filters.anatomicalContextId) return false
+  if (filters.operatorId && doc.operatorId !== filters.operatorId) return false
+  if (filters.plateId && doc.plateId !== filters.plateId) return false
+  if (filters.pathwayId) {
+    const pathways = Array.isArray(doc.pathwayIds) ? doc.pathwayIds : []
+    if (!pathways.includes(filters.pathwayId)) return false
+  }
+  return true
+}
+
+function setFilter(name, value) {
+  if (!Object.prototype.hasOwnProperty.call(filters.value, name)) return
+  filters.value = {
+    ...filters.value,
+    [name]: value
+  }
+}
+
+function clearFilters() {
+  filters.value = initialFilters()
 }

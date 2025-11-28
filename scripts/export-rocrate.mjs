@@ -3,22 +3,28 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { promises as fs } from 'fs'
-import YAML from 'yaml'
 import { parseFrontMatter } from '../src/records/frontMatter.js'
-import { extractRecordData, mergeMetadataAndFormData } from '../src/records/jsonLdFrontmatter.js'
+import {
+  extractRecordData,
+  mergeMetadataAndFormData,
+  composeRecordFrontMatter
+} from '../src/records/jsonLdFrontmatter.js'
 import { buildZodSchema } from '../src/records/zodBuilder.js'
+import { loadSchemaBundle, readYaml, projectRoot } from './lib/loadSchemaBundle.mjs'
+import { flattenFrontMatter, normalizeBaseIri } from './lib/jsonld.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..')
 const EXPORT_DIR = path.join(projectRoot, 'dist', 'ro-crate')
+const INDEX_SOURCE_DIR = path.join(projectRoot, 'index')
 
 async function main() {
   const bundleName = process.argv[2] || 'computable-lab'
   const bundle = await loadSchemaBundle(bundleName)
-  const naming = await readYaml(path.join(projectRoot, 'naming', `${bundleName}.yaml`))
+  const naming = bundle.naming
   if (!naming) {
     throw new Error(`Missing naming config for bundle "${bundleName}".`)
   }
+  const baseIri = normalizeBaseIri(bundle.jsonLdConfig?.baseIri || '')
 
   const validators = buildValidators(bundle.recordSchemas)
   const records = []
@@ -41,7 +47,7 @@ async function main() {
     throw new Error('No records available to export. Ensure build-index succeeds first.')
   }
 
-  await writeRoCrate(records)
+  await writeRoCrate(records, baseIri)
   console.log(`RO-Crate exported to ${EXPORT_DIR}`)
 }
 
@@ -71,7 +77,12 @@ async function loadRecord(filePath, defaultType, bundle, validator) {
       return null
     }
   }
-  const jsonLdNode = composeJsonLd(metadata, formData)
+  const normalizedFrontMatter = composeRecordFrontMatter(recordType, schemaPayload, formData, bundle)
+  const jsonLdNode = flattenFrontMatter(normalizedFrontMatter)
+  if (!jsonLdNode['@id']) {
+    console.warn(`[export-rocrate] Skipping ${filePath} because @id is missing after normalization.`)
+    return null
+  }
   return {
     recordType,
     jsonLd: jsonLdNode,
@@ -79,21 +90,15 @@ async function loadRecord(filePath, defaultType, bundle, validator) {
   }
 }
 
-function composeJsonLd(metadata, formData) {
-  const node = { ...(metadata || {}) }
-  if (node.formData) delete node.formData
-  Object.entries(formData || {}).forEach(([key, value]) => {
-    if (value !== undefined) node[key] = value
-  })
-  return node
-}
-
-async function writeRoCrate(records) {
+async function writeRoCrate(records, baseIri) {
+  await fs.rm(EXPORT_DIR, { recursive: true, force: true }).catch(() => {})
   await fs.mkdir(EXPORT_DIR, { recursive: true })
-  const dataset = buildDatasetEntity(records)
+  const indexArtifacts = await copyIndexArtifacts()
+  const dataset = buildDatasetEntity(records, indexArtifacts, baseIri)
   const graph = [
     dataset,
-    ...records.map((record) => buildRecordEntity(record))
+    ...records.map((record) => buildRecordEntity(record)),
+    ...indexArtifacts.map((artifact) => buildIndexEntity(artifact))
   ]
   const roCrate = {
     '@context': 'https://w3id.org/ro/crate/1.1/context',
@@ -107,14 +112,25 @@ async function writeRoCrate(records) {
   )
 }
 
-function buildDatasetEntity(records) {
-  return {
-    '@id': './',
+function buildDatasetEntity(records, indexArtifacts = [], baseIri = '') {
+  const indexIds = (indexArtifacts || []).map((artifact) => artifact.id)
+  const dataset = {
+    '@id': baseIri || './',
     '@type': 'Dataset',
-    name: 'DIsCo Pages RO-Crate export',
-    description: 'Records exported from DIsCo Pages 2.0',
-    hasPart: records.map((record) => record.jsonLd['@id'] || record.jsonLd.id).filter(Boolean)
+    name: baseIri ? `DIsCo Pages export (${baseIri})` : 'DIsCo Pages RO-Crate export',
+    description: baseIri
+      ? `Records exported from ${baseIri}`
+      : 'Records exported from DIsCo Pages 2.0',
+    hasPart: [
+      ...records.map((record) => record.jsonLd['@id'] || record.jsonLd.id).filter(Boolean),
+      ...indexIds
+    ]
   }
+  if (baseIri) {
+    dataset.identifier = baseIri
+    dataset.url = baseIri
+  }
+  return dataset
 }
 
 function buildRecordEntity({ recordType, jsonLd }) {
@@ -123,58 +139,21 @@ function buildRecordEntity({ recordType, jsonLd }) {
     '@type': jsonLd['@type'] || [`ex:${recordType}`],
     ...jsonLd
   }
+  const biologyEntities = jsonLd?.biology?.entities
+  if (Array.isArray(biologyEntities) && biologyEntities.length) {
+    entity.biologyEntities = biologyEntities
+  }
   return entity
 }
 
-async function loadSchemaBundle(bundleName) {
-  const manifestPath = path.join(projectRoot, 'schema', bundleName, 'manifest.yaml')
-  const manifest = await readYaml(manifestPath)
-  if (!manifest) {
-    throw new Error(`Manifest missing for bundle "${bundleName}".`)
-  }
-  const recordSchemas = await loadYamlMap(manifest.recordSchemas || [], bundleName, 'schema')
-  const uiConfigs = await loadYamlMap(manifest.uiConfigs || [], bundleName, 'schema')
-  const metadataFields = buildMetadataFieldMap(manifest.metadataFields || {}, recordSchemas)
+function buildIndexEntity(artifact) {
   return {
-    manifest,
-    recordSchemas,
-    uiConfigs,
-    metadataFields
-  }
-}
-
-async function loadYamlMap(files, bundleName, baseDir) {
-  const map = {}
-  for (const filename of files) {
-    const recordType = deriveRecordType(filename)
-    const filePath = path.join(projectRoot, baseDir, bundleName, filename)
-    const yaml = await readYaml(filePath)
-    if (yaml) {
-      map[recordType] = yaml
-    }
-  }
-  return map
-}
-
-function deriveRecordType(filename) {
-  return filename.replace(/\.schema\.ya?ml$/i, '').replace(/\.ui\.ya?ml$/i, '').replace(/\.ya?ml$/i, '')
-}
-
-function buildMetadataFieldMap(config = {}, recordSchemas = {}) {
-  const map = {}
-  const defaultFields = config.default || []
-  Object.keys(recordSchemas).forEach((recordType) => {
-    map[recordType] = config[recordType] || defaultFields
-  })
-  return map
-}
-
-async function readYaml(filePath) {
-  try {
-    const text = await fs.readFile(filePath, 'utf8')
-    return YAML.parse(text)
-  } catch {
-    return null
+    '@id': artifact.id,
+    '@type': 'File',
+    name: artifact.name,
+    encodingFormat: artifact.encodingFormat,
+    contentSize: artifact.contentSize,
+    path: artifact.path
   }
 }
 
@@ -225,6 +204,40 @@ function stripUnknownFields(payload, schema) {
     }
   })
   return next
+}
+
+async function copyIndexArtifacts() {
+  let entries = []
+  try {
+    entries = await fs.readdir(INDEX_SOURCE_DIR, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const files = entries.filter((entry) => entry.isFile())
+  if (!files.length) return []
+  const targetDir = path.join(EXPORT_DIR, 'index')
+  await fs.mkdir(targetDir, { recursive: true })
+  const artifacts = []
+  for (const entry of files) {
+    const src = path.join(INDEX_SOURCE_DIR, entry.name)
+    const dest = path.join(targetDir, entry.name)
+    await fs.copyFile(src, dest)
+    const stats = await fs.stat(src)
+    artifacts.push({
+      id: `index/${entry.name}`,
+      name: entry.name,
+      path: `index/${entry.name}`,
+      encodingFormat: inferEncoding(entry.name),
+      contentSize: stats.size
+    })
+  }
+  return artifacts
+}
+
+function inferEncoding(filename) {
+  if (filename.endsWith('.json')) return 'application/json'
+  if (filename.endsWith('.mjs') || filename.endsWith('.js')) return 'text/javascript'
+  return 'application/octet-stream'
 }
 
 main().catch((err) => {
