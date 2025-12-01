@@ -8,8 +8,10 @@ import TipTapSandbox from '../tiptap/components/TipTapSandbox.vue'
 import TipTapRecordEditor from '../tiptap/components/TipTapRecordEditor.vue'
 import SchemaBundlePanel from './SchemaBundlePanel.vue'
 import RecordGraphPanel from './RecordGraphPanel.vue'
+import GraphQueryPanel from './GraphQueryPanel.vue'
 import RecordSearchPanel from './RecordSearchPanel.vue'
 import RecordCreatorModal from './RecordCreatorModal.vue'
+import GraphTreePanel from './GraphTreePanel.vue'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
@@ -31,6 +33,7 @@ const searchIndex = useSearchIndex(recordGraph)
 const systemConfig = useSystemConfig(repo)
 const offlineStatus = useOfflineStatus()
 const showCreator = ref(false)
+const creatorContext = ref(null)
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
 
@@ -72,6 +75,20 @@ const tiptapGraphNode = computed(() => {
   return recordGraph.graph?.value?.nodesByPath?.[tiptapTarget.value.path] || null
 })
 const tiptapContextOverrides = computed(() => buildRecordContextOverrides(tiptapGraphNode.value))
+const featureFlags = computed(() => systemConfig.config.value?.features || {})
+const graphTreeEnabled = computed(() => featureFlags.value.graphTree !== false)
+const graphQueryEnabled = computed(() => featureFlags.value.graphQueries === true)
+const defaultGraphRootType = computed(() => {
+  if (schemaBundle.value?.recordSchemas?.project) return 'project'
+  const types = Object.keys(schemaBundle.value?.recordSchemas || {})
+  return types[0] || ''
+})
+const defaultGraphRootLabel = computed(() => {
+  if (defaultGraphRootType.value === 'project') return 'Projects'
+  if (!defaultGraphRootType.value) return 'Records'
+  return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
+})
+const activeRecordPath = computed(() => selectedNode.value?.path || '')
 
 watch(
   () => tiptapTarget.value?.bundle,
@@ -170,12 +187,14 @@ function closePrompt() {
   showPrompt.value = false
 }
 
-function openCreator() {
+function openCreator(options = null) {
+  creatorContext.value = options || null
   showCreator.value = true
 }
 
 function closeCreator() {
   showCreator.value = false
+  creatorContext.value = null
 }
 
 function handleSelect(node) {
@@ -193,6 +212,7 @@ function openPath(path) {
 
 function handleRecordCreated(path) {
   showCreator.value = false
+  creatorContext.value = null
   if (path) {
     openPath(path)
   }
@@ -206,6 +226,18 @@ function handleStandaloneSaved() {
   tiptapStatus.value = 'TapTab changes saved.'
   recordGraph?.rebuild?.()
   searchIndex?.rebuild?.()
+}
+
+function handleGraphCreate(payload) {
+  if (!payload?.recordType) return
+  const metadataPatch = {}
+  if (payload.parentField && payload.parentId) {
+    metadataPatch[payload.parentField] = payload.parentId
+  }
+  openCreator({
+    recordType: payload.recordType,
+    metadata: metadataPatch
+  })
 }
 </script>
 
@@ -321,11 +353,26 @@ function handleStandaloneSaved() {
         <AppPanel class="tree-panel">
           <div class="panel-heading">
             <div>
-              <h2>Repository tree</h2>
-              <p>Lazy-loaded virtual tree stitched from File System Access directory handles.</p>
+              <h2>{{ graphTreeEnabled ? 'Record graph' : 'Repository tree' }}</h2>
+              <p v-if="graphTreeEnabled">
+                Contextual navigation derived from schema relationships. Toggle via <code>features.graphTree</code>.
+              </p>
+              <p v-else>Lazy-loaded virtual tree stitched from File System Access directory handles.</p>
             </div>
           </div>
+          <GraphTreePanel
+            v-if="graphTreeEnabled"
+            :graph-state="recordGraph"
+            :schema-loader="schemaLoader"
+            :workflow-loader="workflowLoader"
+            :default-root-type="defaultGraphRootType"
+            :default-root-label="defaultGraphRootLabel"
+            :active-path="activeRecordPath"
+            @select-record="openPath"
+            @create-child="handleGraphCreate"
+          />
           <FileTreeBrowser
+            v-else
             :nodes="rootNodes"
             :is-loading="isTreeBootstrapping"
             title="repo root"
@@ -344,6 +391,13 @@ function handleStandaloneSaved() {
         </AppPanel>
         <AppPanel>
           <RecordGraphPanel :graph-state="recordGraph" />
+        </AppPanel>
+        <AppPanel v-if="graphQueryEnabled">
+          <GraphQueryPanel
+            :graph-state="recordGraph"
+            :schema-loader="schemaLoader"
+            :workflow-loader="workflowLoader"
+          />
         </AppPanel>
         <AppPanel class="workbench-panel">
           <FileWorkbench
@@ -388,6 +442,7 @@ function handleStandaloneSaved() {
       :workflow-loader="workflowLoader"
       :record-graph="recordGraph"
       :on-created="handleRecordCreated"
+      :creation-context="creatorContext"
       @close="closeCreator"
     />
   </div>

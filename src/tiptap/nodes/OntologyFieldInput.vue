@@ -2,7 +2,7 @@
   <div class="ontology-field">
     <div class="ontology-display" v-if="props.showSelectionBadge && currentLabel">
       <span class="ontology-text">{{ currentLabel }}</span>
-      <span v-if="currentValue?.source" class="ontology-source">{{ currentValue.source }}</span>
+      <span v-if="currentSource" class="ontology-source">{{ currentSource }}</span>
       <button
         v-if="!disabled"
         type="button"
@@ -78,6 +78,11 @@ const props = defineProps({
   showSelectionBadge: {
     type: Boolean,
     default: true
+  },
+  valueShape: {
+    type: String,
+    default: 'term',
+    validator: (input) => ['term', 'reference'].includes(input)
   }
 })
 
@@ -94,21 +99,47 @@ const dropdownRef = ref(null)
 let searchHandle = null
 let blurHandle = null
 
+const valueShape = computed(() => (props.valueShape === 'reference' ? 'reference' : 'term'))
+
 const currentValue = computed(() => {
   if (!props.value) return null
   if (typeof props.value === 'string') {
-    return { id: props.value, label: props.value }
+    return valueShape.value === 'reference'
+      ? { id: props.value, label: props.value, source: '' }
+      : { identifier: props.value, label: props.value, ontology: '' }
   }
-  return props.value
+  if (typeof props.value !== 'object') return null
+  const identifier = props.value.identifier || props.value.id || props.value['@id'] || ''
+  const label = props.value.label || props.value.prefLabel || props.value.name || identifier
+  const ontology = props.value.ontology || props.value.source || ''
+  if (valueShape.value === 'reference') {
+    return {
+      id: identifier || label,
+      label,
+      source: ontology || '',
+      definition: props.value.definition || ''
+    }
+  }
+  return {
+    identifier: identifier || '',
+    label,
+    ontology,
+    definition: props.value.definition || '',
+    synonyms: Array.isArray(props.value.synonyms) ? props.value.synonyms : [],
+    xrefs: Array.isArray(props.value.xrefs) ? props.value.xrefs : []
+  }
 })
 
-const currentLabel = computed(() => currentValue.value?.label || currentValue.value?.id || '')
+const currentSource = computed(() => currentValue.value?.ontology || currentValue.value?.source || '')
+const currentLabel = computed(
+  () => currentValue.value?.label || currentValue.value?.identifier || currentValue.value?.id || ''
+)
 
 watch(
   () => props.value,
   (val) => {
     if (!dropdownOpen.value) {
-      query.value = val?.label || val?.id || ''
+      query.value = val?.label || val?.identifier || val?.id || ''
     }
   },
   { immediate: true }
@@ -182,20 +213,42 @@ async function runSearch() {
 
 function selectResult(result) {
   dropdownOpen.value = false
-  query.value = result.label || result.id
+  query.value = result.label || result.prefLabel || result.id || ''
   emitSelection(result)
 }
 
 function emitSelection(result) {
   if (!result) return
-  const payload = {
-    id: result.id,
-    label: result.label || result.id,
-    source: result.source || '',
-    definition: result.definition || ''
+  const label = result.label || result.prefLabel || result.id || ''
+  const identifier = result.id || result.identifier || ''
+  const ontology = result.ontology || result.source || ''
+
+  if (valueShape.value === 'reference') {
+    const payload = {
+      id: identifier || label,
+      label,
+      source: ontology || ''
+    }
+    emit('update:value', payload)
+    saveOntologySelection(props.vocab, payload)
+    return
   }
-  emit('update:value', payload)
-  saveOntologySelection(props.vocab, payload)
+
+  const recordPayload = {
+    identifier: identifier || '',
+    label,
+    ontology: ontology || '',
+    definition: result.definition || '',
+    synonyms: normalizeSuggestionList(result.synonyms || result.synonym),
+    xrefs: normalizeSuggestionList(result.xrefs)
+  }
+  emit('update:value', recordPayload)
+  const cachePayload = {
+    ...recordPayload,
+    id: recordPayload.identifier || label,
+    source: recordPayload.ontology
+  }
+  saveOntologySelection(props.vocab, cachePayload)
 }
 
 function clearSelection() {
@@ -271,6 +324,20 @@ function formatIdentifier(value) {
     return input.slice(lastSlashIndex + 1)
   }
   return input
+}
+
+function normalizeSuggestionList(value) {
+  if (!value) return []
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter((entry) => entry !== '')
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? [trimmed] : []
+  }
+  return []
 }
 
 defineExpose({

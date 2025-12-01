@@ -45,3 +45,16 @@ $defs:
         type: array
         description: Keywords/tags to aid findability
         items: { type: string }
+      '@context':
+        type: object
+        description: JSON-LD context prefixes derived from schema bundles and overrides
+        additionalProperties:
+          type: string
+      '@id':
+        type: string
+        description: Derived JSON-LD IRI for this record
+      '@type':
+        type: array
+        description: JSON-LD type IRIs associated with this record
+        items:
+          type: string

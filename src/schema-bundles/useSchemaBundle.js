@@ -27,6 +27,14 @@ export function useSchemaBundle(repoConnection) {
     return YAML.parse(text)
   }
 
+  async function readOptionalYaml(path) {
+    try {
+      return await readYaml(path)
+    } catch (err) {
+      return null
+    }
+  }
+
   async function refreshAvailableBundles() {
     if (!repoConnection.directoryHandle.value) {
       availableBundles.value = []
@@ -150,7 +158,9 @@ export function useSchemaBundle(repoConnection) {
         )
       })
 
-      const jsonLdConfig = await readYaml(`/schema/${bundleName}/jsonld-config.yaml`).catch(() => null)
+      const jsonLdConfig = await readOptionalYaml(`/schema/${bundleName}/jsonld-config.yaml`)
+      const graphViews = await readOptionalYaml(`/graph/${bundleName}/views.yaml`)
+      const graphQueries = await readOptionalYaml(`/graph/${bundleName}/queries.yaml`)
 
       schemaBundle.value = {
         schemaSet: bundleName,
@@ -163,7 +173,9 @@ export function useSchemaBundle(repoConnection) {
         vocabSchemas,
         relationshipIndex,
         metadataFields,
-        jsonLdConfig
+        jsonLdConfig,
+        graphViews,
+        graphQueries
       }
 
       await writeSchemaBundleCache(cacheKey, { data: schemaBundle.value })

@@ -1,10 +1,14 @@
 name: reagents
 cached_terms:
-  - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C107693
+  - identifier: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C107693
     label: Bullock County, AL
-    source: ontology
+    ontology: ontology
     definition: ""
-    cached_at: 2025-11-24T02:29:34.568Z
+    synonyms: []
+    xrefs: []
+    id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C107693
+    source: ontology
+    cached_at: 2025-11-30T20:58:16.707Z
   - id: http://purl.obolibrary.org/obo/CHEBI_16236
     label: ethanol
     source: ontology
@@ -24,10 +28,7 @@ cached_terms:
   - id: http://purl.obolibrary.org/obo/CHEBI_85174
     label: prostaglandin D2 ethanolamide
     source: ontology
-    definition: An <em>N</em>-acylethanolamine resulting from the formal
-      condensation of the carboxy group of prostaglandin
-      D<small><sub>2</sub></small> with the amino group of ethanolamine.
-    cached_at: 2025-11-26T02:55:18.883Z
+    cached_at: 2025-11-30T21:10:25.173Z
   - id: http://purl.obolibrary.org/obo/CHEBI_85301
     label: N-(decanoyl)ethanolamine
     source: ontology
@@ -64,8 +65,7 @@ cached_terms:
   - id: LAB:STD_MICROPLASTIC
     label: Microplastic Standard Mix
     source: local
-    definition: Polystyrene/polyethylene/PET blend at 100 µg/mL each
-    cached_at: 2025-11-26T03:14:38.162Z
+    cached_at: 2025-11-30T20:58:05.763Z
   - id: http://purl.obolibrary.org/obo/CHEBI_85281
     label: N-(polyunsaturated fatty acyl)ethanolamine
     source: ontology
@@ -86,6 +86,25 @@ cached_terms:
       may prevent colonization of the nasal cavity. The antimicrobial effect of
       ethanol is due, in part, to its denaturing of microbial proteins.
     cached_at: 2025-11-27T00:12:49.306Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_21928
+    label: O-(5'-adenylyl)-L-threonine
+    source: ontology
+    definition: ""
+    cached_at: 2025-11-28T21:20:07.808Z
+  - identifier: LAB:DMEM_SUPPLEMENT
+    label: DMEM + 10% FBS
+    ontology: local
+    definition: Dulbecco's Modified Eagle Medium supplemented with 10% fetal bovine serum
+    synonyms:
+      - DMEM 10% FBS
+    xrefs: []
+    id: LAB:DMEM_SUPPLEMENT
+    source: local
+    cached_at: 2025-11-28T23:03:55.487Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_71464
+    label: palmitoyl ethanolamide
+    source: ontology
+    cached_at: 2025-11-30T00:01:52.206Z
 local_extensions:
   - id: LAB:BUFFER_A
     label: Smith Lab Buffer A

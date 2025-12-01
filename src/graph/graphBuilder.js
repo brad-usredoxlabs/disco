@@ -1,11 +1,12 @@
-import { parseFrontMatter } from '../records/frontMatter'
-import { extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
+import { parseFrontMatter } from '../records/frontMatter.js'
+import { extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter.js'
 
 export function buildGraphSnapshot(files = [], schemaBundle = {}) {
   const relationships = schemaBundle.relationships || { recordTypes: {} }
   const nodes = []
   const nodesById = {}
   const nodesByPath = {}
+  const nodesByType = {}
   const biologyStats = emptyBiologyStats()
 
   for (const file of files) {
@@ -20,6 +21,7 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
 
       const biologyEntities = extractBiologyEntities(schemaRecord)
       updateBiologyStats(biologyStats, biologyEntities)
+      const semanticTags = extractSemanticTags(schemaRecord)
       const node = {
         id,
         recordType: resolvedType,
@@ -28,6 +30,7 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
         frontMatter: schemaRecord,
         markdown: body || '',
         biologyEntities,
+        semanticTags,
         parents: [],
         children: [],
         related: [],
@@ -40,6 +43,10 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
       nodes.push(node)
       nodesById[id] = node
       nodesByPath[file.path] = node
+      if (!nodesByType[resolvedType]) {
+        nodesByType[resolvedType] = []
+      }
+      nodesByType[resolvedType].push(node)
     } catch (err) {
       console.warn('[RecordGraphWorker] Failed to parse record', file.path, err)
     }
@@ -67,7 +74,10 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
         fromId: node.id,
         fromType: node.recordType,
         relName: link.relName,
-        field: link.field
+        field: link.field,
+        recordType: node.recordType,
+        targetId: node.id,
+        targetNode: node
       })
     }
 
@@ -82,7 +92,10 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
           fromId: node.id,
           fromType: node.recordType,
           relName: edge.relName,
-          field: edge.field
+          field: edge.field,
+          recordType: node.recordType,
+          targetId: node.id,
+          targetNode: node
         })
       }
     })
@@ -92,6 +105,8 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
     nodes,
     nodesById,
     nodesByPath,
+    nodesByType,
+    relationships,
     stats: {
       total: nodes.length,
       biology: biologyStats
@@ -143,6 +158,50 @@ function extractBiologyEntities(record = {}) {
       label: entry?.label || ''
     }))
     .filter((entity) => entity.domain || entity.role || entity.ontology || entity.id || entity.label)
+}
+
+function extractSemanticTags(record = {}) {
+  const tags = {
+    taxonIds: [],
+    anatomyIds: [],
+    cellTypeIds: [],
+    pathwayIds: [],
+    instrumentIds: [],
+    reagentIds: [],
+    sampleIds: []
+  }
+
+  const biology = record?.biology || {}
+  const operations = record?.operations || {}
+  const addValue = (collection, value) => {
+    const id = extractIdentifier(value)
+    if (id && !collection.includes(id)) {
+      collection.push(id)
+    }
+  }
+  if (biology.taxon) addValue(tags.taxonIds, biology.taxon)
+  if (biology.anatomicalContext) addValue(tags.anatomyIds, biology.anatomicalContext)
+  ensureArray(biology.cellTypes).forEach((entry) => addValue(tags.cellTypeIds, entry))
+  ensureArray(biology.pathways).forEach((entry) => addValue(tags.pathwayIds, entry))
+  ensureArray(record.samples).forEach((entry) => addValue(tags.sampleIds, entry))
+  ensureArray(record.reagents).forEach((entry) => addValue(tags.reagentIds, entry))
+  ensureArray(operations.instruments).forEach((entry) => addValue(tags.instrumentIds, entry))
+  return tags
+}
+
+function extractIdentifier(entry) {
+  if (!entry) return ''
+  if (typeof entry === 'string') return entry
+  if (typeof entry === 'object') {
+    return entry['@id'] || entry.id || entry.identifier || ''
+  }
+  return ''
+}
+
+function ensureArray(value) {
+  if (Array.isArray(value)) return value
+  if (value === undefined || value === null || value === '') return []
+  return [value]
 }
 
 function emptyBiologyStats() {

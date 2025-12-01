@@ -9,6 +9,7 @@
           placeholder="Search term"
           :disabled="readOnly"
           :show-selection-badge="false"
+          value-shape="reference"
           :ref="(instance) => setFieldRef(instance, index)"
           @update:value="(val) => updateEntry(index, val)"
         />
@@ -88,7 +89,19 @@ function normalizeList(value) {
   if (!Array.isArray(value) || !value.length) {
     return [createEmptyEntry()]
   }
-  return value.map((entry) => ({ ...entry }))
+  return value.map((entry) => {
+    const normalized = coerceReferenceEntry(entry)
+    const next = {
+      ...(typeof entry === 'object' && entry ? entry : {}),
+      ...normalized
+    }
+    resolvedColumns.value.forEach((column) => {
+      if (!Object.prototype.hasOwnProperty.call(next, column.key)) {
+        next[column.key] = ''
+      }
+    })
+    return next
+  })
 }
 
 function createEmptyEntry() {
@@ -100,9 +113,10 @@ function createEmptyEntry() {
 }
 
 function updateEntry(index, payload) {
+  const normalized = coerceReferenceEntry(payload)
   state[index] = {
     ...state[index],
-    ...payload
+    ...normalized
   }
   emitValue()
 }
@@ -139,6 +153,17 @@ function focusField(index) {
   const target = fieldRefs[index]
   if (target && typeof target.focus === 'function') {
     target.focus()
+  }
+}
+
+function coerceReferenceEntry(entry = {}) {
+  if (!entry || typeof entry !== 'object') {
+    return { id: '', label: '', source: '' }
+  }
+  return {
+    id: entry.id || entry.identifier || '',
+    label: entry.label || entry.identifier || '',
+    source: entry.source || entry.ontology || ''
   }
 }
 </script>

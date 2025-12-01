@@ -1,0 +1,26 @@
+queries:
+  byTaxon:
+    label: "Records by taxon"
+    filter:
+      path: "data.biology.taxon.@id"
+      operator: equals
+    groupBy: recordType
+    expand:
+      depth: 1
+      relationships:
+        - parents.project
+        - parents.experiment
+        - backlinks.children.experiment
+        - related.samples
+        - related.reagents
+  byInstrument:
+    label: "Records by instrument"
+    filter:
+      path: "data.operations.instruments[].@id"
+      operator: contains
+    groupBy: recordType
+    expand:
+      depth: 1
+      relationships:
+        - parents.project
+        - parents.experiment

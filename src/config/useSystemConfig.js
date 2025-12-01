@@ -9,6 +9,10 @@ function defaultConfig() {
     bioportal: {
       api_key: '',
       cache_duration: 30
+    },
+    features: {
+      graphTree: true,
+      graphQueries: false
     }
   }
 }
@@ -55,6 +59,10 @@ export function useSystemConfig(repoConnection) {
       bioportal: {
         ...base.bioportal,
         ...(userConfig.bioportal || {})
+      },
+      features: {
+        ...base.features,
+        ...(userConfig.features || {})
       }
     }
   }

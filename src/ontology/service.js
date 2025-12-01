@@ -47,10 +47,12 @@ function normalizeTerm(term = {}, source = 'local') {
     return { id: term, label: term, source }
   }
   const definitionValue = Array.isArray(term.definition) ? term.definition[0] : term.definition || ''
+  const ontologyValue = term.ontology || term.source || source
   return {
     id: term.id || term['@id'] || term.prefLabel || '',
     label: term.label || term.prefLabel || term.name || term.id || '',
-    source: term.source || term.ontology || source,
+    source: ontologyValue,
+    ontology: ontologyValue,
     definition: stripHtml(definitionValue),
     synonyms: term.synonyms || term.synonym || [],
     raw: term

@@ -81,12 +81,12 @@ function buildFormData() {
       label: 'Metabolomics Project'
     },
     taxon: {
-      id: 'ncbitaxon:632',
+      identifier: 'ncbitaxon:632',
       label: 'Faecalibacterium prausnitzii',
-      source: 'ncbitaxon'
+      ontology: 'ncbitaxon'
     },
     operator: {
-      id: 'https://example.org/person/bmarshall',
+      identifier: 'https://example.org/person/bmarshall',
       label: 'Brad Marshall'
     },
     plateId: 'PL-001',
@@ -142,8 +142,8 @@ function testComposeFrontMatter() {
   const operations = result.data.operations || {}
 
   assert.equal(links.project.id, 'https://example.org/project/PRJ-1')
-  assert.equal(biology.taxon.id, 'ncbitaxon:632')
-  assert.equal(operations.operator.id, 'https://example.org/person/bmarshall')
+  assert.equal(biology.taxon.identifier, 'ncbitaxon:632')
+  assert.equal(operations.operator.identifier, 'https://example.org/person/bmarshall')
   assert.equal(operations.plateId, 'PL-001')
   assert.equal(biology.pathways[0].id, 'reactome:R-HSA-1430728')
   assert.equal(biology.entities.length, 1, 'project-level biology entities merged into record')
@@ -161,11 +161,11 @@ function testExtractAndMerge() {
   )
   assert.equal(hydratedMetadata.recordType, 'experiment')
   assert.equal(hydratedMetadata.formData.projectLink.id, 'https://example.org/project/PRJ-1')
-  assert.equal(extractedFormData.operator.id, 'https://example.org/person/bmarshall')
+  assert.equal(extractedFormData.operator.identifier, 'https://example.org/person/bmarshall')
 
   const merged = mergeMetadataAndFormData(hydratedMetadata, extractedFormData)
   assert.equal(merged.projectLink.id, 'https://example.org/project/PRJ-1')
-  assert.equal(merged.taxon.id, 'ncbitaxon:632')
+  assert.equal(merged.taxon.identifier, 'ncbitaxon:632')
 }
 
 testComposeFrontMatter()

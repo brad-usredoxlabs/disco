@@ -1,4 +1,4 @@
-import { buildGraphSnapshot } from '../graph/graphBuilder'
+import { buildGraphSnapshot } from '../graph/graphBuilder.js'
 
 const pending = new Map()
 

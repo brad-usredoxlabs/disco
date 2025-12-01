@@ -1,0 +1,53 @@
+views:
+  projectOverview:
+    label: "Project context"
+    rootType: project
+    default: true
+    sections:
+      - id: experiments
+        label: "Experiments"
+        edges:
+          - relationship: "backlinks.children.project"
+            labelTemplate: "{{title || id}}"
+            allowCreate:
+              recordType: experiment
+              parentField: projectId
+      - id: related
+        label: "Related records"
+        edges:
+          - relationship: "related.publications"
+
+  experimentContext:
+    label: "Experiment context"
+    rootType: experiment
+    default: true
+    sections:
+      - id: parents
+        label: "Context"
+        edges:
+          - relationship: "parents.project"
+          - relationship: "parents.protocol"
+      - id: runs
+        label: "Runs"
+        edges:
+          - relationship: "backlinks.children.experiment"
+            allowCreate:
+              recordType: run
+              parentField: experimentId
+      - id: related
+        label: "Related records"
+        edges:
+          - relationship: "related.samples"
+          - relationship: "related.reagents"
+          - relationship: "related.instruments"
+          - relationship: "related.qcResults"
+
+  runContext:
+    label: "Run context"
+    rootType: run
+    default: true
+    sections:
+      - id: parents
+        label: "Experiment"
+        edges:
+          - relationship: "parents.experiment"

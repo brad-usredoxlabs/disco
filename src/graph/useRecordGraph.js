@@ -1,17 +1,21 @@
 import { ref, watch } from 'vue'
 import { collectRecordFiles } from './collectRecordFiles'
-import { buildGraphSnapshot } from './graphBuilder'
+import { buildGraphSnapshot } from './graphBuilder.js'
 import { buildRecordGraph } from './buildRecordGraph'
+import { createGraphApi } from './createGraphApi'
+
+const WORKERS_ENABLED = false
 
 export function useRecordGraph(repoConnection, schemaLoader) {
   const status = ref('idle')
   const error = ref('')
-  const graph = ref({ nodes: [], nodesById: {}, nodesByPath: {}, stats: { total: 0 } })
+  const graph = ref(createGraphApi({}))
   let rebuildTimer = null
   let worker = null
   const workerQueue = new Map()
 
   function supportsWorker() {
+    if (!WORKERS_ENABLED) return false
     return typeof window !== 'undefined' && typeof window.Worker !== 'undefined'
   }
 
@@ -49,13 +53,14 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     const requestId = `${Date.now()}-${Math.random()}`
     return new Promise((resolve, reject) => {
       workerQueue.set(requestId, { resolve, reject })
-      activeWorker.postMessage({ requestId, files, schemaBundle })
+      const sanitizedBundle = cloneBundle(schemaBundle)
+      activeWorker.postMessage({ requestId, files, schemaBundle: sanitizedBundle })
     })
   }
 
   async function rebuild() {
     if (!repoConnection.directoryHandle.value || !schemaLoader.schemaBundle?.value) {
-      graph.value = { nodes: [], nodesById: {}, nodesByPath: {}, stats: { total: 0 } }
+      graph.value = createGraphApi({})
       status.value = 'idle'
       return
     }
@@ -64,6 +69,9 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     try {
       const currentBundle = schemaLoader.schemaBundle.value
       const files = await collectRecordFiles(repoConnection, currentBundle.naming || {})
+      if (import.meta.env?.DEV) {
+        console.info(`[RecordGraph] Collected ${files.length} markdown files`)
+      }
       let result
       if (files.length && supportsWorker()) {
         try {
@@ -77,7 +85,10 @@ export function useRecordGraph(repoConnection, schemaLoader) {
       } else {
         result = await buildRecordGraph(repoConnection, currentBundle)
       }
-      graph.value = result
+      graph.value = createGraphApi(result)
+      if (import.meta.env?.DEV) {
+        console.info('[RecordGraph] Snapshot nodes:', graph.value.nodes?.length || 0)
+      }
       status.value = 'ready'
     } catch (err) {
       console.error('[RecordGraph] Failed to build graph', err)
@@ -87,7 +98,7 @@ export function useRecordGraph(repoConnection, schemaLoader) {
   }
 
   function reset() {
-    graph.value = { nodes: [], nodesById: {}, nodesByPath: {}, stats: { total: 0 } }
+    graph.value = createGraphApi({})
     status.value = 'idle'
     error.value = ''
   }
@@ -135,4 +146,26 @@ export function useRecordGraph(repoConnection, schemaLoader) {
     error,
     rebuild
   }
+}
+
+function cloneBundle(source = {}) {
+  const keys = [
+    'schemaSet',
+    'manifest',
+    'recordSchemas',
+    'uiConfigs',
+    'relationships',
+    'naming',
+    'assistant',
+    'vocabSchemas',
+    'metadataFields',
+    'jsonLdConfig'
+  ]
+  const payload = {}
+  keys.forEach((key) => {
+    if (source[key] !== undefined) {
+      payload[key] = source[key]
+    }
+  })
+  return JSON.parse(JSON.stringify(payload))
 }

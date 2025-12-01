@@ -66,7 +66,9 @@ import {
   normalizeOntologyListEntry,
   normalizeOntologyListValue,
   normalizeOntologyValue,
-  normalizeRecipeValue
+  normalizeRecipeValue,
+  ONTOLOGY_SHAPES,
+  resolveOntologyShape
 } from '../../records/fieldNormalization'
 
 const props = defineProps({
@@ -283,10 +285,13 @@ watch(
         })
       }
       if (Object.keys(bodyUpdates).length) {
-        runWithSyncFlag(isSyncingFromDoc, () => {
-          formState.value = { ...formState.value, ...bodyUpdates }
-          formDirty.value = true
-        })
+        const nextForm = mergeFormData(formState.value, bodyUpdates)
+        if (nextForm.changed) {
+          runWithSyncFlag(isSyncingFromDoc, () => {
+            formState.value = nextForm.data
+            formDirty.value = true
+          })
+        }
       }
     }
   },
@@ -538,6 +543,40 @@ function mergeMetadata(metadata, updates) {
   let changed = false
   const next = { ...(metadata || {}) }
   for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined || value === null) {
+      if (Object.prototype.hasOwnProperty.call(next, key)) {
+        delete next[key]
+        changed = true
+      }
+      continue
+    }
+    const previous = next[key]
+    if (Array.isArray(value) || Array.isArray(previous)) {
+      const prevString = JSON.stringify(previous ?? [])
+      const nextString = JSON.stringify(value ?? [])
+      if (prevString !== nextString) {
+        next[key] = value
+        changed = true
+      }
+    } else if ((previous ?? '') !== (value ?? '')) {
+      next[key] = value
+      changed = true
+    }
+  }
+  return { changed, data: next }
+}
+
+function mergeFormData(formData, updates) {
+  let changed = false
+  const next = { ...(formData || {}) }
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined || value === null) {
+      if (Object.prototype.hasOwnProperty.call(next, key)) {
+        delete next[key]
+        changed = true
+      }
+      continue
+    }
     const previous = next[key]
     if (Array.isArray(value) || Array.isArray(previous)) {
       const prevString = JSON.stringify(previous ?? [])
@@ -579,20 +618,27 @@ function formatFieldValue(value, schema = {}, fieldType, component, valuePath, c
     return []
   }
   if (fieldType === 'ontology') {
+    const shape = resolveOntologyShape(schema, ONTOLOGY_SHAPES.TERM)
     if (Array.isArray(value)) {
-      return value.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
+      return value.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
     }
-    return normalizeOntologyValue(value)
+    return normalizeOntologyValue(value, { schema, shape })
   }
   if (fieldType === 'ontologyList') {
-    if (Array.isArray(value)) {
-      return value.map((entry) => normalizeOntologyListEntry(entry, config)).filter(Boolean)
+    const listConfig = {
+      ...config,
+      schema,
+      shape: resolveOntologyShape(schema, ONTOLOGY_SHAPES.REFERENCE),
+      fallbackShape: ONTOLOGY_SHAPES.REFERENCE
     }
-    const normalized = normalizeOntologyListEntry(value, config)
+    if (Array.isArray(value)) {
+      return value.map((entry) => normalizeOntologyListEntry(entry, listConfig)).filter(Boolean)
+    }
+    const normalized = normalizeOntologyListEntry(value, listConfig)
     return normalized ? [normalized] : []
   }
   if (fieldType === 'recipeCard') {
-    return normalizeRecipeValue(value)
+    return normalizeRecipeValue(value, schema)
   }
   if (schema.type === 'array') {
     if (Array.isArray(value)) {
@@ -622,18 +668,25 @@ function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}, options
     return base
   }
   if (fieldType === 'ontology') {
+    const shape = resolveOntologyShape(schema, ONTOLOGY_SHAPES.TERM)
     if (Array.isArray(rawValue)) {
-      const list = rawValue.map((entry) => normalizeOntologyValue(entry)).filter(Boolean)
-      return list
+      return rawValue.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
     }
-    return normalizeOntologyValue(rawValue)
+    const normalized = normalizeOntologyValue(rawValue, { schema, shape })
+    return normalized || undefined
   }
   if (fieldType === 'ontologyList') {
     if (!Array.isArray(rawValue)) return []
-    return normalizeOntologyListValue(rawValue, config)
+    const listConfig = {
+      ...config,
+      schema,
+      shape: resolveOntologyShape(schema, ONTOLOGY_SHAPES.REFERENCE),
+      fallbackShape: ONTOLOGY_SHAPES.REFERENCE
+    }
+    return normalizeOntologyListValue(rawValue, listConfig)
   }
   if (fieldType === 'recipeCard') {
-    return normalizeRecipeValue(rawValue)
+    return normalizeRecipeValue(rawValue, schema)
   }
   if (schema.type === 'array') {
     if (Array.isArray(rawValue)) return rawValue

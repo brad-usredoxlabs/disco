@@ -3,7 +3,9 @@ import {
   normalizeOntologyListEntry,
   normalizeOntologyListValue,
   normalizeOntologyValue,
-  normalizeRecipeValue
+  normalizeRecipeValue,
+  ONTOLOGY_SHAPES,
+  resolveOntologyShape
 } from './fieldNormalization.js'
 import { mergeContextOverrides } from './biologyInheritance.js'
 
@@ -232,22 +234,29 @@ function readDataValue(frontMatter, descriptor) {
 }
 
 function normalizeValueForDescriptor(descriptor, value) {
-  if (value === undefined) return undefined
+  if (value === undefined || value === null) return undefined
   if (descriptor.component === 'BiologyEntitiesField' || descriptor.valuePath === 'entities') {
     return normalizeBiologyEntityList(value)
   }
   if (descriptor.fieldType === 'ontology') {
-    return normalizeOntologyValue(value)
+    const shape = resolveOntologyShape(descriptor.schema, ONTOLOGY_SHAPES.TERM)
+    return normalizeOntologyValue(value, { schema: descriptor.schema, shape })
   }
   if (descriptor.fieldType === 'ontologyList') {
-    if (Array.isArray(value)) {
-      return normalizeOntologyListValue(value, { columns: descriptor.columns || [] })
+    const config = {
+      columns: descriptor.columns || [],
+      schema: descriptor.schema,
+      fallbackShape: ONTOLOGY_SHAPES.REFERENCE,
+      shape: resolveOntologyShape(descriptor.schema, ONTOLOGY_SHAPES.REFERENCE)
     }
-    const normalized = normalizeOntologyListEntry(value, { columns: descriptor.columns || [] })
+    if (Array.isArray(value)) {
+      return normalizeOntologyListValue(value, config)
+    }
+    const normalized = normalizeOntologyListEntry(value, config)
     return normalized ? [normalized] : []
   }
   if (descriptor.fieldType === 'recipeCard') {
-    return normalizeRecipeValue(value)
+    return normalizeRecipeValue(value, descriptor.schema)
   }
   return cloneValue(value)
 }

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import { buildDefaultFrontMatter, computeRecordPath, sanitizeSlug } from '../records/recordCreation'
 import { generateMarkdownView, buildBodyDefaults } from '../records/markdownView'
@@ -32,6 +32,14 @@ const props = defineProps({
   onCreated: {
     type: Function,
     default: null
+  },
+  creationContext: {
+    type: Object,
+    default: null
+  },
+  parentContext: {
+    type: Object,
+    default: null
   }
 })
 
@@ -45,8 +53,11 @@ const state = reactive({
   isCreating: false,
   error: '',
   autoId: '',
-  pendingCounter: null
+  pendingCounter: null,
+  showAdvanced: false
 })
+const creationContextPatch = ref(null)
+const incomingContext = computed(() => props.creationContext || props.parentContext || null)
 
 const bundle = computed(() => props.schemaLoader.schemaBundle?.value)
 const namingRules = computed(() => bundle.value?.naming || {})
@@ -120,6 +131,7 @@ watch(
     }
     state.body = generateMarkdownView(type, state.metadata, state.metadata.formData || {}, bundle.value || {})
     await seedAutoId(namingRule)
+    applyCreationContextPatch()
     ensureParentFields()
     recomputePath()
   }
@@ -182,6 +194,8 @@ function resetForm() {
   state.filePath = ''
   state.error = ''
   state.isCreating = false
+  state.showAdvanced = false
+  creationContextPatch.value = null
 }
 
 function handleMetadataInput(field, value) {
@@ -196,6 +210,36 @@ function handleParentSelect(field, value) {
     ...state.metadata,
     [field]: value
   }
+  updateDerivedFields()
+}
+
+watch(
+  incomingContext,
+  (context) => {
+    if (!context) {
+      creationContextPatch.value = null
+      return
+    }
+    if (context.recordType && context.recordType !== state.recordType) {
+      state.recordType = context.recordType
+    }
+    const metadataPatch = context.metadata && typeof context.metadata === 'object' ? context.metadata : {}
+    creationContextPatch.value = metadataPatch
+    if (!context.recordType || context.recordType === state.recordType) {
+      applyCreationContextPatch()
+    }
+  },
+  { deep: true, immediate: true }
+)
+
+function applyCreationContextPatch() {
+  const patch = creationContextPatch.value
+  if (!patch || !Object.keys(patch).length) return
+  state.metadata = {
+    ...state.metadata,
+    ...patch
+  }
+  creationContextPatch.value = null
   updateDerivedFields()
 }
 
@@ -267,9 +311,9 @@ function updateDerivedFields() {
 
 <template>
   <BaseModal v-if="open" title="Create new record" @close="close">
-    <div class="creator-body">
-      <label>Record type</label>
-      <select v-model="state.recordType" :disabled="!availableRecordTypes.length">
+  <div class="creator-body">
+    <label>Record type</label>
+    <select v-model="state.recordType" :disabled="!availableRecordTypes.length">
         <option value="" disabled>Select type…</option>
         <option v-for="type in availableRecordTypes" :key="type" :value="type">
           {{ type }}
@@ -279,31 +323,36 @@ function updateDerivedFields() {
         {{ isBundleReady ? 'No record types detected. Connect to a repository with a valid naming configuration.' : 'Loading schema bundle…' }}
       </p>
 
-      <div v-if="state.recordType" class="creator-form">
-        <label>Title</label>
-        <input type="text" v-model="state.metadata.title" />
+    <div v-if="state.recordType" class="creator-form">
+      <label>Title</label>
+      <input type="text" v-model="state.metadata.title" />
 
+      <div v-if="namingRules[state.recordType]?.shortSlugField">
+        <label>Short slug</label>
+        <input type="text" v-model="state.metadata[namingRules[state.recordType].shortSlugField]" />
+      </div>
+
+      <div v-for="parent in parentDefinitions" :key="parent.relName" class="parent-select">
+        <label>{{ parent.relName }} ({{ parent.recordType }})</label>
+        <select v-model="state.metadata[parent.field]">
+          <option value="" disabled>Select {{ parent.relName }}</option>
+          <option
+            v-for="candidate in parentOptions[parent.recordType] || []"
+            :key="candidate.id"
+            :value="candidate.id"
+          >
+            {{ candidate.title || candidate.id }}
+          </option>
+        </select>
+      </div>
+
+      <button class="toggle-advanced" type="button" @click="state.showAdvanced = !state.showAdvanced">
+        {{ state.showAdvanced ? 'Hide advanced options' : 'Show advanced options' }}
+      </button>
+
+      <div v-if="state.showAdvanced" class="advanced-panel">
         <label>Record ID</label>
         <input type="text" v-model="state.metadata.id" />
-
-        <div v-if="namingRules[state.recordType]?.shortSlugField">
-          <label>Short slug</label>
-          <input type="text" v-model="state.metadata[namingRules[state.recordType].shortSlugField]" />
-        </div>
-
-        <div v-for="parent in parentDefinitions" :key="parent.relName" class="parent-select">
-          <label>{{ parent.relName }} ({{ parent.recordType }})</label>
-          <select v-model="state.metadata[parent.field]">
-            <option value="" disabled>Select {{ parent.relName }}</option>
-            <option
-              v-for="candidate in parentOptions[parent.recordType] || []"
-              :key="candidate.id"
-              :value="candidate.id"
-            >
-              {{ candidate.title || candidate.id }}
-            </option>
-          </select>
-        </div>
 
         <label>Target file</label>
         <input type="text" :value="state.filePath" readonly />
@@ -311,6 +360,7 @@ function updateDerivedFields() {
         <label>Body template</label>
         <textarea rows="6" v-model="state.body"></textarea>
       </div>
+    </div>
 
       <p v-if="state.error" class="status status-error">{{ state.error }}</p>
     </div>
@@ -356,5 +406,30 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.toggle-advanced {
+  align-self: flex-start;
+  background: transparent;
+  color: #2563eb;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.toggle-advanced:hover {
+  text-decoration: underline;
+}
+
+.advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 </style>

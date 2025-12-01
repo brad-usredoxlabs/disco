@@ -117,7 +117,14 @@ function getComponentValue(field) {
 
 function setFieldValue(field, value) {
   const target = isDataField(field) ? ensureFormData() : localState
-  target[field] = value
+  if (value === undefined || value === null) {
+    delete target[field]
+  } else {
+    target[field] = value
+  }
+  if (isDataField(field) && target === localState.formData && Object.keys(localState.formData).length === 0) {
+    delete localState.formData
+  }
   emit('update:modelValue', { ...localState })
 }
 
