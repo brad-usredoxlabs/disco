@@ -10,19 +10,31 @@
           :disabled="readOnly"
           :show-selection-badge="false"
           value-shape="reference"
+          :search-options="buildSearchOptions(entry)"
           :ref="(instance) => setFieldRef(instance, index)"
           @update:value="(val) => updateEntry(index, val)"
         />
-        <template v-for="column in resolvedColumns" :key="column.key">
-          <input
-            class="ontology-extra"
-            type="text"
-            v-model="entry[column.key]"
-            :placeholder="column.label"
-            :readonly="readOnly"
-            :disabled="readOnly"
-            @input="emitValue"
-          />
+        <template v-for="column in normalizedColumns" :key="column.key">
+          <label class="ontology-extra">
+            <span class="extra-label">{{ column.label }}</span>
+            <EnumCombobox
+              v-if="column.type === 'enum'"
+              :model-value="entry[column.key]"
+              :options="column.enum || []"
+              :placeholder="column.placeholder || column.label"
+              :disabled="readOnly"
+              @update:model-value="(val) => updateColumnValue(index, column.key, val)"
+            />
+            <input
+              v-else
+              type="text"
+              :value="entry[column.key]"
+              :placeholder="column.placeholder || column.label"
+              :readonly="readOnly"
+              :disabled="readOnly"
+              @input="(event) => updateColumnValue(index, column.key, event.target.value)"
+            />
+          </label>
         </template>
       </div>
       <button
@@ -43,6 +55,7 @@
 <script setup>
 import { reactive, watch, computed, nextTick } from 'vue'
 import OntologyFieldInput from './OntologyFieldInput.vue'
+import EnumCombobox from '../../components/fields/EnumCombobox.vue'
 
 const props = defineProps({
   value: {
@@ -65,12 +78,15 @@ const props = defineProps({
 
 const emit = defineEmits(['update:value'])
 
-console.log('[OntologyListField] Mounted with', { vocab: props.vocab, value: props.value })
-
-const resolvedColumns = computed(() => {
-  if (props.columns?.length) return props.columns
-  return []
-})
+const normalizedColumns = computed(() =>
+  (Array.isArray(props.columns) ? props.columns : [])
+    .filter((column) => column && column.key)
+    .map((column) => ({
+      ...column,
+      type: column.type || (Array.isArray(column.enum) && column.enum.length ? 'enum' : 'text'),
+      placeholder: column.placeholder || column.label || ''
+    }))
+)
 
 const state = reactive(normalizeList(props.value))
 const fieldRefs = []
@@ -95,7 +111,7 @@ function normalizeList(value) {
       ...(typeof entry === 'object' && entry ? entry : {}),
       ...normalized
     }
-    resolvedColumns.value.forEach((column) => {
+    normalizedColumns.value.forEach((column) => {
       if (!Object.prototype.hasOwnProperty.call(next, column.key)) {
         next[column.key] = ''
       }
@@ -106,8 +122,8 @@ function normalizeList(value) {
 
 function createEmptyEntry() {
   const entry = { id: '', label: '', source: '' }
-  resolvedColumns.value.forEach((column) => {
-    entry[column.key] = ''
+  normalizedColumns.value.forEach((column) => {
+    entry[column.key] = column.default ?? ''
   })
   return entry
 }
@@ -142,6 +158,22 @@ function emitValue() {
     .filter((entry) => entry?.id || entry?.label)
     .map((entry) => ({ ...entry }))
   emit('update:value', filtered.length ? filtered : [])
+}
+
+function updateColumnValue(index, key, value) {
+  if (!state[index]) return
+  state[index][key] = value ?? ''
+  emitValue()
+}
+
+function buildSearchOptions(entry) {
+  const domain = typeof entry?.domain === 'string' ? entry.domain.trim() : ''
+  const ontology = typeof entry?.source === 'string' && entry.source.trim()
+  const fallbackOntology = !ontology && typeof entry?.ontology === 'string' ? entry.ontology.trim() : ''
+  return {
+    domain,
+    ontology: ontology || fallbackOntology || ''
+  }
 }
 
 function setFieldRef(instance, index) {
@@ -189,9 +221,29 @@ function coerceReferenceEntry(entry = {}) {
 
 .ontology-extra {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.extra-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.ontology-extra input {
   border: 1px solid #cbd5f5;
   border-radius: 6px;
   padding: 0.25rem 0.4rem;
+}
+
+.ontology-extra :deep(.enum-input) {
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  width: 100%;
 }
 
 .ontology-remove {

@@ -42,6 +42,16 @@ layout:
         key: experiment
       ui:
         width: 6
+    protocol:
+      group: "header"
+      order: 25
+      jsonLd:
+        target: data
+        section: links
+        key: protocol
+      ui:
+        component: ProtocolReferenceField
+        width: 6
     runId:
       group: "header"
       order: 30
@@ -100,6 +110,17 @@ layout:
       ui:
         component: code
         language: yaml
+    plateLayouts:
+      group: "details"
+      order: 85
+      jsonLd:
+        target: data
+        section: operations
+        key: plateLayouts
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 4
     operator:
       group: "details"
       order: 90
@@ -151,10 +172,44 @@ layout:
       group: "biology"
       order: 140
       ui:
-        component: "BiologyEntitiesField"
+        fieldType: "ontologyList"
+        vocab: "biological-entity"
         valuePath: "entities"
         helpText: "Override experiment biology when this run has unique entities."
+        columns:
+          - key: domain
+            label: "Domain"
+            enum:
+              - taxon
+              - cell_line
+              - tissue
+              - pathway
+              - phenotype
+              - compound
+              - assay_material
+              - other
+          - key: role
+            label: "Role"
+            enum:
+              - sample
+              - target
+              - positive_control
+              - negative_control
+              - reference
+              - spike_in
+              - background
+              - assay_material
+              - other
       jsonLd:
         target: data
         section: biology
         key: entities
+    protocolParameters:
+      group: "details"
+      order: 95
+      ui:
+        component: JsonEditor
+      jsonLd:
+        target: data
+        section: operations
+        key: protocolParameters

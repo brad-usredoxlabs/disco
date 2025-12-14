@@ -1,0 +1,50 @@
+name: biological-entity
+cached_terms:
+  - id: http://purl.obolibrary.org/obo/CL_0001035
+    label: bone cell
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:48:07.956Z
+  - id: http://purl.bioontology.org/ontology/NCBITAXON/853
+    label: Faecalibacterium prausnitzii
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:50:20.710Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_34880
+    label: NS-102
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:31:50.892Z
+  - id: http://purl.obolibrary.org/obo/CLO_0008205
+    label: NS20Y cell
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:47:05.508Z
+  - id: http://purl.obolibrary.org/obo/CLO_0003704
+    label: Hep G2 cell
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:48:40.821Z
+  - id: http://purl.obolibrary.org/obo/CHEBI_70782
+    label: PPARalpha agonist
+    source: ontology
+    ontologyEnum: ontology
+    cached_at: 2025-12-13T19:53:55.439Z
+local_extensions:
+  - id: LAB:HUMAN_STOOL_PANEL
+    label: Human stool microbiome panel
+    domain: taxon
+    role: sample
+    ontology: ncbitaxon
+    definition: Composite panel prepared from pooled donor stool; use when a plate
+      wells share the same inoculum.
+    source: local
+  - id: LAB:HEPG2_NEGATIVE
+    label: HepG2 (negative control)
+    domain: cell_line
+    role: negative_control
+    ontology: cellosaurus
+    definition: HepG2 cell line maintained in-house for control wells.
+    source: local
+$schema: https://json-schema.org/draft/2020-12/schema
+description: Local extensions and cached selections for BiologyEntity combobox inputs.

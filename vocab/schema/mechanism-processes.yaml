@@ -1,0 +1,27 @@
+name: mechanism-processes
+description: "Biological processes affected by a material mechanism (GO-backed search)."
+
+bioportal_ontologies:
+  - acronym: GO
+    description: "Gene Ontology – biological process branch."
+    matches:
+      ontology_enum: go
+
+search_settings:
+  require_exact_match: false
+  include_obsolete: false
+  include_properties: true
+  include_definitions: true
+
+validation:
+  required_fields:
+    - id
+    - label
+
+display:
+  label_format: "{label} ({source}:{id})"
+  show_definition: true
+
+local_priority:
+  enabled: true
+  cached_term_weight: 0.85

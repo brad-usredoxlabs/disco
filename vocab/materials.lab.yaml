@@ -1,0 +1,232 @@
+# vocab/materials.lab.yaml
+# Local material library with ontology cross-references (non-canonical)
+
+- id: material:clofibrate
+  label: clofibrate
+  tags:
+    - cells
+    - cell_line
+    - primary_cells
+    - extract
+- id: material:fccp
+  label: FCCP
+  tags:
+    - compound
+    - agonist
+    - antagonist
+    - inhibitor
+    - activator
+  measures: MMP
+  defaults:
+    role: negative_control
+  mechanism:
+    type: other
+    target:
+      id: Mitochondrial_Uncoupler
+      label: Mitochondrial_Uncoupler
+
+- id: material:fenofibrate
+  label: Fenofibrate
+  tags:
+    - cells
+    - cell_line
+    - primary_cells
+    - extract
+  mechanism:
+    type: agonist
+    target:
+      id: Thesaurus:C91749
+      label: PPARα
+  affected_process:
+    id: http://purl.obolibrary.org/obo/GO_0006631
+    label: fatty acid metabolic process
+  xref:
+    other: http://purl.obolibrary.org/obo/CHEBI_5001
+- id: material:heparg
+  label: HepaRG
+  tags:
+    - cells
+    - primary_cells
+    - extract
+    - cell_line
+  xref:
+    ncbitaxon: Homo Sapien
+- id: material:hepG2_cells
+  label: HepG2 cells
+  tags: [ cells, cell_line, sample, fire ]
+  classified_as:
+    - id: CL:0000182
+      label: HepG2 cell line
+      domain: cell_line
+      role: sample
+    - id: NCBITaxon:9606
+      label: Homo sapiens
+      domain: taxon
+      role: sample
+  defaults:
+    role: sample
+
+- id: material:dmso
+  label: DMSO
+  tags: [ solvent, vehicle, control, fire ]
+  xref:
+    chebi: "CHEBI:28262"
+  defaults:
+    role: vehicle_control
+
+# -------------------------
+# Assay materials (dyes)
+# -------------------------
+
+- id: material:thiol_redox_dye
+  label: Thiol redox dye
+  tags: [ dye, assay_material, fire ]
+  measures: feature:thiol_reduction_state_proxy
+  defaults:
+    role: assay_material
+
+- id: material:ros_dye
+  label: ROS dye
+  tags: [ dye, assay_material, fire ]
+  measures: feature:ros_proxy
+  defaults:
+    role: assay_material
+
+- id: material:mmp_dye
+  label: MMP dye
+  tags: [ dye, assay_material, fire ]
+  measures: feature:mmp_proxy
+  defaults:
+    role: assay_material
+
+# -------------------------
+# Treatments: PPARα
+# -------------------------
+
+- id: material:wy14643
+  label: WY-14643
+  tags: [ compound, treatment, ppara, agonist, fire ]
+  mechanism:
+    type: agonist
+    target:
+      id: Thesaurus:C91749
+      label: PPARα
+  xref:
+    chebi_role: "CHEBI:48705" # agonist
+  defaults:
+    role: treatment
+    amount: { value: 10, unit: uM }
+
+- id: material:gw6471
+  label: GW6471
+  tags: [ compound, treatment, ppara, antagonist, fire ]
+  mechanism:
+    type: antagonist
+    target:
+      id: Thesaurus:C91749
+      label: PPARα
+  xref:
+    chebi_role: "CHEBI:48706" # antagonist
+  defaults:
+    role: treatment
+    amount: { value: 10, unit: uM }
+
+# -------------------------
+# Treatments: AhR
+# -------------------------
+
+- id: material:tcdd
+  label: TCDD
+  tags: [ compound, treatment, ahr, agonist, fire ]
+  mechanism:
+    type: agonist
+    target:
+      id: Thesaurus:C28523
+      label: AhR
+  xref:
+    chebi: "CHEBI:28119"
+    chebi_role: "CHEBI:48705" # agonist
+  defaults:
+    role: treatment
+
+- id: material:ch223191
+  label: CH-223191
+  tags: [ compound, treatment, ahr, antagonist, fire ]
+  mechanism:
+    type: antagonist
+    target:
+      id: Thesaurus:C28523
+      label: AhR
+  xref:
+    chebi_role: "CHEBI:48706" # antagonist
+  defaults:
+    role: treatment
+
+# -------------------------
+# Treatments: HIF-1α
+# -------------------------
+
+- id: material:dmog
+  label: DMOG
+  tags: [ compound, treatment, hif1a, activator, fire ]
+  mechanism:
+    type: activator
+    target:
+      id: Thesaurus:C28554
+      label: HIF-1α
+  xref:
+    chebi: "CHEBI:102218"
+  defaults:
+    role: treatment
+
+- id: material:chetomin
+  label: Chetomin
+  tags: [ compound, treatment, hif1a, inhibitor, fire ]
+  mechanism:
+    type: inhibitor
+    target:
+      id: Thesaurus:C28554
+      label: HIF-1α
+  defaults:
+    role: treatment
+
+# -------------------------
+# Treatments: NRF2
+# -------------------------
+
+- id: material:sulforaphane
+  label: Sulforaphane
+  tags: [ compound, treatment, nrf2, activator, fire ]
+  mechanism:
+    type: activator
+    target:
+      id: Thesaurus:C54244
+      label: NRF2
+  defaults:
+    role: treatment
+
+- id: material:ml385
+  label: ML385
+  tags: [ compound, treatment, nrf2, inhibitor, fire ]
+  mechanism:
+    type: inhibitor
+    target:
+      id: Thesaurus:C54244
+      label: NRF2
+  defaults:
+    role: treatment
+
+# -------------------------
+# Controls
+# -------------------------
+
+- id: material:tbhp
+  label: tert-Butyl hydroperoxide (tBHP)
+  tags: [ compound, positive_control, oxidative_stress, fire ]
+  mechanism:
+    type: inducer
+    target:
+      id: entity:OxidativeStress
+      label: Oxidative stress response
+  defaults:
+    role: positive_control

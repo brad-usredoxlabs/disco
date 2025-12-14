@@ -1,0 +1,20 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "reagent-list.schema.yaml"
+title: ReagentList
+type: array
+description: "List of reagent identifiers referenced in a record."
+items:
+  type: object
+  required:
+    - id
+  additionalProperties: false
+  properties:
+    id:
+      type: string
+      description: "Ontology or local vocab identifier (e.g., CHEBI:17234)."
+    label:
+      type: string
+      description: "Cached display label to avoid repeated lookups."
+    source:
+      type: string
+      description: "Ontology acronym or 'local' for lab-defined terms."

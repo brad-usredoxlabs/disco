@@ -82,6 +82,42 @@ layout:
         display: "table"
         collapsible: false
 
+    biologicalEntities:
+      group: "entities"
+      order: 55
+      jsonLd:
+        target: data
+        section: operations
+        key: biologicalEntities
+      ui:
+        fieldType: "ontologyList"
+        vocab: "biological-entity"
+        helpText: "Structured list of organisms, tissues, pathways, etc., associated with this experiment."
+        columns:
+          - key: domain
+            label: "Domain"
+            enum:
+              - taxon
+              - cell_line
+              - tissue
+              - pathway
+              - phenotype
+              - compound
+              - assay_material
+              - other
+          - key: role
+            label: "Role"
+            enum:
+              - sample
+              - target
+              - positive_control
+              - negative_control
+              - reference
+              - spike_in
+              - background
+              - assay_material
+              - other
+
     reagents:
       group: "entities"
       order: 60
@@ -198,14 +234,3 @@ layout:
       ui:
         fieldType: "recipeCard"
         vocab: "reagents"
-    biology:
-      group: "biology"
-      order: 150
-      ui:
-        component: "BiologyEntitiesField"
-        valuePath: "entities"
-        helpText: "Attach experiment-specific biological entities (cells, tissues, pathways, etc.)."
-      jsonLd:
-        target: data
-        section: biology
-        key: entities

@@ -31,12 +31,6 @@ recordTypes:
         recordType: "protocol"
         cardinality: "0..1"
 
-    children:
-      runs:
-        field: "runs"
-        recordType: "run"
-        cardinality: "0..*"
-
     related:
       samples:
         field: "samples"
@@ -55,6 +49,12 @@ recordTypes:
         recordType: "qc-result"
         cardinality: "0..*"
 
+  protocol:
+    idField: "id"
+    parents: {}
+    children: {}
+    related: {}
+
   run:
     idField: "id"
     # runs don’t need a slugField unless you decide they do
@@ -64,8 +64,29 @@ recordTypes:
         field: "experimentId"
         recordType: "experiment"
         cardinality: "1"
+      protocol:
+        field: "protocol.@id"
+        recordType: "protocol"
+        cardinality: "1"
 
-    children: {}
+    children:
+      plateLayouts:
+        field: "plateLayouts"
+        recordType: "plateLayout"
+        cardinality: "0..*"
 
     related:
       {}
+
+  plateLayout:
+    idField: "id"
+
+    parents:
+      run:
+        field: "runId"
+        recordType: "run"
+        cardinality: "1"
+
+    children: {}
+
+    related: {}

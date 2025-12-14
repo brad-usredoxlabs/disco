@@ -1,0 +1,53 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "recipe-card.schema.yaml"
+title: RecipeCard
+type: object
+description: "Structured instructions for preparing a material."
+properties:
+  title:
+    type: string
+    description: "Human-readable recipe name."
+  items:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - material
+      properties:
+        quantity:
+          type: string
+          description: "Amount (e.g., 10)."
+        unit:
+          type: string
+          description: "Unit for quantity (e.g., mL, mg)."
+        material:
+          $ref: "./material-ref.schema.yaml"
+        notes:
+          type: string
+          description: "Optional free-form notes."
+  steps:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      description: "Numbered preparation steps."
+  output:
+    type: object
+    description: "Type-level description of what this recipe produces."
+    properties:
+      material:
+        $ref: "./material-ref.schema.yaml"
+      typical_yield:
+        type: object
+        properties:
+          amount:
+            type: number
+          unit:
+            type: string
+            description: "Yield unit (e.g., 'gel', 'mL')."
+required:
+  - title
+  - items
+  - steps
+additionalProperties: false

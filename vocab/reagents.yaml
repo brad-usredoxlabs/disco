@@ -18,8 +18,7 @@ cached_terms:
   - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C80926
     label: Ethanolamine Hydrochloride
     source: ontology
-    definition: ""
-    cached_at: 2025-11-26T02:12:46.639Z
+    cached_at: 2025-12-02T00:36:04.374Z
   - id: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C80131
     label: Polyethylene Glycol 3350
     source: ontology
@@ -101,10 +100,16 @@ cached_terms:
     id: LAB:DMEM_SUPPLEMENT
     source: local
     cached_at: 2025-11-28T23:03:55.487Z
-  - id: http://purl.obolibrary.org/obo/CHEBI_71464
+  - identifier: http://purl.obolibrary.org/obo/CHEBI_71464
     label: palmitoyl ethanolamide
+    ontology: ontology
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: ontology
+    id: http://purl.obolibrary.org/obo/CHEBI_71464
     source: ontology
-    cached_at: 2025-11-30T00:01:52.206Z
+    cached_at: 2025-12-10T03:55:17.743Z
 local_extensions:
   - id: LAB:BUFFER_A
     label: Smith Lab Buffer A

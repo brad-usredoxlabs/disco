@@ -83,6 +83,14 @@ const props = defineProps({
     type: String,
     default: 'term',
     validator: (input) => ['term', 'reference'].includes(input)
+  },
+  searchOptions: {
+    type: Object,
+    default: () => ({})
+  },
+  autofocusAfterSelect: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -145,6 +153,15 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => JSON.stringify(props.searchOptions || {}),
+  () => {
+    if (dropdownOpen.value && !props.disabled) {
+      scheduleSearch()
+    }
+  }
+)
+
 function handleFocus() {
   if (props.disabled) return
   cancelBlur()
@@ -198,7 +215,7 @@ async function runSearch() {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    const data = await searchOntologyTerms(props.vocab, query.value || '')
+    const data = await searchOntologyTerms(props.vocab, query.value || '', props.searchOptions || {})
     results.value = data
     highlightedIndex.value = 0
     await nextTick()
@@ -211,10 +228,15 @@ async function runSearch() {
   }
 }
 
-function selectResult(result) {
+function selectResult(result, { refocus } = {}) {
   dropdownOpen.value = false
   query.value = result.label || result.prefLabel || result.id || ''
   emitSelection(result)
+  const shouldRefocus = typeof refocus === 'boolean' ? refocus : props.autofocusAfterSelect
+  if (!shouldRefocus) return
+  nextTick(() => {
+    inputRef.value?.focus()
+  })
 }
 
 function emitSelection(result) {
@@ -227,7 +249,8 @@ function emitSelection(result) {
     const payload = {
       id: identifier || label,
       label,
-      source: ontology || ''
+      source: ontology || '',
+      ontologyEnum: result.ontologyEnum || ''
     }
     emit('update:value', payload)
     saveOntologySelection(props.vocab, payload)
@@ -240,7 +263,8 @@ function emitSelection(result) {
     ontology: ontology || '',
     definition: result.definition || '',
     synonyms: normalizeSuggestionList(result.synonyms || result.synonym),
-    xrefs: normalizeSuggestionList(result.xrefs)
+    xrefs: normalizeSuggestionList(result.xrefs),
+    ontologyEnum: result.ontologyEnum || ''
   }
   emit('update:value', recordPayload)
   const cachePayload = {
@@ -276,9 +300,11 @@ function selectHighlighted(event) {
   selectResult(results.value[highlightedIndex.value])
 }
 
-function handleTab(event) {
+function handleTab() {
   if (!dropdownOpen.value) return
-  event.preventDefault()
+  if (results.value.length) {
+    selectResult(results.value[highlightedIndex.value], { refocus: false })
+  }
   dropdownOpen.value = false
 }
 

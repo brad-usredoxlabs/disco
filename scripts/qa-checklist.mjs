@@ -35,6 +35,10 @@ const CHECKS = [
   {
     name: 'JSON-LD compliance',
     command: 'npm run check:jsonld'
+  },
+  {
+    name: 'Graph config validation',
+    command: 'npm run check:graph'
   }
 ]
 

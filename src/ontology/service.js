@@ -55,6 +55,8 @@ function normalizeTerm(term = {}, source = 'local') {
     ontology: ontologyValue,
     definition: stripHtml(definitionValue),
     synonyms: term.synonyms || term.synonym || [],
+    domain: term.domain || term.raw?.domain || '',
+    role: term.role || term.raw?.role || '',
     raw: term
   }
 }
@@ -65,10 +67,11 @@ function stripHtml(value) {
   return withoutTags.replace(/\s+/g, ' ').trim()
 }
 
-export async function searchOntologyTerms(vocabName, query = '') {
+export async function searchOntologyTerms(vocabName, query = '', options = {}) {
   console.log('[OntologyService] searchOntologyTerms', { 
     vocabName, 
     query, 
+    options,
     hasVocabStore: !!vocabStore,
     hasRepo: !!repoConnectionRef,
     vocabSchemas: Object.keys(vocabSchemas)
@@ -80,6 +83,7 @@ export async function searchOntologyTerms(vocabName, query = '') {
     throw new Error('Connect a repository and load a schema bundle to enable ontology searches.')
   }
   const schema = getVocabSchema(vocabName)
+  const normalizedOptions = normalizeSearchOptions(options)
   const resultsMap = new Map()
 
   const vocab = await readVocab(vocabName)
@@ -91,17 +95,17 @@ export async function searchOntologyTerms(vocabName, query = '') {
   }
 
   if (vocab) {
-    [...(vocab.local_extensions || []), ...(vocab.cached_terms || [])].forEach((entry) => {
-      const normalized = normalizeTerm(entry, entry.source || 'local')
+    ;[...(vocab.local_extensions || []), ...(vocab.cached_terms || [])].forEach((entry) => {
+      const normalized = annotateOntology(normalizeTerm(entry, entry.source || 'local'), schema)
       if (!normalized?.id) return
-      if (matchesQuery(normalized, trimmed)) {
+      if (matchesQuery(normalized, trimmed) && matchesContext(normalized, normalizedOptions)) {
         resultsMap.set(normalized.id, { ...normalized, provenance: 'local' })
       }
     })
   }
 
   if (schema && bioportalClient && trimmed.length) {
-    const ontologyList = schema.bioportal_ontologies?.map((entry) => entry.acronym).filter(Boolean).join(',')
+    const ontologyList = selectOntologyList(schema, normalizedOptions)
     if (ontologyList) {
       try {
         const payload = await bioportalClient.searchTerms({
@@ -115,8 +119,9 @@ export async function searchOntologyTerms(vocabName, query = '') {
         })
         const collection = payload?.collection || []
         collection.forEach((item) => {
-          const normalized = normalizeTerm(item, item.ontology || 'ontology')
+          const normalized = annotateOntology(normalizeTerm(item, item.ontology || 'ontology'), schema)
           if (!normalized?.id) return
+          if (!matchesContext(normalized, normalizedOptions)) return
           if (!resultsMap.has(normalized.id)) {
             resultsMap.set(normalized.id, { ...normalized, provenance: 'bioportal' })
           }
@@ -139,6 +144,75 @@ function matchesQuery(term, query) {
     haystacks.push(...synonyms)
   }
   return haystacks.filter(Boolean).some((value) => String(value).toLowerCase().includes(needle))
+}
+
+function normalizeSearchOptions(options = {}) {
+  const domain = options.domain ? String(options.domain).toLowerCase().trim() : ''
+  const ontologyInput = options.ontology || options.ontologyEnum || ''
+  const ontology = ontologyInput ? String(ontologyInput).toLowerCase().trim() : ''
+  return { domain, ontology }
+}
+
+function matchesContext(term, options = {}) {
+  if (!term) return false
+  const domainValue = term.domain ? String(term.domain).toLowerCase() : ''
+  const ontologyValue = term.ontologyEnum
+    ? String(term.ontologyEnum).toLowerCase()
+    : term.ontology
+    ? String(term.ontology).toLowerCase()
+    : term.source
+    ? String(term.source).toLowerCase()
+    : ''
+  const domainMatches = !options.domain || !domainValue || domainValue === options.domain
+  const ontologyMatches = !options.ontology || !ontologyValue || ontologyValue === options.ontology
+  return domainMatches && ontologyMatches
+}
+
+function selectOntologyList(schema, options = {}) {
+  const entries = schema?.bioportal_ontologies || []
+  if (!entries.length) return ''
+  const filtered = entries.filter((entry) => ontologyEntryMatchesFilters(entry, options))
+  const target = filtered.length ? filtered : entries
+  return target.map((entry) => entry.acronym).filter(Boolean).join(',')
+}
+
+function ontologyEntryMatchesFilters(entry, options = {}) {
+  if (!options.domain && !options.ontology) return true
+  const domains = Array.isArray(entry?.matches?.domains)
+    ? entry.matches.domains.map((value) => value.toLowerCase())
+    : null
+  const enumValue = entry?.matches?.ontology_enum ? entry.matches.ontology_enum.toLowerCase() : ''
+  const domainMatches = !options.domain || !domains || domains.includes(options.domain)
+  const ontologyMatches = !options.ontology || !enumValue || enumValue === options.ontology
+  return domainMatches && ontologyMatches
+}
+
+function annotateOntology(term, schema) {
+  if (!term) return term
+  const resolved = resolveOntologyEnum(schema, term.ontology || term.source || '')
+  if (resolved) {
+    term.ontologyEnum = resolved
+  }
+  return term
+}
+
+function resolveOntologyEnum(schema, value) {
+  if (!value) return ''
+  const normalized = value.toString().toLowerCase()
+  if (!normalized) return ''
+  const entries = schema?.bioportal_ontologies || []
+  for (const entry of entries) {
+    const acronym = entry.acronym ? entry.acronym.toLowerCase() : ''
+    const enumValue = entry.matches?.ontology_enum ? entry.matches.ontology_enum.toLowerCase() : ''
+    if (enumValue) {
+      if (normalized === enumValue || normalized === acronym) {
+        return entry.matches.ontology_enum
+      }
+    } else if (acronym && normalized === acronym) {
+      return entry.acronym
+    }
+  }
+  return normalized
 }
 
 export async function saveOntologySelection(vocabName, term) {

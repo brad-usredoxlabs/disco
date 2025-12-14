@@ -1,0 +1,34 @@
+title: "Recipe UI Configuration"
+recordType: "recipe"
+
+layout:
+  sections:
+    metadata:
+      label: "Metadata"
+      fields:
+        - title
+        - family
+        - version
+        - status
+        - tags
+        - supersedes
+    card:
+      label: "Recipe details"
+      fields:
+        - card
+
+  fields:
+    status:
+      group: metadata
+      order: 40
+      ui:
+        component: select
+        options: ["draft", "active", "deprecated"]
+    tags:
+      group: metadata
+      order: 50
+      ui:
+        component: tag-list
+    card:
+      group: card
+      order: 10

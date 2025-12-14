@@ -1,0 +1,28 @@
+id: recipeWorkflow
+initial: draft
+meta:
+  label: Recipe workflow
+states:
+  draft:
+    meta:
+      description: Draft editing allowed
+    on:
+      SUBMIT:
+        target: review
+        guard: validation.passed
+  review:
+    meta:
+      description: Awaiting review
+    on:
+      REQUEST_CHANGES:
+        target: draft
+      APPROVE:
+        target: approved
+        guard: signoff.atLeastOne
+  approved:
+    meta:
+      description: Approved recipes are immutable
+      immutable: true
+    on:
+      REOPEN:
+        target: draft

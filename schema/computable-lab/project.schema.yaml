@@ -44,7 +44,7 @@ properties:
     description: "High-level description of the investigation."
 
   investigationType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "Ontology term for investigation type (e.g. OBI:0000066)."
 
   objectives:
@@ -57,7 +57,7 @@ properties:
     type: array
     description: "High-level design factors encoded as ontology terms."
     items:
-      $ref: "./ontology-term.schema.yaml"
+      $ref: "./datatypes/ontology-term.schema.yaml"
 
   contacts:
     type: array
@@ -96,7 +96,7 @@ properties:
       description: "Experiment record ID or path."
 
   obiType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "OBI investigation type for this Project."
     default:
       label: "investigation"
@@ -116,5 +116,5 @@ properties:
     type: object
     properties:
       entities:
-        $ref: "./datatypes/biology-entity.schema.yaml#/definitions/BiologyEntityList"
+        $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
     additionalProperties: false

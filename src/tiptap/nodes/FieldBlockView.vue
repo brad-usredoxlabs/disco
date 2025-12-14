@@ -43,16 +43,6 @@
         />
       </div>
     </template>
-    <template v-else-if="isBiologyEntitiesField">
-      <div class="biology-field-wrapper">
-        <span class="field-label">{{ labelText }}</span>
-        <BiologyEntitiesField
-          :value="node.attrs.value || []"
-          :read-only="isEditorReadOnly"
-          @update:value="updateFieldValue"
-        />
-      </div>
-    </template>
     <template v-else>
       <div
         class="field-inline"
@@ -126,7 +116,6 @@ import { NodeViewWrapper } from '@tiptap/vue-3'
 import OntologyFieldInput from './OntologyFieldInput.vue'
 import RecipeCardField from './RecipeCardField.vue'
 import OntologyListField from './OntologyListField.vue'
-import BiologyEntitiesField from '../../components/fields/BiologyEntitiesField.vue'
 
 const props = defineProps({
   node: {
@@ -160,7 +149,6 @@ const fieldType = computed(() => props.node.attrs.fieldType || '')
 const isOntologyField = computed(() => fieldType.value === 'ontology')
 const isRecipeCardField = computed(() => fieldType.value === 'recipeCard')
 const isOntologyListField = computed(() => fieldType.value === 'ontologyList')
-const isBiologyEntitiesField = computed(() => (props.node.attrs.component || '') === 'BiologyEntitiesField')
 const isEditorReadOnly = computed(() => props.editor?.isEditable === false)
 
 const labelText = computed(() => humanizeLabel(props.node.attrs.fieldKey))

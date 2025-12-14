@@ -24,13 +24,21 @@ export function buildFieldDescriptors(recordType, bundle = {}) {
   const metadataDescriptors = []
   const bodyDescriptors = []
 
+  const schemaRegistry = bundle.recordSchemas || {}
+
   Object.entries(props).forEach(([name, schemaField]) => {
     const layoutConfig = layout[name] || {}
     const uiConfig = layoutConfig.ui || {}
     if (schemaField.readOnly) return
+    const resolvedSchema = dereferenceSchemaNode(schemaField, schema, schemaRegistry) || schemaField
+    const itemSchema =
+      resolvedSchema?.type === 'array'
+        ? dereferenceSchemaNode(resolvedSchema.items, resolvedSchema, schemaRegistry)
+        : null
     const descriptor = {
       name,
-      schema: schemaField,
+      schema: resolvedSchema,
+      itemSchema,
       config: layoutConfig,
       label: layoutConfig.label || humanizeKey(name),
       fieldType: uiConfig.fieldType || layoutConfig.fieldType || schemaField.fieldType || null,
@@ -109,6 +117,57 @@ function defaultValue(type) {
 function cloneValue(value) {
   if (value === null || typeof value !== 'object') return value
   return JSON.parse(JSON.stringify(value))
+}
+
+function decodePointerSegment(segment) {
+  return segment.replace(/~1/g, '/').replace(/~0/g, '~')
+}
+
+function getFromPointer(target, pointer = '') {
+  if (!target || typeof target !== 'object') return null
+  if (!pointer || pointer === '#') return target
+  const normalized = pointer.startsWith('#') ? pointer.slice(1) : pointer
+  const segments = normalized.split('/').filter(Boolean).map(decodePointerSegment)
+  let cursor = target
+  for (const segment of segments) {
+    if (cursor && typeof cursor === 'object' && segment in cursor) {
+      cursor = cursor[segment]
+    } else {
+      return null
+    }
+  }
+  return cursor
+}
+
+function lookupSchemaFromRegistry(ref, registry = {}) {
+  if (!ref?.startsWith('./')) return null
+  const [filePart, fragment = ''] = ref.split('#')
+  const key = filePart
+    .replace(/^\.\//, '')
+    .replace(/\.schema\.ya?ml$/i, '')
+    .replace(/\.ya?ml$/i, '')
+  const schema = registry?.[key]
+  if (!schema) return null
+  const pointer = fragment ? `#${fragment}` : '#'
+  const node = getFromPointer(schema, pointer)
+  if (!node) return null
+  return { node, root: schema }
+}
+
+function dereferenceSchemaNode(node, rootSchema, registry = {}) {
+  if (!node || typeof node !== 'object') return node
+  if (!node.$ref) return node
+  if (node.$ref.startsWith('#')) {
+    const target = getFromPointer(rootSchema, node.$ref)
+    if (!target) return node
+    return dereferenceSchemaNode(target, rootSchema, registry)
+  }
+  if (node.$ref.startsWith('./')) {
+    const external = lookupSchemaFromRegistry(node.$ref, registry)
+    if (!external?.node) return node
+    return dereferenceSchemaNode(external.node, external.root, registry)
+  }
+  return node
 }
 
 function buildHeaderSection(recordType, metadata = {}) {

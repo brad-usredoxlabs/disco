@@ -3,15 +3,13 @@ import { computed, ref, watch } from 'vue'
 import AppPanel from '../ui/panels/AppPanel.vue'
 import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
-import FileWorkbench from './FileWorkbench.vue'
-import TipTapSandbox from '../tiptap/components/TipTapSandbox.vue'
 import TipTapRecordEditor from '../tiptap/components/TipTapRecordEditor.vue'
-import SchemaBundlePanel from './SchemaBundlePanel.vue'
-import RecordGraphPanel from './RecordGraphPanel.vue'
+import FieldInspector from './FieldInspector.vue'
 import GraphQueryPanel from './GraphQueryPanel.vue'
 import RecordSearchPanel from './RecordSearchPanel.vue'
 import RecordCreatorModal from './RecordCreatorModal.vue'
 import GraphTreePanel from './GraphTreePanel.vue'
+import PlateEditorShell from '../plate-editor/PlateEditorShell.vue'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
@@ -23,6 +21,7 @@ import { useRecordValidator } from '../records/recordValidator'
 import { useSystemConfig } from '../config/useSystemConfig'
 import { configureOntologyService } from '../ontology/service'
 import { useOfflineStatus } from '../composables/useOfflineStatus'
+import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -38,16 +37,19 @@ const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
 
 const showPrompt = ref(true)
-const selectedNode = ref(null)
-const showSandbox = import.meta.env.DEV === true
 const schemaBundle = computed(() => schemaLoader.schemaBundle?.value)
 const recordValidator = useRecordValidator(schemaLoader)
 const tiptapTarget = ref(readTiptapTargetFromUrl())
+const plateEditorTarget = ref(readPlateEditorTargetFromUrl())
+const inspectorTarget = ref(readInspectorTargetFromUrl())
 const tiptapStatus = ref('')
+const inspectorStatus = ref('')
 const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
 const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
 const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
+const isStandalonePlateEditor = computed(() => !!plateEditorTarget.value)
+const isStandaloneInspector = computed(() => !!inspectorTarget.value)
 const isOnline = computed(() => offlineStatus.isOnline.value)
 const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
 const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
@@ -66,6 +68,10 @@ const tiptapSupports = computed(() =>
 const tiptapBundleMismatch = computed(() => {
   if (!tiptapTarget.value?.bundle) return false
   return selectedBundleName.value !== tiptapTarget.value.bundle
+})
+const plateEditorBundleMismatch = computed(() => {
+  if (!plateEditorTarget.value?.bundle) return false
+  return selectedBundleName.value !== plateEditorTarget.value.bundle
 })
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
@@ -88,10 +94,25 @@ const defaultGraphRootLabel = computed(() => {
   if (!defaultGraphRootType.value) return 'Records'
   return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
 })
-const activeRecordPath = computed(() => selectedNode.value?.path || '')
+const rootCreateLabel = computed(() => {
+  if (!defaultGraphRootType.value) return 'Record'
+  return defaultGraphRootType.value.charAt(0).toUpperCase() + defaultGraphRootType.value.slice(1)
+})
+const activeRecordPath = ref('')
+const relationshipsConfig = computed(() => schemaBundle.value?.relationships?.recordTypes || {})
+const supportingDocumentEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.['supporting-document'])
 
 watch(
   () => tiptapTarget.value?.bundle,
+  (bundle) => {
+    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
+      schemaLoader.selectBundle(bundle)
+    }
+  }
+)
+
+watch(
+  () => plateEditorTarget.value?.bundle,
   (bundle) => {
     if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
       schemaLoader.selectBundle(bundle)
@@ -126,6 +147,26 @@ function readTiptapTargetFromUrl() {
   }
 }
 
+function readPlateEditorTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('plateEditorPath')) return null
+  return {
+    path: decodeURIComponent(params.get('plateEditorPath')),
+    bundle: params.get('plateEditorBundle') || ''
+  }
+}
+
+function readInspectorTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('inspectorPath')) return null
+  return {
+    path: decodeURIComponent(params.get('inspectorPath')),
+    bundle: params.get('inspectorBundle') || ''
+  }
+}
+
 function clearTiptapTarget() {
   tiptapTarget.value = null
   if (typeof window !== 'undefined') {
@@ -137,13 +178,21 @@ function clearTiptapTarget() {
   }
 }
 
+function clearPlateEditorTarget() {
+  plateEditorTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('plateEditorPath')
+    url.searchParams.delete('plateEditorBundle')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
+
 watch(
   () => repo.directoryHandle.value,
   (handle) => {
     if (handle) {
       showPrompt.value = false
-    } else {
-      selectedNode.value = null
     }
   }
 )
@@ -197,25 +246,117 @@ function closeCreator() {
   creatorContext.value = null
 }
 
-function handleSelect(node) {
-  selectedNode.value = node
-}
-
-function openPath(path) {
-  if (!path) return
-  selectedNode.value = {
-    kind: 'file',
-    path,
-    name: path.split('/').pop() || path
+function handleSelect(nodeOrPath) {
+  // Handle both string paths and node objects
+  const node = typeof nodeOrPath === 'object' && nodeOrPath !== null ? nodeOrPath : null
+  const path = node ? node.path : typeof nodeOrPath === 'string' ? nodeOrPath : ''
+  if (node?.recordType === 'plateLayout' && path) {
+    openPlateEditorWindow(path)
+    return
+  }
+  if (path) {
+    openFileInspectorWindow(path)
+    activeRecordPath.value = path
   }
 }
 
-function handleRecordCreated(path) {
+function openFileInspectorWindow(path) {
+  if (!path) return
+  if (typeof window === 'undefined') return
+  const baseUrl = new URL(window.location.href)
+  baseUrl.searchParams.delete('inspectorPath')
+  const rootUrl = baseUrl.toString().split('?')[0]
+  const targetUrl = new URL(rootUrl, window.location.href)
+  targetUrl.searchParams.set('inspectorPath', path)
+  const bundle = schemaLoader.selectedBundle?.value
+  if (bundle) {
+    targetUrl.searchParams.set('inspectorBundle', bundle)
+  }
+  window.open(targetUrl.toString(), '_blank', 'noopener,noreferrer')
+}
+
+async function handleRecordCreated(payload) {
+  const creationContext = creatorContext.value
+  const { path, recordType, metadata } = normalizeCreationResult(payload)
   showCreator.value = false
   creatorContext.value = null
-  if (path) {
-    openPath(path)
+  let handled = false
+  if (recordType === 'plateLayout') {
+    if (creationContext?.parentLink?.node?.recordType === 'run') {
+      await linkPlateLayoutToRun(creationContext.parentLink.node, metadata, path)
+    }
+    if (path) {
+      openPlateEditorWindow(path)
+      handled = true
+    }
   }
+  if (!handled && path) {
+    openFileInspectorWindow(path)
+    activeRecordPath.value = path
+  }
+  recordGraph?.rebuild?.()
+  searchIndex?.rebuild?.()
+}
+
+function normalizeCreationResult(payload) {
+  if (!payload) {
+    return { path: '', recordType: '', metadata: {} }
+  }
+  if (typeof payload === 'string') {
+    return { path: payload, recordType: '', metadata: {} }
+  }
+  return {
+    path: payload.path || '',
+    recordType: payload.recordType || '',
+    metadata: payload.metadata || {}
+  }
+}
+
+async function linkPlateLayoutToRun(parentNode, childMetadata = {}, childPath = '') {
+  const runPath = parentNode?.path
+  const identifier = derivePlateLayoutIdentifier(childMetadata, childPath)
+  if (!runPath || !identifier) return
+  try {
+    const raw = await repo.readFile(runPath)
+    const { data: frontMatter = {}, body } = parseFrontMatter(raw)
+    const metadataSection = frontMatter.metadata || {}
+    const dataSection = frontMatter.data || {}
+    const operations = { ...(dataSection.operations || {}) }
+    const plateLayouts = Array.isArray(operations.plateLayouts) ? [...operations.plateLayouts] : []
+    if (plateLayouts.includes(identifier)) {
+      return
+    }
+    plateLayouts.push(identifier)
+    const nextFrontMatter = {
+      ...frontMatter,
+      metadata: metadataSection,
+      data: {
+        ...dataSection,
+        operations: {
+          ...operations,
+          plateLayouts
+        }
+      }
+    }
+    const serialized = serializeFrontMatter(nextFrontMatter, body)
+    await repo.writeFile(runPath, serialized)
+  } catch (err) {
+    console.warn('[PlateLayouts] Unable to link run with plate layout', err)
+  }
+}
+
+function derivePlateLayoutIdentifier(childMetadata = {}, childPath = '') {
+  if (childMetadata.recordId) return childMetadata.recordId
+  if (childMetadata.id) return childMetadata.id
+  return inferRecordIdFromPath(childPath)
+}
+
+function inferRecordIdFromPath(path = '') {
+  if (!path) return ''
+  const fileName = path.split('/').filter(Boolean).pop() || ''
+  if (!fileName) return ''
+  const base = fileName.replace(/\.md$/i, '')
+  return base.split('_')[0] || base
 }
 
 async function handleExpand(node) {
@@ -228,21 +369,144 @@ function handleStandaloneSaved() {
   searchIndex?.rebuild?.()
 }
 
+function handleInspectorSaved() {
+  inspectorStatus.value = 'Inspector changes saved.'
+  recordGraph?.rebuild?.()
+  searchIndex?.rebuild?.()
+}
+
 function handleGraphCreate(payload) {
   if (!payload?.recordType) return
   const metadataPatch = {}
   if (payload.parentField && payload.parentId) {
     metadataPatch[payload.parentField] = payload.parentId
   }
+  if (payload.recordType === 'plateLayout') {
+    Object.assign(metadataPatch, buildPlateLayoutCreationDefaults(payload.parentNode))
+  }
   openCreator({
     recordType: payload.recordType,
+    metadata: metadataPatch,
+    parentLink: payload.parentField && payload.parentId
+      ? {
+          field: payload.parentField,
+          id: payload.parentId,
+          node: payload.parentNode || null
+        }
+      : null
+  })
+}
+
+function buildPlateLayoutCreationDefaults(parentNode) {
+  const titleSource =
+    parentNode?.title ||
+    parentNode?.frontMatter?.metadata?.title ||
+    parentNode?.frontMatter?.title ||
+    parentNode?.id ||
+    'Run'
+  return {
+    title: `${titleSource} plate layout`.trim()
+  }
+}
+
+function buildMetadataPatchFromNode(node) {
+  if (!node) return {}
+  const patch = {}
+  Object.values(relationshipsConfig.value || {}).forEach((descriptor) => {
+    Object.values(descriptor?.parents || {}).forEach((parentDef) => {
+      if (parentDef?.recordType === node.recordType && parentDef.field) {
+        patch[parentDef.field] = node.id
+      }
+    })
+  })
+  return patch
+}
+
+function openSupportingDocumentFromGraph(targetNode) {
+  if (!supportingDocumentEnabled.value) return
+  const node = targetNode?.node || targetNode
+  if (!node?.id) return
+  const metadataPatch = {
+    ...buildMetadataPatchFromNode(node),
+    supportingDocumentOf: node.id
+  }
+  openCreator({
+    recordType: 'supporting-document',
     metadata: metadataPatch
   })
+}
+
+function openTipTapWindow(path, recordType) {
+  if (!path || !recordType) return
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('tiptapPath')
+  url.searchParams.delete('tiptapType')
+  url.searchParams.delete('tiptapBundle')
+  url.searchParams.set('tiptapPath', path)
+  url.searchParams.set('tiptapType', recordType)
+  const bundle = schemaLoader.selectedBundle?.value
+  if (bundle) {
+    url.searchParams.set('tiptapBundle', bundle)
+  }
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+}
+
+function openPlateEditorWindow(path) {
+  if (!path) return
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('plateEditorPath')
+  url.searchParams.delete('plateEditorBundle')
+  url.searchParams.set('plateEditorPath', path)
+  const bundle = schemaLoader.selectedBundle?.value
+  if (bundle) {
+    url.searchParams.set('plateEditorBundle', bundle)
+  }
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+}
+
+function handleGraphOpenTipTap(payload) {
+  if (!payload?.path || !payload?.recordType) return
+  openTipTapWindow(payload.path, payload.recordType)
+}
+
+function handleGraphSupportingDoc(payload) {
+  if (!payload?.node) return
+  openSupportingDocumentFromGraph(payload.node)
+}
+
+function handleCreateRootRecord() {
+  if (!isReady.value) return
+  if (defaultGraphRootType.value) {
+    openCreator({ recordType: defaultGraphRootType.value })
+  } else {
+    openCreator()
+  }
 }
 </script>
 
 <template>
-  <div v-if="isStandaloneTiptap" class="tiptap-standalone">
+  <div v-if="isStandaloneInspector" class="inspector-standalone">
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <FieldInspector
+      v-if="isReady"
+      :repo="repo"
+      :record-path="inspectorTarget.path"
+      :record-type="''"
+      :schema-loader="schemaLoader"
+      :workflow-loader="workflowLoader"
+      :record-graph="recordGraph"
+      @saved="handleInspectorSaved"
+    />
+    <div v-else class="inspector-standalone__message">
+      <p>Connect your repository to view this record.</p>
+      <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+    </div>
+  </div>
+  <div v-else-if="isStandaloneTiptap" class="tiptap-standalone">
     <header class="tiptap-standalone__header">
       <div>
         <p class="app-kicker">TapTab</p>
@@ -293,72 +557,95 @@ function handleGraphCreate(payload) {
       </div>
     </div>
   </div>
+  <div v-else-if="isStandalonePlateEditor" class="plate-editor-standalone">
+    <header class="plate-editor-standalone__header">
+      <div>
+        <p class="app-kicker">Plate Editor</p>
+        <h1>Plate Layout</h1>
+        <p class="app-subtitle">{{ plateEditorTarget?.path }}</p>
+      </div>
+      <div class="plate-editor-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button class="secondary" type="button" @click="clearPlateEditorTarget">Return to workspace</button>
+      </div>
+    </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <div class="plate-editor-standalone__body">
+      <div v-if="!isReady" class="plate-editor-standalone__message">
+        <p>Connect your repository to edit this plate layout.</p>
+        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+      </div>
+      <div v-else-if="plateEditorBundleMismatch" class="plate-editor-standalone__message">
+        <p>Loading schema bundle {{ plateEditorTarget?.bundle }}…</p>
+      </div>
+      <div v-else-if="!plateEditorTarget?.path" class="plate-editor-standalone__message">
+        <p>Missing plate layout path.</p>
+      </div>
+      <div v-else class="plate-editor-standalone__editor">
+        <PlateEditorShell
+          :repo="repo"
+          :record-path="plateEditorTarget.path"
+          :schema-loader="schemaLoader"
+        />
+      </div>
+    </div>
+  </div>
   <div v-else class="app-shell">
     <header class="app-header">
-      <div>
-        <p class="app-kicker">Phase 2 · File I/O Layer</p>
-        <h1>DIsCo Pages 2.0</h1>
-        <p class="app-subtitle">Schema-driven LIS/QMS shell powered by Vue + Vite</p>
-      </div>
-      <div class="header-actions">
-        <button class="primary" type="button" @click="openCreator" :disabled="!isReady">New record</button>
-        <div class="connection-pill" :class="{ 'is-connected': isReady }">
-          <span>{{ connectionLabel }}</span>
-          <button class="pill-button" type="button" @click="reopenPrompt">Choose folder</button>
+      <div class="header-main">
+        <div>
+          <p class="app-kicker">Phase 2 · File I/O Layer</p>
+          <h1>DIsCo Pages 2.0</h1>
+          <p class="app-subtitle">Schema-driven LIS/QMS shell powered by Vue + Vite</p>
+        </div>
+        <div class="connection-chip" :class="{ 'is-connected': isReady }">
+          <span class="chip-label">{{ connectionLabel }}</span>
+          <button
+            class="pill-button"
+            type="button"
+            :disabled="!repo.isSupported"
+            :class="{ 'is-loading': repo.isRequesting }"
+            @click="handleConnect"
+          >
+            {{ repo.isRequesting ? 'Awaiting…' : isReady ? 'Reconnect' : 'Connect' }}
+          </button>
         </div>
       </div>
     </header>
+    <p v-if="repo.error" class="status status-error header-status">{{ repo.error }}</p>
+    <p v-else-if="repo.isRestoring" class="status status-muted header-status">Restoring previous session…</p>
+    <p v-else-if="!repo.isSupported" class="status status-error header-status">
+      This browser does not expose the File System Access API.
+    </p>
     <p v-if="!isOnline" class="offline-banner">
       Offline mode: editing uses cached schemas and search results. Reconnect to sync with the repo.
     </p>
 
-    <main class="app-main-grid">
-      <div class="column column-left">
+    <main class="app-main-layout">
+      <section class="graph-stage">
         <AppPanel>
-          <h2>Repository connection</h2>
-          <p>
-            The File System Access API stores a user-approved directory handle. All schema, workflow, and record
-            operations run directly against this sandboxed repo root.
-          </p>
-
-          <div class="action-row">
-            <button
-              class="primary"
-              type="button"
-              :class="{ 'is-loading': repo.isRequesting }"
-              :disabled="!repo.isSupported"
-              @click="handleConnect"
-            >
-              <span v-if="repo.isRequesting">Awaiting permission…</span>
-              <span v-else>{{ isReady ? 'Reconnect' : 'Select repository folder' }}</span>
-            </button>
-            <button class="secondary" type="button" @click="reopenPrompt">
-              Show prompt
-            </button>
-          </div>
-
-          <p v-if="!repo.isSupported" class="support-warning">
-            This browser does not expose the File System Access API. Use a Chromium-based browser to continue.
-          </p>
-          <p v-else-if="repo.error" class="status status-error">{{ repo.error }}</p>
-          <p v-else-if="repo.isRestoring" class="status status-muted">Restoring previous session…</p>
-          <p v-else-if="isReady" class="status status-ok">
-            Ready to operate against <strong>{{ repo.directoryHandle?.name }}</strong>
-          </p>
-          <p v-else class="status status-muted">
-            Waiting for a repository selection.
-          </p>
+          <RecordSearchPanel :search="searchIndex" @open="handleSelect" />
         </AppPanel>
-
-        <AppPanel class="tree-panel">
-          <div class="panel-heading">
+        <AppPanel class="graph-panel">
+          <div class="graph-panel__header">
             <div>
               <h2>{{ graphTreeEnabled ? 'Record graph' : 'Repository tree' }}</h2>
-              <p v-if="graphTreeEnabled">
-                Contextual navigation derived from schema relationships. Toggle via <code>features.graphTree</code>.
-              </p>
-              <p v-else>Lazy-loaded virtual tree stitched from File System Access directory handles.</p>
+              <p v-if="graphTreeEnabled">Config-driven navigation sourced directly from relationships.yaml.</p>
+              <p v-else>Fallback tree built from the repo handle while graph mode is disabled.</p>
             </div>
+            <button
+              v-if="graphTreeEnabled"
+              class="ghost-button"
+              type="button"
+              :disabled="!isReady"
+              @click="handleCreateRootRecord"
+            >
+              + Create {{ rootCreateLabel }}
+            </button>
           </div>
           <GraphTreePanel
             v-if="graphTreeEnabled"
@@ -368,8 +655,12 @@ function handleGraphCreate(payload) {
             :default-root-type="defaultGraphRootType"
             :default-root-label="defaultGraphRootLabel"
             :active-path="activeRecordPath"
-            @select-record="openPath"
+            :tiptap-record-types="tiptapSupportedTypes"
+            :supporting-document-enabled="supportingDocumentEnabled"
+            @select-record="handleSelect"
             @create-child="handleGraphCreate"
+            @open-tiptap="handleGraphOpenTipTap"
+            @create-supporting-doc="handleGraphSupportingDoc"
           />
           <FileTreeBrowser
             v-else
@@ -380,39 +671,14 @@ function handleGraphCreate(payload) {
             @expand="handleExpand"
           />
         </AppPanel>
-      </div>
-
-      <div class="column column-right">
-        <AppPanel>
-          <SchemaBundlePanel :loader="schemaLoader" />
-        </AppPanel>
-        <AppPanel>
-          <RecordSearchPanel :search="searchIndex" @open="openPath" />
-        </AppPanel>
-        <AppPanel>
-          <RecordGraphPanel :graph-state="recordGraph" />
-        </AppPanel>
-        <AppPanel v-if="graphQueryEnabled">
+        <AppPanel v-if="graphQueryEnabled" class="graph-query-panel">
           <GraphQueryPanel
             :graph-state="recordGraph"
             :schema-loader="schemaLoader"
             :workflow-loader="workflowLoader"
           />
         </AppPanel>
-        <AppPanel class="workbench-panel">
-          <FileWorkbench
-            :repo="repo"
-            :node="selectedNode"
-            :schema-loader="schemaLoader"
-            :workflow-loader="workflowLoader"
-            :record-graph="recordGraph"
-            :on-open-path="openPath"
-          />
-        </AppPanel>
-        <AppPanel v-if="showSandbox">
-          <TipTapSandbox :repo="repo" />
-        </AppPanel>
-      </div>
+      </section>
     </main>
 
     <BaseModal v-if="shouldShowModal" title="Select your repository" @close="closePrompt">
@@ -478,6 +744,14 @@ function handleGraphCreate(payload) {
   margin-bottom: 0.5rem;
 }
 
+.header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
 .app-header h1 {
   margin: 0;
   font-size: 2.5rem;
@@ -488,19 +762,27 @@ function handleGraphCreate(payload) {
   color: #475569;
 }
 
-.connection-pill {
-  display: flex;
+.connection-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: #fff;
-  min-width: 280px;
 }
 
-.connection-pill.is-connected {
+.connection-chip.is-connected {
   border-color: rgba(16, 185, 129, 0.4);
+}
+
+.chip-label {
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.header-status {
+  margin-top: -1rem;
 }
 
 .tiptap-standalone {
@@ -548,40 +830,137 @@ function handleGraphCreate(payload) {
   min-height: 70vh;
 }
 
-.app-main-grid {
-  display: grid;
-  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
-  gap: 1.5rem;
-}
-
-@media (max-width: 960px) {
-  .app-main-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.column {
+.plate-editor-standalone {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
 
-.panel-heading p {
-  margin: 0.2rem 0 1rem;
+.plate-editor-standalone__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.plate-editor-standalone__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.plate-editor-standalone__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.plate-editor-standalone__message {
+  border: 1px dashed #cbd5f5;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.plate-editor-standalone__editor {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.inspector-standalone {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.inspector-standalone__message {
+  border: 1px dashed #cbd5f5;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.app-main-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 1100px) {
+  .app-main-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.graph-stage,
+.workbench-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.graph-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.graph-panel__header h2 {
+  margin: 0;
+}
+
+.graph-panel__header p {
+  margin: 0.25rem 0 0;
   color: #64748b;
 }
 
-.action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
+.ghost-button {
+  border: 1px solid #cbd5f5;
+  background: #fff;
+  color: #0f172a;
+  padding: 0.25rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 code {
   background: #e2e8f0;
   border-radius: 6px;
   padding: 0.1rem 0.35rem;
+}
+
+.pill-button {
+  border: none;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.pill-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .offline-banner {

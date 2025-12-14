@@ -3,7 +3,6 @@ import { computed, reactive, watch } from 'vue'
 import RecipeCardField from '../tiptap/nodes/RecipeCardField.vue'
 import OntologyListField from '../tiptap/nodes/OntologyListField.vue'
 import OntologyFieldInput from '../tiptap/nodes/OntologyFieldInput.vue'
-import BiologyEntitiesField from '../components/fields/BiologyEntitiesField.vue'
 
 const props = defineProps({
   schema: {
@@ -23,6 +22,10 @@ const props = defineProps({
     default: false
   },
   contextOverrides: {
+    type: Object,
+    default: () => ({})
+  },
+  schemaContext: {
     type: Object,
     default: () => ({})
   }
@@ -65,18 +68,28 @@ const orderedFields = computed(() => {
   return Object.keys(props.modelValue || {})
 })
 
-function getFieldSchema(field) {
+function getFieldSchemaInfo(field) {
   return resolveSchemaPath(field)
+}
+
+function getFieldSchema(field) {
+  return getFieldSchemaInfo(field).node || {}
+}
+
+function getFieldItemSchema(field) {
+  const info = getFieldSchemaInfo(field)
+  if (!info.node) return {}
+  if (info.node.type === 'array') {
+    const itemInfo = dereferenceSchemaNode(info.node.items, info.root)
+    return itemInfo.node || {}
+  }
+  return info.node
 }
 
 function getFieldConfig(field) {
   const layoutField = props.uiConfig?.layout?.fields?.[field]
   if (!layoutField) return {}
   return layoutField.ui || layoutField
-}
-
-function getFieldComponent(field) {
-  return getFieldConfig(field).component || null
 }
 
 function getFieldValuePath(field) {
@@ -103,21 +116,30 @@ function ensureFormData() {
 
 function getFieldValue(field) {
   const target = isDataField(field) ? ensureFormData() : localState
-  return target[field]
-}
-
-function getComponentValue(field) {
-  const base = getFieldValue(field)
+  const value = target[field]
   const valuePath = getFieldValuePath(field)
-  if (valuePath) {
-    return readValueAtPath(base, valuePath)
+  if (!valuePath) {
+    return value
   }
-  return base
+  return readValueAtPath(value, valuePath)
 }
 
 function setFieldValue(field, value) {
   const target = isDataField(field) ? ensureFormData() : localState
-  if (value === undefined || value === null) {
+  const valuePath = getFieldValuePath(field)
+  if (valuePath) {
+    const base = isPlainObject(target[field]) ? { ...target[field] } : {}
+    if (value === undefined || value === null) {
+      removeValueAtPath(base, valuePath)
+    } else {
+      writeValueAtPath(base, valuePath, value)
+    }
+    if (isPlainObject(base) && Object.keys(base).length === 0) {
+      delete target[field]
+    } else {
+      target[field] = base
+    }
+  } else if (value === undefined || value === null) {
     delete target[field]
   } else {
     target[field] = value
@@ -154,43 +176,134 @@ function writeValueAtPath(target, path, value) {
   current[segments.at(-1)] = value
 }
 
-function resolveSchemaPath(field) {
-  if (!field || !props.schema) return {}
-  const segments = field.split('.')
-  let current = props.schema
-  for (const segment of segments) {
-    if (!current) return {}
-    const next =
-      current.properties?.[segment] ||
-      current?.items?.properties?.[segment] ||
-      current?.items
-    if (!next) return {}
-    current = next
+function removeValueAtPath(target, path) {
+  if (!path || !isPlainObject(target)) return
+  const segments = path.split('.')
+  const stack = []
+  let current = target
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index]
+    if (!isPlainObject(current[segment])) {
+      return
+    }
+    stack.push({ parent: current, key: segment })
+    current = current[segment]
   }
-  return current
-}
-
-function updateBiologyEntities(field, entities) {
-  const existing = getFieldValue(field)
-  const base = isPlainObject(existing) ? { ...existing } : {}
-  const valuePath = getFieldValuePath(field)
-  if (valuePath) {
-    writeValueAtPath(base, valuePath, entities)
-  } else {
-    base.entities = entities
+  delete current[segments.at(-1)]
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const { parent, key } = stack[i]
+    const candidate = parent[key]
+    if (isPlainObject(candidate) && Object.keys(candidate).length === 0) {
+      delete parent[key]
+    }
   }
-  setFieldValue(field, base)
-}
-
-function getInheritedEntities(field) {
-  if (getFieldComponent(field) === 'BiologyEntitiesField') {
-    return props.contextOverrides?.biology?.entities || []
-  }
-  return []
 }
 
 function isPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function decodePointerSegment(segment) {
+  return segment.replace(/~1/g, '/').replace(/~0/g, '~')
+}
+
+function getFromPointer(target, pointer) {
+  if (!target || typeof target !== 'object') return null
+  if (!pointer || pointer === '#') return target
+  const normalized = pointer.startsWith('#') ? pointer.slice(1) : pointer
+  const segments = normalized.split('/').filter(Boolean).map(decodePointerSegment)
+  let current = target
+  for (const segment of segments) {
+    if (current && typeof current === 'object' && segment in current) {
+      current = current[segment]
+    } else {
+      return null
+    }
+  }
+  return current
+}
+
+function lookupExternalSchema(ref) {
+  if (!ref?.startsWith('./')) return null
+  const [filePart, fragment = ''] = ref.split('#')
+  const key = filePart
+    .replace(/^\.\//, '')
+    .replace(/\.schema\.ya?ml$/i, '')
+    .replace(/\.ya?ml$/i, '')
+  const schema = props.schemaContext?.[key]
+  if (!schema) return null
+  const pointer = fragment ? `#${fragment}` : '#'
+  const node = getFromPointer(schema, pointer)
+  if (!node) return null
+  return { node, root: schema }
+}
+
+function dereferenceSchemaNode(node, rootSchema) {
+  if (!node || typeof node !== 'object' || !node.$ref) {
+    return { node, root: rootSchema }
+  }
+  if (node.$ref.startsWith('#')) {
+    const target = getFromPointer(rootSchema, node.$ref)
+    if (!target) {
+      return { node, root: rootSchema }
+    }
+    return dereferenceSchemaNode(target, rootSchema)
+  }
+  if (node.$ref.startsWith('./')) {
+    const external = lookupExternalSchema(node.$ref)
+    if (!external?.node) {
+      return { node, root: rootSchema }
+    }
+    return dereferenceSchemaNode(external.node, external.root)
+  }
+  return { node, root: rootSchema }
+}
+
+function resolveSchemaPath(field) {
+  if (!field || !props.schema) {
+    return { node: {}, root: props.schema }
+  }
+  const segments = field.split('.')
+  let cursor = { node: props.schema, root: props.schema }
+
+  for (const segment of segments) {
+    cursor = dereferenceSchemaNode(cursor.node, cursor.root)
+    if (!cursor.node) {
+      return { node: {}, root: cursor.root }
+    }
+
+    let nextNode = null
+    let nextRoot = cursor.root
+
+    if (cursor.node.properties?.[segment]) {
+      nextNode = cursor.node.properties[segment]
+    } else if (cursor.node.type === 'array') {
+      const itemInfo = dereferenceSchemaNode(cursor.node.items, cursor.root)
+      if (itemInfo.node?.properties?.[segment]) {
+        nextNode = itemInfo.node.properties[segment]
+        nextRoot = itemInfo.root
+      } else {
+        nextNode = cursor.node.items
+        nextRoot = itemInfo.root
+      }
+    } else if (cursor.node.items?.properties?.[segment]) {
+      nextNode = cursor.node.items.properties[segment]
+    } else if (cursor.node.definitions?.[segment]) {
+      nextNode = cursor.node.definitions[segment]
+    } else if (cursor.node?.properties?.[segment]) {
+      nextNode = cursor.node.properties[segment]
+    } else {
+      nextNode = cursor.node?.[segment]
+    }
+
+    if (!nextNode) {
+      return { node: {}, root: cursor.root }
+    }
+
+    cursor = { node: nextNode, root: nextRoot }
+  }
+
+  return dereferenceSchemaNode(cursor.node, cursor.root)
 }
 
 function inputTypeFor(fieldSchema) {
@@ -249,7 +362,7 @@ function parseValue(fieldSchema, rawValue, originalValue) {
 
       <template v-if="getFieldType(field) === 'recipeCard'">
         <RecipeCardField
-          :value="localState[field]"
+          :value="getFieldValue(field)"
           :vocab="getFieldConfig(field).vocab || ''"
           :read-only="props.readOnly"
           @update:value="(val) => updateField(field, val)"
@@ -257,7 +370,7 @@ function parseValue(fieldSchema, rawValue, originalValue) {
       </template>
       <template v-else-if="getFieldType(field) === 'ontology'">
         <OntologyFieldInput
-          :value="localState[field]"
+          :value="getFieldValue(field)"
           :vocab="getFieldConfig(field).vocab || ''"
           :disabled="props.readOnly"
           placeholder="Search term"
@@ -266,21 +379,11 @@ function parseValue(fieldSchema, rawValue, originalValue) {
       </template>
       <template v-else-if="getFieldType(field) === 'ontologyList'">
         <OntologyListField
-          :value="localState[field]"
+          :value="getFieldValue(field)"
           :vocab="getFieldConfig(field).vocab || ''"
           :columns="getFieldConfig(field).columns || []"
           :read-only="props.readOnly"
           @update:value="(val) => updateField(field, val)"
-        />
-      </template>
-      <template v-else-if="getFieldComponent(field) === 'BiologyEntitiesField'">
-        <BiologyEntitiesField
-          :value="getComponentValue(field) || []"
-          :inherited="getInheritedEntities(field)"
-          :label="getFieldConfig(field).label || field"
-          :help-text="getFieldConfig(field).helpText || ''"
-          :read-only="props.readOnly"
-          @update:value="(val) => updateBiologyEntities(field, val)"
         />
       </template>
       <template

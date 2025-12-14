@@ -10,15 +10,6 @@ const props = defineProps({
 
 const emit = defineEmits(['open'])
 
-const FILTER_FIELDS = [
-  { key: 'recordType', label: 'Record type', placeholder: 'All record types' },
-  { key: 'taxonId', label: 'Taxon', placeholder: 'All taxa' },
-  { key: 'anatomicalContextId', label: 'Tissue', placeholder: 'All tissues' },
-  { key: 'pathwayId', label: 'Pathway', placeholder: 'All pathways' },
-  { key: 'operatorId', label: 'Operator', placeholder: 'All operators' },
-  { key: 'plateId', label: 'Plate', placeholder: 'All plates' }
-]
-
 const usingGraphFallback = computed(() => props.search.source?.value === 'graph')
 const usingCachedShards = computed(() => props.search.source?.value === 'cache')
 
@@ -49,13 +40,30 @@ function clearFilters() {
       <span v-if="search.isIndexing.value" class="status status-muted">Indexing…</span>
     </div>
 
-    <input
-      class="search-input"
-      type="search"
-      placeholder="Search keyword…"
-      :value="search.query.value"
-      @input="handleInput"
-    />
+    <div class="combo">
+      <input
+        class="search-input"
+        type="search"
+        placeholder="Search keyword…"
+        :value="search.query.value"
+        @input="handleInput"
+      />
+      <div v-if="search.results.value.length" class="combo-results">
+        <button
+          v-for="hit in search.results.value.slice(0, 6)"
+          :key="hit.path"
+          class="combo-result"
+          type="button"
+          @click="openResult(hit.path)"
+        >
+          <div>
+            <strong>{{ hit.title }}</strong>
+            <span class="search-meta">{{ hit.recordType }}</span>
+          </div>
+          <p class="search-snippet">{{ hit.snippet }}</p>
+        </button>
+      </div>
+    </div>
 
     <p v-if="usingGraphFallback" class="status status-muted">
       Using local graph fallback. Re-run <code>npm run build:index</code> and click
@@ -66,108 +74,66 @@ function clearFilters() {
       Serving cached shards (offline). Refresh when connectivity returns.
     </p>
 
-    <div class="filters-grid">
-      <label v-for="filter in FILTER_FIELDS" :key="filter.key">
-        <span>{{ filter.label }}</span>
-        <select
-          :value="props.search.filters.value?.[filter.key] || ''"
-          @change="(event) => handleFilterChange(filter.key, event)"
-        >
-          <option value="">{{ filter.placeholder }}</option>
-          <option
-            v-for="option in props.search.facetOptions.value?.[filter.key] || []"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }} ({{ option.count }})
-          </option>
-        </select>
-      </label>
-    </div>
-
-    <div v-if="props.search.hasActiveFilters.value" class="filter-actions">
-      <button class="text-button" type="button" @click="clearFilters">Clear filters</button>
-    </div>
-
     <p v-if="search.error.value" class="status status-error">{{ search.error.value }}</p>
-    <p v-else-if="search.query.value && !search.results.value.length" class="status status-muted">No matches yet.</p>
-
-    <ul v-if="search.results.value.length" class="search-results">
-      <li v-for="hit in search.results.value" :key="hit.path">
-        <div>
-          <strong>{{ hit.title }}</strong>
-          <span class="search-meta">{{ hit.recordType }}</span>
-          <p class="search-snippet">{{ hit.snippet }}</p>
-        </div>
-        <button class="text-button" type="button" @click="openResult(hit.path)">Open</button>
-      </li>
-    </ul>
   </div>
 </template>
 
 <style scoped>
+.combo {
+  position: relative;
+}
+
 .search-input {
   width: 100%;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid #cbd5f5;
-  padding: 0.5rem 0.75rem;
+  padding: 0.65rem 0.8rem;
   font-size: 0.95rem;
-  margin-bottom: 0.75rem;
 }
 
-.search-results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.filters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
-  margin: 0.75rem 0;
-}
-
-.filters-grid label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: #475569;
-}
-
-.filters-grid select {
-  border-radius: 10px;
-  border: 1px solid #cbd5f5;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.85rem;
+.combo-results {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
   background: #fff;
-}
-
-.filter-actions {
-  text-align: right;
-  margin-bottom: 0.5rem;
-}
-
-.search-results li {
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   display: flex;
-  justify-content: space-between;
-  border-bottom: 1px solid #e2e8f0;
-  padding-bottom: 0.5rem;
+  flex-direction: column;
+  padding: 0.35rem;
+  z-index: 10;
+}
+
+.combo-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.35rem 0.4rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.combo-result:hover {
+  background: #f8fafc;
 }
 
 .search-meta {
-  margin-left: 0.5rem;
-  font-size: 0.8rem;
+  margin-left: 0.4rem;
+  font-size: 0.75rem;
   color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .search-snippet {
-  margin: 0.35rem 0 0;
-  font-size: 0.85rem;
+  margin: 0;
+  font-size: 0.8rem;
   color: #475569;
 }
 </style>

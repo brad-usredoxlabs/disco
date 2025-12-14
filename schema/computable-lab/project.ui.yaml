@@ -128,9 +128,34 @@ layout:
       group: "biology"
       order: 130
       ui:
-        component: "BiologyEntitiesField"
+        fieldType: "ontologyList"
+        vocab: "biological-entity"
         valuePath: "entities"
         helpText: "Describe default biological entities (taxon, tissue, pathways, etc.). Child records inherit these unless overridden."
+        columns:
+          - key: domain
+            label: "Domain"
+            enum:
+              - taxon
+              - cell_line
+              - tissue
+              - pathway
+              - phenotype
+              - compound
+              - assay_material
+              - other
+          - key: role
+            label: "Role"
+            enum:
+              - sample
+              - target
+              - positive_control
+              - negative_control
+              - reference
+              - spike_in
+              - background
+              - assay_material
+              - other
       jsonLd:
         target: data
         section: biology

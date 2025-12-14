@@ -798,6 +798,7 @@ function openTipTapEditor() {
           :ui-config="activeUiConfig"
           :read-only="isImmutable"
           :context-overrides="recordContextOverrides.value || {}"
+          :schema-context="schemaBundle?.recordSchemas || {}"
           v-model="metadataModel"
         />
         <div v-if="derivedIri || derivedTypes.length" class="jsonld-summary">

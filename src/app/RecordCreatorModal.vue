@@ -57,6 +57,8 @@ const state = reactive({
   showAdvanced: false
 })
 const creationContextPatch = ref(null)
+const pendingParentLink = ref(null)
+const lockedParentFields = ref({})
 const incomingContext = computed(() => props.creationContext || props.parentContext || null)
 
 const bundle = computed(() => props.schemaLoader.schemaBundle?.value)
@@ -196,6 +198,8 @@ function resetForm() {
   state.isCreating = false
   state.showAdvanced = false
   creationContextPatch.value = null
+  pendingParentLink.value = null
+  lockedParentFields.value = {}
 }
 
 function handleMetadataInput(field, value) {
@@ -225,7 +229,8 @@ watch(
     }
     const metadataPatch = context.metadata && typeof context.metadata === 'object' ? context.metadata : {}
     creationContextPatch.value = metadataPatch
-    if (!context.recordType || context.recordType === state.recordType) {
+    pendingParentLink.value = context.parentLink || null
+    if (!context.recordType) {
       applyCreationContextPatch()
     }
   },
@@ -234,13 +239,43 @@ watch(
 
 function applyCreationContextPatch() {
   const patch = creationContextPatch.value
-  if (!patch || !Object.keys(patch).length) return
-  state.metadata = {
-    ...state.metadata,
-    ...patch
+  let didUpdate = false
+  if (patch && Object.keys(patch).length) {
+    state.metadata = {
+      ...state.metadata,
+      ...patch
+    }
+    creationContextPatch.value = null
+    didUpdate = true
   }
-  creationContextPatch.value = null
-  updateDerivedFields()
+  if (applyPendingParentLink()) {
+    didUpdate = true
+  }
+  if (didUpdate) {
+    updateDerivedFields()
+  }
+}
+
+function applyPendingParentLink() {
+  const link = pendingParentLink.value
+  if (!link || !link.field || !link.id) return false
+  state.metadata[link.field] = link.id
+  lockedParentFields.value = {
+    ...lockedParentFields.value,
+    [link.field]: {
+      id: link.id,
+      label: link.node?.title || link.id
+    }
+  }
+  pendingParentLink.value = null
+  return true
+}
+
+function unlockParentField(field) {
+  if (!field) return
+  const copy = { ...lockedParentFields.value }
+  delete copy[field]
+  lockedParentFields.value = copy
 }
 
 async function handleCreate() {
@@ -267,7 +302,13 @@ async function handleCreate() {
     if (state.metadata.id === state.autoId && state.pendingCounter) {
       await commitId(props.repo, namingRule, state.pendingCounter)
     }
-    props.onCreated?.(state.filePath)
+    if (typeof props.onCreated === 'function') {
+      await props.onCreated({
+        path: state.filePath,
+        recordType: state.recordType,
+        metadata: cloneMetadata(state.metadata)
+      })
+    }
     close()
   } catch (err) {
     state.error = err?.message || 'Unable to create record.'
@@ -307,6 +348,11 @@ function updateDerivedFields() {
   }
 }
 
+function cloneMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return {}
+  return JSON.parse(JSON.stringify(metadata))
+}
+
 </script>
 
 <template>
@@ -334,7 +380,15 @@ function updateDerivedFields() {
 
       <div v-for="parent in parentDefinitions" :key="parent.relName" class="parent-select">
         <label>{{ parent.relName }} ({{ parent.recordType }})</label>
-        <select v-model="state.metadata[parent.field]">
+        <div v-if="lockedParentFields[parent.field]" class="locked-parent">
+          <span class="locked-parent__label">
+            {{ lockedParentFields[parent.field].label }}
+          </span>
+          <button class="text-button" type="button" @click="unlockParentField(parent.field)">
+            Change
+          </button>
+        </div>
+        <select v-else v-model="state.metadata[parent.field]">
           <option value="" disabled>Select {{ parent.relName }}</option>
           <option
             v-for="candidate in parentOptions[parent.recordType] || []"
@@ -400,6 +454,21 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.locked-parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  padding: 0.35rem 0.65rem;
+  background: #f8fafc;
+}
+
+.locked-parent__label {
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .creator-form {

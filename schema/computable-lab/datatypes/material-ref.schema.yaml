@@ -1,0 +1,41 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-ref.schema.yaml"
+
+title: MaterialRef
+type: object
+description: >
+  Descriptive reference to a material used or produced in a lab process.
+  This is not an inventory or stock record—only narrative context.
+
+required:
+  - label
+
+properties:
+  label:
+    type: string
+    description: "Human-readable name, e.g. '1x TAE buffer', 'agarose gel', 'PCR master mix'."
+
+  kind:
+    type: string
+    description: "Coarse category for the material."
+    enum:
+      - stock_reagent
+      - prepared_mix
+      - consumable
+      - sample
+      - equipment
+      - other
+
+  ontology:
+    $ref: "./ontology-term.schema.yaml"
+    description: "Optional ontology term describing the material (chemical, taxon, etc.)."
+
+  from_protocol:
+    type: string
+    description: "Optional Protocol @id that typically produces this material."
+
+  from_recipe_id:
+    type: string
+    description: "Optional recipe id within that protocol (e.g. 'gel_mix', 'running_buffer')."
+
+additionalProperties: false

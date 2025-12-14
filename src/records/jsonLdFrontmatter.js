@@ -235,9 +235,6 @@ function readDataValue(frontMatter, descriptor) {
 
 function normalizeValueForDescriptor(descriptor, value) {
   if (value === undefined || value === null) return undefined
-  if (descriptor.component === 'BiologyEntitiesField' || descriptor.valuePath === 'entities') {
-    return normalizeBiologyEntityList(value)
-  }
   if (descriptor.fieldType === 'ontology') {
     const shape = resolveOntologyShape(descriptor.schema, ONTOLOGY_SHAPES.TERM)
     return normalizeOntologyValue(value, { schema: descriptor.schema, shape })
@@ -332,19 +329,25 @@ function writeValueAtPath(target, path = '', value) {
 
 function normalizeBiologyEntity(entity = {}) {
   if (!entity || typeof entity !== 'object') return null
-  const normalized = {
-    domain: typeof entity.domain === 'string' ? entity.domain.trim() : '',
-    role: typeof entity.role === 'string' ? entity.role.trim() : '',
-    ontology: typeof entity.ontology === 'string' ? entity.ontology.trim() : '',
-    '@id':
-      typeof entity['@id'] === 'string'
-        ? entity['@id'].trim()
-        : typeof entity.id === 'string'
-          ? entity.id.trim()
-          : '',
-    label: typeof entity.label === 'string' ? entity.label.trim() : typeof entity.name === 'string' ? entity.name.trim() : ''
+  const id = typeof entity.id === 'string' ? entity.id.trim() : typeof entity['@id'] === 'string' ? entity['@id'].trim() : ''
+  const label =
+    typeof entity.label === 'string'
+      ? entity.label.trim()
+      : typeof entity.name === 'string'
+        ? entity.name.trim()
+        : id
+  if (!id && !label) return null
+  const source = typeof entity.source === 'string' ? entity.source.trim() : typeof entity.ontology === 'string' ? entity.ontology.trim() : ''
+  const domain = typeof entity.domain === 'string' ? entity.domain.trim() : ''
+  const role = typeof entity.role === 'string' ? entity.role.trim() : ''
+  return {
+    id: id || label,
+    label,
+    source,
+    ontology: typeof entity.ontology === 'string' ? entity.ontology.trim() : source,
+    domain,
+    role
   }
-  return normalized
 }
 
 function normalizeBiologyEntityList(value) {
@@ -362,8 +365,8 @@ function biologyEntityKey(entity = {}) {
   return [
     entity.domain || '',
     entity.role || '',
-    entity.ontology || '',
-    entity['@id'] || entity.id || '',
+    entity.ontology || entity.source || '',
+    entity.id || entity['@id'] || '',
     entity.label || ''
   ].join('::')
 }
@@ -404,7 +407,12 @@ function ensureBiologyPrefixes(metadata = {}, dataSections = {}, bundle = {}, co
   let mutated = false
   const missing = new Set()
   entities.forEach((entity) => {
-    const prefix = typeof entity?.ontology === 'string' ? entity.ontology.trim() : ''
+    const prefix =
+      typeof entity?.ontology === 'string'
+        ? entity.ontology.trim()
+        : typeof entity?.source === 'string'
+          ? entity.source.trim()
+          : ''
     if (!prefix || prefix === 'other') return
     if (context[prefix]) return
     const iri = KNOWN_BIOLOGY_PREFIX_IRIS[prefix]

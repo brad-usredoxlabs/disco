@@ -1,0 +1,122 @@
+title: "Plate Layout UI Configuration"
+recordType: "plateLayout"
+
+layout:
+  fields:
+    recordType:
+      group: "metadata"
+      order: 0
+      ui:
+        readOnly: true
+    state:
+      group: "metadata"
+      order: 5
+      ui:
+        component: select
+        options: ["draft", "in_review", "approved", "archived"]
+    recordId:
+      group: "metadata"
+      order: 10
+      ui:
+        readOnly: true
+    createdAt:
+      group: "metadata"
+      order: 15
+      ui:
+        readOnly: true
+    createdBy:
+      group: "metadata"
+      order: 20
+      ui:
+        readOnly: true
+
+    title:
+      group: "header"
+      order: 30
+      ui:
+        width: 6
+    description:
+      group: "header"
+      order: 40
+      ui:
+        component: textarea
+        props:
+          rows: 3
+        width: 6
+    runId:
+      group: "header"
+      order: 50
+      jsonLd:
+        target: data
+        section: links
+        key: run
+      ui:
+        width: 6
+    editorSpecId:
+      group: "header"
+      order: 60
+      jsonLd:
+        target: data
+        section: operations
+        key: editorSpecId
+      ui:
+        width: 6
+
+    layout:
+      group: "layout"
+      order: 100
+      jsonLd:
+        target: data
+        section: operations
+        key: layout
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 8
+    materials:
+      group: "layout"
+      order: 110
+      jsonLd:
+        target: data
+        section: operations
+        key: materials
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 6
+
+    wells:
+      group: "plate"
+      order: 200
+      jsonLd:
+        target: data
+        section: operations
+        key: wells
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 12
+
+    events:
+      group: "timeline"
+      order: 300
+      jsonLd:
+        target: data
+        section: operations
+        key: events
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 8
+
+    annotations:
+      group: "details"
+      order: 400
+      jsonLd:
+        target: data
+        section: operations
+        key: annotations
+      ui:
+        component: JsonEditor
+        props:
+          minLines: 6

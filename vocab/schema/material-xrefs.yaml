@@ -1,0 +1,39 @@
+name: material-xrefs
+description: "Cross-reference picker for materials (CHEBI, CL, Cellosaurus, NCIT)."
+
+bioportal_ontologies:
+  - acronym: CHEBI
+    description: "Chemical Entities of Biological Interest"
+    matches:
+      ontology_enum: chebi
+  - acronym: CL
+    description: "Cell Ontology"
+    matches:
+      ontology_enum: cl
+  - acronym: CLO
+    description: "Cell Line Ontology / Cellosaurus"
+    matches:
+      ontology_enum: cellosaurus
+  - acronym: NCIT
+    description: "NCI Thesaurus"
+    matches:
+      ontology_enum: ncit
+
+search_settings:
+  require_exact_match: false
+  include_obsolete: false
+  include_properties: true
+  include_definitions: true
+
+validation:
+  required_fields:
+    - id
+    - label
+
+display:
+  label_format: "{label} ({source}:{id})"
+  show_definition: true
+
+local_priority:
+  enabled: true
+  cached_term_weight: 0.85

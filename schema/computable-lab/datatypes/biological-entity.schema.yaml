@@ -1,0 +1,76 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "biological-entity.schema.yaml"
+title: BiologicalEntityReference
+description: "Reference to a biological material (organism, tissue, cell line, pathway, etc.) selected from vocab/biological-entity.yaml."
+type: object
+additionalProperties: false
+required: ["id", "label", "domain", "role"]
+
+x-taptab:
+  fieldType: ontologyList
+  vocab: biological-entity
+  arrayDefinition: "#/definitions/BiologyEntityList"
+  summaryFields: ["label", "domain", "role"]
+
+properties:
+  id:
+    type: string
+    description: "Ontology identifier (CURIE or full IRI)."
+  label:
+    type: string
+    description: "Human-readable label returned by the ontology service."
+  source:
+    type: string
+    description: "Ontology acronym that produced this reference."
+    enum:
+      - ncbitaxon
+      - uberon
+      - cl
+      - pato
+      - reactome
+      - cellosaurus
+      - chebi
+      - go
+      - other
+  ontology:
+    type: string
+    enum:
+      - ncbitaxon
+      - uberon
+      - cl
+      - pato
+      - reactome
+      - cellosaurus
+      - chebi
+      - go
+      - other
+    description: "Deprecated alias for `source`, kept for backward compatibility."
+  domain:
+    type: string
+    enum:
+      - taxon
+      - cell_line
+      - tissue
+      - pathway
+      - phenotype
+      - compound
+      - assay_material
+      - other
+  role:
+    type: string
+    enum:
+      - sample
+      - target
+      - positive_control
+      - negative_control
+      - reference
+      - spike_in
+      - background
+      - assay_material
+      - other
+
+definitions:
+  BiologyEntityList:
+    type: array
+    items:
+      $ref: "#"

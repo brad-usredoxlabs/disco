@@ -1,0 +1,27 @@
+name: mechanism-targets
+description: "Mechanism targets and regulators (NCIt-powered search)."
+
+bioportal_ontologies:
+  - acronym: NCIT
+    description: "NCI Thesaurus – receptors, regulators, transcription factors."
+    matches:
+      ontology_enum: ncit
+
+search_settings:
+  require_exact_match: false
+  include_obsolete: false
+  include_properties: true
+  include_definitions: true
+
+validation:
+  required_fields:
+    - id
+    - label
+
+display:
+  label_format: "{label} ({source}:{id})"
+  show_definition: true
+
+local_priority:
+  enabled: true
+  cached_term_weight: 0.85

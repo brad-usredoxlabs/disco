@@ -1,6 +1,5 @@
 <script setup>
-import { computed } from 'vue'
-import { useGraphView } from '../graph/useGraphView'
+import { computed, ref, watch } from 'vue'
 import { isWorkflowStateImmutable, workflowStateAllowsEvent } from '../workflows/workflowUtils'
 
 const props = defineProps({
@@ -27,10 +26,20 @@ const props = defineProps({
   activePath: {
     type: String,
     default: ''
+  },
+  tiptapRecordTypes: {
+    type: Array,
+    default: () => []
+  },
+  supportingDocumentEnabled: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['select-record', 'create-child'])
+const emit = defineEmits(['select-record', 'create-child', 'open-tiptap', 'create-supporting-doc'])
+
+const expandedIds = ref(new Set())
 
 const graphRef = computed(() => props.graphState?.graph?.value || null)
 const graphStatus = computed(() => props.graphState?.status?.value || 'idle')
@@ -38,63 +47,137 @@ const graphError = computed(() => props.graphState?.error?.value || '')
 const hasGraphData = computed(() => !!(graphRef.value?.nodes?.length))
 const isGraphReady = computed(() => graphStatus.value === 'ready' || hasGraphData.value)
 
-const activeNode = computed(() => {
-  const graph = graphRef.value
-  if (!graph || !props.activePath) return null
-  return graph.nodesByPath?.[props.activePath] || null
-})
+const relationships = computed(() => props.schemaLoader?.schemaBundle?.value?.relationships?.recordTypes || {})
+const childRelationMap = computed(() => buildChildRelationMap(relationships.value))
 
-const rootNode = computed(() => activeNode.value || null)
-const rootId = computed(() => rootNode.value?.id || '')
-const rootType = computed(() => rootNode.value?.recordType || props.defaultRootType || '')
-
-const { view } = useGraphView({
-  graph: graphRef,
-  schemaLoader: props.schemaLoader,
-  rootId,
-  recordType: rootType
-})
-
-const viewSections = computed(() => view.value?.sections || [])
-const defaultRootNodes = computed(() => {
-  if (rootNode.value) return []
+const rootNodes = computed(() => {
   const graph = graphRef.value
   if (!graph?.nodes?.length) return []
-  const type = props.defaultRootType
-  if (type && graph.nodesByType?.[type]?.length) {
-    return graph.nodesByType[type]
+  if (props.defaultRootType && graph.nodesByType?.[props.defaultRootType]?.length) {
+    return graph.nodesByType[props.defaultRootType]
   }
   return graph.nodes
 })
-const defaultRootTitle = computed(() => {
-  if (rootNode.value) return ''
-  if (props.defaultRootLabel) return props.defaultRootLabel
-  if (props.defaultRootType) return `${capitalize(props.defaultRootType)} records`
-  return 'Records'
+
+const visibleNodes = computed(() => {
+  const graph = graphRef.value
+  const roots = rootNodes.value
+  if (!graph || !roots.length) return []
+  const cache = new Map()
+  const list = []
+  const sortedRoots = [...roots].sort(byLabel)
+
+  const traverse = (node, depth) => {
+    if (!node) return
+    const children = getChildrenForNode(node, cache)
+    list.push({
+      node,
+      depth,
+      hasChildren: children.length > 0,
+      children
+    })
+    if (expandedIds.value.has(node.id)) {
+      const sortedChildren = [...children].sort((a, b) => byLabel(a.node, b.node))
+      sortedChildren.forEach((entry) => traverse(entry.node, depth + 1))
+    }
+  }
+
+  sortedRoots.forEach((node) => traverse(node, 0))
+  return list
 })
 
-function capitalize(value = '') {
-  if (!value) return ''
-  return value.charAt(0).toUpperCase() + value.slice(1)
+watch(
+  () => props.activePath,
+  (path) => {
+    const graph = graphRef.value
+    if (!graph || !path) return
+    const target = graph.nodesByPath?.[path]
+    if (!target) return
+    const next = new Set(expandedIds.value)
+    expandAncestors(target, next)
+    expandedIds.value = next
+  }
+)
+
+watch(
+  () => graphRef.value,
+  () => {
+    const graph = graphRef.value
+    if (!graph?.nodesById) {
+      expandedIds.value = new Set()
+      return
+    }
+    const validIds = new Set(Object.keys(graph.nodesById))
+    const next = new Set()
+    expandedIds.value.forEach((id) => {
+      if (validIds.has(id)) next.add(id)
+    })
+    expandedIds.value = next
+  }
+)
+
+function buildChildRelationMap(descriptorMap = {}) {
+  const map = {}
+  Object.entries(descriptorMap).forEach(([recordType, descriptor]) => {
+    Object.entries(descriptor.parents || {}).forEach(([relName, config]) => {
+      const parentType = config.recordType
+      if (!parentType) return
+      if (!map[parentType]) map[parentType] = []
+      map[parentType].push({
+        relationship: relName,
+        childType: recordType,
+        parentField: config.field || '',
+        actionId: config.actionId || null
+      })
+    })
+  })
+  return map
 }
 
-function formatNodeLabel(node, template) {
-  if (!template) return node?.title || node?.id || ''
-  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expression) => {
-    if (!node) return ''
-    // Handle || operator for fallback values
-    const parts = expression.split('||').map(p => p.trim())
-    for (const part of parts) {
-      let value = ''
-      if (part === 'title') value = node.title || ''
-      else if (part === 'id') value = node.id || ''
-      else if (part === 'recordType') value = node.recordType || ''
-      else value = node[part] || node.frontMatter?.[part] || ''
-      
-      if (value) return value
-    }
-    return ''
+function getChildrenForNode(node, cache) {
+  if (!node) return []
+  if (cache.has(node.id)) return cache.get(node.id)
+  const graph = graphRef.value
+  if (!graph?.resolveRelationship) return []
+  const relations = childRelationMap.value[node.recordType] || []
+  const children = []
+  relations.forEach((relation) => {
+    const path = `backlinks.children.${relation.relationship}`
+    const linkedNodes = graph.resolveRelationship(node, path) || []
+    linkedNodes.forEach((childNode) => {
+      children.push({ node: childNode, relation })
+    })
   })
+  cache.set(node.id, children)
+  return children
+}
+
+function byLabel(a = {}, b = {}) {
+  const aLabel = a.title || a.recordType || a.id || ''
+  const bLabel = b.title || b.recordType || b.id || ''
+  return aLabel.localeCompare(bLabel)
+}
+
+function expandAncestors(node, bucket) {
+  if (!node) return
+  bucket.add(node.id)
+  if (!node.parents?.length) return
+  node.parents.forEach((edge) => {
+    if (edge.targetNode) {
+      expandAncestors(edge.targetNode, bucket)
+    }
+  })
+}
+
+function toggleNode(nodeId) {
+  if (!nodeId) return
+  const next = new Set(expandedIds.value)
+  if (next.has(nodeId)) {
+    next.delete(nodeId)
+  } else {
+    next.add(nodeId)
+  }
+  expandedIds.value = next
 }
 
 function handleSelect(node) {
@@ -102,17 +185,36 @@ function handleSelect(node) {
   emit('select-record', node.path)
 }
 
-function handleCreate(entry) {
-  const config = entry?.config?.allowCreate
-  if (!config) return
-  const parentNode = entry?.sourceNode || rootNode.value
-  if (!canCreateChild(entry)) return
+function handleAddChild(parentNode, relation = null) {
+  const targetRelation = relation || defaultChildRelation(parentNode)
+  if (!parentNode || !targetRelation) return
+  if (!canCreateChild(parentNode, targetRelation)) return
   emit('create-child', {
-    recordType: config.recordType,
-    parentField: config.parentField,
-    parentId: parentNode?.id || '',
-    parentRecordType: parentNode?.recordType || ''
+    recordType: targetRelation.childType,
+    parentField: targetRelation.parentField,
+    parentId: parentNode.id,
+    parentRecordType: parentNode.recordType,
+    actionId: targetRelation.actionId || null,
+    parentNode
   })
+}
+
+function handleOpenTapTab(node) {
+  if (!node?.path) return
+  emit('open-tiptap', {
+    path: node.path,
+    recordType: node.recordType
+  })
+}
+
+function handleAddSupportingDoc(node) {
+  if (!props.supportingDocumentEnabled || !node) return
+  emit('create-supporting-doc', { node })
+}
+
+function nodeSupportsTapTap(node) {
+  if (!node) return false
+  return props.tiptapRecordTypes.includes(node.recordType)
 }
 
 function isNodeImmutable(node) {
@@ -120,26 +222,67 @@ function isNodeImmutable(node) {
   return isWorkflowStateImmutable(props.workflowLoader, node.recordType, node.frontMatter?.state)
 }
 
-function canCreateChild(entry) {
-  const parentNode = entry?.sourceNode || rootNode.value
-  if (!entry?.config?.allowCreate || !parentNode) return false
+function canCreateChild(parentNode, relation) {
+  if (!parentNode || !relation) return false
   if (isNodeImmutable(parentNode)) return false
-  const actionId = entry.config.allowCreate.actionId
+  if (!relation.parentField) return false
+  const actionId = relation.actionId
   if (actionId && !workflowStateAllowsEvent(props.workflowLoader, parentNode.recordType, parentNode.frontMatter?.state, actionId)) {
     return false
   }
   return true
 }
 
-function creationDisabledReason(entry) {
-  const parentNode = entry?.sourceNode || rootNode.value
-  if (!entry?.config?.allowCreate || !parentNode) return 'Creation unavailable for this relationship.'
+function creationDisabledReason(parentNode, relation) {
+  if (!parentNode || !relation) return 'Creation unavailable for this relationship.'
+  if (!relation.parentField) return 'Parent linkage field missing.'
   if (isNodeImmutable(parentNode)) return 'Parent record is immutable in its current workflow state.'
-  const actionId = entry.config.allowCreate.actionId
+  const actionId = relation.actionId
   if (actionId && !workflowStateAllowsEvent(props.workflowLoader, parentNode.recordType, parentNode.frontMatter?.state, actionId)) {
     return `Workflow state does not allow the "${actionId}" transition.`
   }
   return ''
+}
+
+function rootHeading() {
+  if (props.defaultRootLabel) return props.defaultRootLabel
+  if (props.defaultRootType) {
+    const label = props.defaultRootType.charAt(0).toUpperCase() + props.defaultRootType.slice(1)
+    return `${label}s`
+  }
+  return 'Records'
+}
+
+function defaultChildRelation(node) {
+  if (!node) return null
+  return (childRelationMap.value[node.recordType] || [])[0] || null
+}
+
+function canAddDefaultChild(node) {
+  const relation = defaultChildRelation(node)
+  if (!relation) return false
+  return canCreateChild(node, relation)
+}
+
+function addChildTitle(node) {
+  const relation = defaultChildRelation(node)
+  if (!relation) return 'No child record type configured for this node.'
+  return canCreateChild(node, relation)
+    ? `Add ${relation.childType}`
+    : creationDisabledReason(node, relation)
+}
+
+function canAddSupportingDoc(node) {
+  if (!props.supportingDocumentEnabled) return false
+  return !!node
+}
+
+function supportingDocTitle(node) {
+  if (!props.supportingDocumentEnabled) {
+    return 'Add a supporting-document schema to enable this action.'
+  }
+  if (!node) return 'Select a record to attach supporting documents.'
+  return 'Add supporting document'
 }
 </script>
 
@@ -151,94 +294,84 @@ function creationDisabledReason(entry) {
     <p v-else-if="!isGraphReady" class="status status-muted">
       {{ graphStatus === 'building' ? 'Building record graph…' : 'Graph is initializing.' }}
     </p>
-    <div v-else-if="!rootNode">
-      <div v-if="defaultRootNodes.length" class="graph-tree__content">
-        <header class="graph-tree__header">
-          <div>
-            <p class="graph-tree__label">Root type</p>
-            <h3>{{ defaultRootTitle }}</h3>
-            <p class="graph-tree__meta">{{ defaultRootNodes.length }} records</p>
-          </div>
-        </header>
-        <section class="graph-section">
-          <div class="graph-node-list">
-            <button
-              v-for="node in defaultRootNodes"
-              :key="node.id"
-              class="graph-node"
-              type="button"
-              @click="handleSelect(node)"
-            >
-              <span class="graph-node__title">{{ node.title || node.id }}</span>
-              <span class="graph-node__meta">{{ node.recordType }}</span>
-              <span v-if="isNodeImmutable(node)" class="lock-pill lock-pill--inline" title="Immutable workflow state">
-                Locked
-              </span>
-            </button>
-          </div>
-        </section>
-      </div>
-      <div v-else class="placeholder">
-        <p>No records detected for this bundle.</p>
-      </div>
+    <div v-else-if="!visibleNodes.length" class="placeholder">
+      <p>No records detected for {{ rootHeading().toLowerCase() }}.</p>
     </div>
-    <div v-else class="graph-tree__content">
-      <header class="graph-tree__header">
-        <div>
-          <p class="graph-tree__label">Root record</p>
-          <h3>{{ rootNode.title || rootNode.id }}</h3>
-          <p class="graph-tree__meta">
-            {{ rootNode.recordType }} · {{ rootNode.id }}
-            <span v-if="isNodeImmutable(rootNode)" class="lock-pill">Locked</span>
-          </p>
+    <div v-else class="tree-list" aria-label="Record graph tree">
+      <div
+        v-for="row in visibleNodes"
+        :key="row.node.id + '-' + row.depth"
+        class="tree-row"
+        :class="{ 'is-active': row.node.path === activePath }"
+        :style="{ paddingLeft: `${Math.min(row.depth, 6) * 1.1 + 0.5}rem` }"
+      >
+        <button
+          class="toggle"
+          type="button"
+          :aria-label="row.hasChildren ? (expandedIds.has(row.node.id) ? 'Collapse' : 'Expand') : 'No children'"
+          :disabled="!row.hasChildren"
+          @click="row.hasChildren ? toggleNode(row.node.id) : null"
+        >
+          <span v-if="row.hasChildren">
+            {{ expandedIds.has(row.node.id) ? '▾' : '▸' }}
+          </span>
+        </button>
+        <button class="tree-label" type="button" @click="handleSelect(row.node)">
+          <span class="tree-title">{{ row.node.title || row.node.id }}</span>
+          <span class="tree-meta">{{ row.node.recordType }}</span>
+          <span v-if="isNodeImmutable(row.node)" class="lock-pill" title="Immutable workflow state">Locked</span>
+        </button>
+        <div class="tree-actions">
+          <button
+            class="icon-button"
+            type="button"
+            title="Open record"
+            @click="handleSelect(row.node)"
+            :disabled="!row.node.path"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path
+                d="M10 4c-4.5 0-8 3.5-8 6s3.5 6 8 6 8-3.5 8-6-3.5-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"
+              />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            type="button"
+            :title="addChildTitle(row.node)"
+            :disabled="!canAddDefaultChild(row.node)"
+            :aria-label="'Add child record to ' + (row.node.title || row.node.id)"
+            @click="handleAddChild(row.node)"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 4v12m6-6H4" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            type="button"
+            :title="supportingDocTitle(row.node)"
+            :disabled="!canAddSupportingDoc(row.node)"
+            :aria-label="'Add supporting document to ' + (row.node.title || row.node.id)"
+            @click="handleAddSupportingDoc(row.node)"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M6 3h6l4 4v10a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1zm6 0v4h4" />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            type="button"
+            title="Edit in TapTab"
+            :disabled="!nodeSupportsTapTap(row.node)"
+            @click="handleOpenTapTab(row.node)"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8zM15 6l-2-2 1.5-1.5a1 1 0 011.4 0l0.6 0.6a1 1 0 010 1.4L15 6z" />
+            </svg>
+          </button>
         </div>
-        <button class="secondary" type="button" @click="handleSelect(rootNode)">Open</button>
-      </header>
-
-      <section v-for="section in viewSections" :key="section.id" class="graph-section">
-        <header class="graph-section__header">
-          <h4>{{ section.label }}</h4>
-        </header>
-        <div v-if="!section.entries.length" class="graph-section__empty">
-          <p>No relationships configured.</p>
-        </div>
-        <div v-else>
-          <div v-for="entry in section.entries" :key="entry.id" class="graph-edge">
-            <div class="graph-edge__header">
-              <p class="graph-edge__label">{{ entry.config.relationship || 'related' }}</p>
-              <button
-                v-if="entry.config?.allowCreate"
-                class="text-button"
-                type="button"
-                :disabled="!canCreateChild(entry)"
-                :title="creationDisabledReason(entry)"
-                @click="handleCreate(entry)"
-              >
-                + Add {{ entry.config.allowCreate.recordType }}
-              </button>
-            </div>
-            <div v-if="entry.nodes.length" class="graph-node-list">
-              <button
-                v-for="node in entry.nodes"
-                :key="node.id"
-                class="graph-node"
-                :class="{ 'is-active': node.path === activePath }"
-                type="button"
-                @click="handleSelect(node)"
-              >
-                <span class="graph-node__title">
-                  {{ formatNodeLabel(node, entry.config.labelTemplate) }}
-                </span>
-                <span class="graph-node__meta">{{ node.recordType }}</span>
-                <span v-if="isNodeImmutable(node)" class="lock-pill lock-pill--inline" title="Immutable workflow state">
-                  Locked
-                </span>
-              </button>
-            </div>
-            <p v-else class="graph-edge__empty">No nodes yet.</p>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   </div>
 </template>
@@ -247,139 +380,116 @@ function creationDisabledReason(entry) {
 .graph-tree {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .placeholder {
   border: 1px dashed #cbd5f5;
-  border-radius: 12px;
-  padding: 1rem;
-  color: #475569;
-  text-align: center;
-}
-
-.graph-tree__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.graph-tree__label {
-  margin: 0;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-}
-
-.graph-tree__meta {
-  margin: 0.2rem 0 0;
-  color: #64748b;
-}
-
-.graph-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.graph-section__header h4 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.graph-edge {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.graph-edge__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.graph-edge__label {
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  color: #94a3b8;
-}
-
-.graph-edge__empty,
-.graph-section__empty {
-  color: #94a3b8;
+  color: #475569;
   font-size: 0.9rem;
 }
 
-.graph-node-list {
+.tree-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.15rem;
 }
 
-.graph-node {
-  width: 100%;
-  text-align: left;
-  border: 1px solid #cbd5f5;
-  border-radius: 10px;
-  padding: 0.5rem 0.65rem;
-  background: #fff;
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  cursor: pointer;
+.tree-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 8px;
+  padding: 0.15rem 0.25rem;
 }
 
-.graph-node.is-active {
-  border-color: #2563eb;
+.tree-row.is-active {
   background: #eff6ff;
 }
 
-.graph-node__title {
-  font-weight: 600;
-  color: #0f172a;
+.toggle {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #475569;
+  cursor: pointer;
 }
 
-.graph-node__meta {
-  font-size: 0.85rem;
-  color: #475569;
+.toggle:disabled {
+  cursor: default;
+  color: transparent;
+}
+
+.tree-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.2rem 0.1rem;
+  cursor: pointer;
+}
+
+.tree-title {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.tree-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tree-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.icon-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .lock-pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
   background: #fee2e2;
   color: #b91c1c;
   border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.lock-pill--inline {
-  margin-left: auto;
-}
-
-.text-button {
-  border: none;
-  background: transparent;
-  color: #2563eb;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.text-button:hover {
-  text-decoration: underline;
 }
 </style>

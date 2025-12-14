@@ -8,7 +8,7 @@ allOf:
 required:
   - title
   - protocolId
-  - samples
+  - biologicalEntities
   - projectId
   - shortSlug
 
@@ -49,41 +49,17 @@ properties:
     type: string
     description: "Short slug inherited from the parent project for path generation."
 
-  runs:
+  biologicalEntities:
     type: array
     description: >
-      Child Run record identifiers associated with this Experiment.
+      Structured list of biological materials (samples, controls, pathways, etc.) referenced by this experiment.
     items:
-      type: string
-      description: "Run record ID or path (e.g., 'RUN-0001_AB01_INITIAL')."
-
-  samples:
-    type: array
-    description: >
-      Sample record identifiers used in this Experiment.
-    items:
-      type: string
-      description: "Sample record ID or path."
+      $ref: "./datatypes/biological-entity.schema.yaml"
 
   reagents:
-    type: array
+    $ref: "./datatypes/reagent-list.schema.yaml"
     description: >
       Reagents and materials referenced by ontology ID or local vocab entry.
-    items:
-      type: object
-      required:
-        - id
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          description: "Ontology or local vocab identifier (e.g., CHEBI:17234)."
-        label:
-          type: string
-          description: "Cached display label to avoid repeated lookups."
-        source:
-          type: string
-          description: "Ontology acronym or 'local' for lab-defined terms."
 
   instruments:
     type: array
@@ -132,11 +108,11 @@ properties:
       type: string
 
   measurementType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "Type of measurement (e.g. OBI:0000070)."
 
   technologyType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "Analytical technology used (e.g. OBI:0000185)."
 
   factorValues:
@@ -147,50 +123,20 @@ properties:
       required: [factorName, factorValue]
       properties:
         factorName:
-          $ref: "./ontology-term.schema.yaml"
+          $ref: "./datatypes/ontology-term.schema.yaml"
         factorValue:
           type: string
           description: "Concrete value of the factor (e.g. '37°C', '10% FBS')."
 
   obiType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "High-level OBI type for this record."
 
   recipeCard:
-    type: object
-    description: "Recipe card for reagents and preparation steps."
-    properties:
-      title:
-        type: string
-      items:
-        type: array
-        minItems: 1
-        items:
-          type: object
-          required:
-            - reagent
-          properties:
-            quantity:
-              type: string
-              description: "Amount (e.g., 10)."
-            unit:
-              type: string
-              description: "Unit for quantity (e.g., mL, mg)."
-            reagent:
-              $ref: "./ontology-term.schema.yaml"
-            notes:
-              type: string
-              description: "Optional free-form notes."
-      steps:
-        type: array
-        minItems: 1
-        items:
-          type: string
-          description: "Numbered preparation steps."
-    required: []
+    $ref: "./datatypes/recipe-card.schema.yaml"
   biology:
     type: object
     properties:
       entities:
-        $ref: "./datatypes/biology-entity.schema.yaml#/definitions/BiologyEntityList"
+        $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
     additionalProperties: false

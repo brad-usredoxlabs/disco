@@ -1,0 +1,90 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-library-entry.schema.yaml"
+title: MaterialLibraryEntry
+type: object
+additionalProperties: false
+required: [id, label, tags]
+
+properties:
+  id:
+    type: string
+    description: "Canonical local material identifier."
+    pattern: "^material:[a-z0-9_]+$"
+
+  label:
+    type: string
+    minLength: 1
+
+  tags:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 1
+
+  synonyms:
+    type: array
+    items: { type: string }
+
+  classified_as:
+    type: array
+    description: "Optional biological classifications (taxon, cell line, etc.)."
+    items:
+      type: object
+      additionalProperties: false
+      required: [id, label, domain, role]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        domain: { type: string }
+        role: { type: string }
+
+  measures:
+    type: string
+    description: "Optional feature ID measured/used by this material (e.g., dyes)."
+
+  mechanism:
+    type: object
+    additionalProperties: false
+    required: [type, target]
+    properties:
+      type:
+        type: string
+        enum: [agonist, antagonist, activator, inhibitor, inducer, suppressor, uncoupler, stabilizer, modulator, other]
+      target:
+        type: object
+        additionalProperties: false
+        required: [id, label]
+        properties:
+          id: { type: string }
+          label: { type: string }
+  affected_process:
+    type: object
+    additionalProperties: false
+    required: [id, label]
+    properties:
+      id: { type: string }
+      label: { type: string }
+
+  xref:
+    type: object
+    description: "Optional ontology/vendor cross-references; not used as canonical IDs."
+    additionalProperties:
+      type: string
+
+  defaults:
+    type: object
+    additionalProperties: false
+    properties:
+      role: { type: string }
+      amount:
+        $ref: "#/definitions/Amount"
+
+definitions:
+  Amount:
+    type: object
+    additionalProperties: false
+    required: [value, unit]
+    properties:
+      value: { type: number }
+      unit: { type: string, minLength: 1 }

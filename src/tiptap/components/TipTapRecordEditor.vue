@@ -507,7 +507,9 @@ function createFieldBlockNode(descriptor, value, errors = [], section = 'metadat
       columns: descriptor.columns || [],
       component: descriptor.component || null,
       valuePath: descriptor.valuePath || null,
-      errors
+      errors,
+      schema,
+      itemSchema: descriptor.itemSchema || null
     }
   }
 }
@@ -603,26 +605,14 @@ function copyToClipboard(value) {
 }
 
 
-function formatFieldValue(value, schema = {}, fieldType, component, valuePath, config = {}) {
-  if (component === 'BiologyEntitiesField') {
-    if (Array.isArray(value)) {
-      return normalizeBiologyEntityList(value)
-    }
-    if (valuePath && value && typeof value === 'object') {
-      const extracted = readPath(value, valuePath)
-      return normalizeBiologyEntityList(extracted)
-    }
-    if (value && typeof value === 'object' && Array.isArray(value.entities)) {
-      return normalizeBiologyEntityList(value.entities)
-    }
-    return []
-  }
+function formatFieldValue(value, schema = {}, fieldType, _component, valuePath, config = {}) {
+  const resolvedValue = valuePath && value && typeof value === 'object' ? readPath(value, valuePath) : value
   if (fieldType === 'ontology') {
     const shape = resolveOntologyShape(schema, ONTOLOGY_SHAPES.TERM)
-    if (Array.isArray(value)) {
-      return value.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
+    if (Array.isArray(resolvedValue)) {
+      return resolvedValue.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
     }
-    return normalizeOntologyValue(value, { schema, shape })
+    return normalizeOntologyValue(resolvedValue, { schema, shape })
   }
   if (fieldType === 'ontologyList') {
     const listConfig = {
@@ -631,98 +621,98 @@ function formatFieldValue(value, schema = {}, fieldType, component, valuePath, c
       shape: resolveOntologyShape(schema, ONTOLOGY_SHAPES.REFERENCE),
       fallbackShape: ONTOLOGY_SHAPES.REFERENCE
     }
-    if (Array.isArray(value)) {
-      return value.map((entry) => normalizeOntologyListEntry(entry, listConfig)).filter(Boolean)
+    if (Array.isArray(resolvedValue)) {
+      return resolvedValue.map((entry) => normalizeOntologyListEntry(entry, listConfig)).filter(Boolean)
     }
-    const normalized = normalizeOntologyListEntry(value, listConfig)
+    const normalized = normalizeOntologyListEntry(resolvedValue, listConfig)
     return normalized ? [normalized] : []
   }
   if (fieldType === 'recipeCard') {
-    return normalizeRecipeValue(value, schema)
+    return normalizeRecipeValue(resolvedValue, schema)
   }
   if (schema.type === 'array') {
-    if (Array.isArray(value)) {
-      return value.join('\n')
+    if (Array.isArray(resolvedValue)) {
+      return resolvedValue.join('\n')
     }
-    return value || ''
+    return resolvedValue || ''
   }
   if (schema.type === 'number' || schema.type === 'integer') {
-    return value ?? ''
+    return resolvedValue ?? ''
   }
   if (schema.type === 'boolean') {
-    return value === true ? 'true' : value === false ? 'false' : ''
+    return resolvedValue === true ? 'true' : resolvedValue === false ? 'false' : ''
   }
-  if (value === undefined || value === null) return ''
-  return String(value)
+  if (resolvedValue === undefined || resolvedValue === null) return ''
+  return String(resolvedValue)
 }
 
 function coerceFieldValue(rawValue, schema = {}, fieldType, config = {}, options = {}) {
-  if (options.component === 'BiologyEntitiesField') {
-    const normalized = normalizeBiologyEntityList(rawValue)
-    const base = isPlainObject(options.baseValue) ? { ...options.baseValue } : {}
-    if (options.valuePath) {
-      writePath(base, options.valuePath, normalized)
-    } else {
-      base.entities = normalized
-    }
-    return base
-  }
+  const { valuePath, baseValue } = options || {}
+  let normalizedValue
   if (fieldType === 'ontology') {
     const shape = resolveOntologyShape(schema, ONTOLOGY_SHAPES.TERM)
     if (Array.isArray(rawValue)) {
-      return rawValue.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
+      normalizedValue = rawValue.map((entry) => normalizeOntologyValue(entry, { schema, shape })).filter(Boolean)
+    } else {
+      normalizedValue = normalizeOntologyValue(rawValue, { schema, shape }) || undefined
     }
-    const normalized = normalizeOntologyValue(rawValue, { schema, shape })
-    return normalized || undefined
-  }
-  if (fieldType === 'ontologyList') {
-    if (!Array.isArray(rawValue)) return []
-    const listConfig = {
-      ...config,
-      schema,
-      shape: resolveOntologyShape(schema, ONTOLOGY_SHAPES.REFERENCE),
-      fallbackShape: ONTOLOGY_SHAPES.REFERENCE
+  } else if (fieldType === 'ontologyList') {
+    if (Array.isArray(rawValue)) {
+      const listConfig = {
+        ...config,
+        schema,
+        shape: resolveOntologyShape(schema, ONTOLOGY_SHAPES.REFERENCE),
+        fallbackShape: ONTOLOGY_SHAPES.REFERENCE
+      }
+      normalizedValue = normalizeOntologyListValue(rawValue, listConfig)
+    } else {
+      normalizedValue = []
     }
-    return normalizeOntologyListValue(rawValue, listConfig)
-  }
-  if (fieldType === 'recipeCard') {
-    return normalizeRecipeValue(rawValue, schema)
-  }
-  if (schema.type === 'array') {
-    if (Array.isArray(rawValue)) return rawValue
-    if (typeof rawValue === 'string') {
-      return rawValue
+  } else if (fieldType === 'recipeCard') {
+    normalizedValue = normalizeRecipeValue(rawValue, schema)
+  } else if (schema.type === 'array') {
+    if (Array.isArray(rawValue)) {
+      normalizedValue = rawValue
+    } else if (typeof rawValue === 'string') {
+      normalizedValue = rawValue
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
+    } else {
+      normalizedValue = []
     }
-    return []
-  }
-  if (schema.type === 'number' || schema.type === 'integer') {
+  } else if (schema.type === 'number' || schema.type === 'integer') {
     const parsed = Number(rawValue)
-    if (Number.isNaN(parsed)) return undefined
-    return schema.type === 'integer' ? Math.trunc(parsed) : parsed
-  }
-  if (schema.type === 'boolean') {
-    if (typeof rawValue === 'boolean') return rawValue
-    if (typeof rawValue === 'string') {
-      return rawValue.toLowerCase() === 'true'
+    if (Number.isNaN(parsed)) {
+      normalizedValue = undefined
+    } else {
+      normalizedValue = schema.type === 'integer' ? Math.trunc(parsed) : parsed
     }
-    return undefined
+  } else if (schema.type === 'boolean') {
+    if (typeof rawValue === 'boolean') {
+      normalizedValue = rawValue
+    } else if (typeof rawValue === 'string') {
+      normalizedValue = rawValue.toLowerCase() === 'true'
+    } else {
+      normalizedValue = undefined
+    }
+  } else if (rawValue === undefined || rawValue === null) {
+    normalizedValue = undefined
+  } else {
+    normalizedValue = rawValue
   }
-  if (rawValue === undefined || rawValue === null) return undefined
-  return rawValue
-}
 
-function normalizeBiologyEntityList(list) {
-  if (!Array.isArray(list)) return []
-  return list.map((entry) => ({
-    domain: entry?.domain || '',
-    role: entry?.role || '',
-    ontology: entry?.ontology || '',
-    '@id': entry?.['@id'] || '',
-    label: entry?.label || ''
-  }))
+  if (valuePath) {
+    const base = isPlainObject(baseValue) ? { ...baseValue } : {}
+    if (normalizedValue === undefined) {
+      clearPath(base, valuePath)
+    } else {
+      writePath(base, valuePath, normalizedValue)
+    }
+    return base
+  }
+
+  return normalizedValue
 }
 
 function readPath(target, path) {
@@ -752,6 +742,28 @@ function writePath(target, path, value) {
     current = current[segment]
   }
   current[segments.at(-1)] = value
+}
+
+function clearPath(target, path) {
+  if (!target || typeof target !== 'object' || !path) return
+  const segments = path.split('.')
+  const stack = []
+  let current = target
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const segment = segments[i]
+    if (!current[segment] || typeof current[segment] !== 'object') {
+      return
+    }
+    stack.push({ parent: current, key: segment })
+    current = current[segment]
+  }
+  delete current[segments.at(-1)]
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const { parent, key } = stack[i]
+    if (parent[key] && typeof parent[key] === 'object' && !Array.isArray(parent[key]) && !Object.keys(parent[key]).length) {
+      delete parent[key]
+    }
+  }
 }
 
 function isPlainObject(value) {

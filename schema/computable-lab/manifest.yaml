@@ -1,15 +1,24 @@
 recordSchemas:
   - common.schema.yaml
-  - ontology-term.schema.yaml
+  - datatypes/ontology-term.schema.yaml
+  - datatypes/biological-entity.schema.yaml
+  - datatypes/material-library-entry.schema.yaml
+  - datatypes/material-use.schema.yaml
+  - recipe.schema.yaml
+  - protocol.schema.yaml
   - project.schema.yaml
   - experiment.schema.yaml
   - run.schema.yaml
+  - plate-layout.schema.yaml
 uiConfigs:
   - project.ui.yaml
   - experiment.ui.yaml
   - run.ui.yaml
   - common.ui.yaml
   - ontology-term.ui.yaml
+  - recipe.ui.yaml
+  - protocol.ui.yaml
+  - plate-layout.ui.yaml
 assistantConfig: assistant.yaml
 tiptap:
   recordTypes:
@@ -20,6 +29,10 @@ biologyRequirements:
   requireProjectEntities: true
 vocabSchemas:
   - reagents.yaml
+  - biological-entity.yaml
+  - mechanism-targets.yaml
+  - mechanism-processes.yaml
+  - material-xrefs.yaml
 metadataFields:
   default:
     - id
@@ -56,6 +69,16 @@ metadataFields:
     - experimentId
     - experimentShortSlug
     - plateId
+    - createdAt
+    - createdBy
+    - updatedAt
+    - recordId
+  plateLayout:
+    - id
+    - recordType
+    - state
+    - title
+    - runId
     - createdAt
     - createdBy
     - updatedAt

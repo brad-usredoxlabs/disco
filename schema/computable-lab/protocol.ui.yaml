@@ -1,0 +1,45 @@
+title: "Protocol UI Configuration"
+recordType: "protocol"
+
+layout:
+  sections:
+    metadata:
+      label: "Metadata"
+      fields:
+        - title
+        - family
+        - version
+        - status
+        - tags
+        - supersedes
+    recipes:
+      label: "Recipes"
+      fields:
+        - recipes
+    steps:
+      label: "Execution steps"
+      fields:
+        - executionSteps
+    parameters:
+      label: "Parameter schema"
+      fields:
+        - parametersSchema
+
+  fields:
+    status:
+      group: metadata
+      order: 50
+      ui:
+        component: select
+        options: ["draft", "active", "deprecated"]
+    recipes:
+      group: recipes
+      order: 10
+      ui:
+        component: ProtocolRecipeList
+    executionSteps:
+      group: steps
+      order: 10
+      ui:
+        component: multiline-text
+        rows: 5

@@ -1,0 +1,58 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "Recipe"
+type: object
+
+allOf:
+  - $ref: "./common.schema.yaml#/$defs/FAIRCommon"
+
+required:
+  - title
+  - family
+  - version
+  - card
+
+properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'recipe'."
+  state:
+    type: string
+    description: "Workflow state identifier (e.g., draft, approved)."
+  recordId:
+    type: string
+    description: "Stable filesystem identifier generated from naming rules."
+
+  family:
+    type: string
+    description: "Stable identifier for the conceptual recipe (e.g., 'agarose_gel', 'running_buffer')."
+
+  version:
+    type: string
+    description: "Semantic version string (e.g., 1.0.0)."
+
+  status:
+    type: string
+    enum: ["draft", "active", "deprecated"]
+    default: "draft"
+    description: "High-level publication status of this recipe version."
+
+  tags:
+    type: array
+    items:
+      type: string
+    description: "Free-form tags for grouping/search."
+
+  supersedes:
+    type: string
+    description: "@id of the recipe version that this record replaces (if any)."
+
+  card:
+    $ref: "./datatypes/recipe-card.schema.yaml"
+
+  references:
+    type: array
+    description: "Optional external references (protocol documents, SOP links)."
+    items:
+      type: string
+
+additionalProperties: false

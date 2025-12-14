@@ -49,6 +49,13 @@ properties:
     description: >
       Optional plugin-owned JSON or YAML describing wells, plate layout, etc.
       Stored as a string and interpreted by plate editor plugins.
+  plateLayouts:
+    type: array
+    description: >
+      Linked Plate Layout record identifiers associated with this run.
+    items:
+      type: string
+      description: "Plate Layout record id or relative path."
 
   plateId:
     type: string
@@ -58,8 +65,28 @@ properties:
     type: string
     description: "Free-text notes associated with this Run."
 
+  protocol:
+    type: object
+    description: "Protocol (specific version) executed during this run."
+    required: ["@id"]
+    properties:
+      "@id":
+        type: string
+        description: "Record id of the protocol version."
+      label:
+        type: string
+      family:
+        type: string
+      version:
+        type: string
+
+  protocolParameters:
+    type: object
+    description: "Concrete parameter values applied when running the protocol."
+    additionalProperties: true
+
   assayType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "Type of assay performed (e.g. OBI:0000663)."
 
   dataFiles:
@@ -78,11 +105,11 @@ properties:
       type: string
 
   outputType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "Output data type or measurement ontology term."
 
   obiType:
-    $ref: "./ontology-term.schema.yaml"
+    $ref: "./datatypes/ontology-term.schema.yaml"
     description: "OBI category corresponding to an assay."
     default:
       label: "assay"
@@ -100,5 +127,29 @@ properties:
     type: object
     properties:
       entities:
-        $ref: "./datatypes/biology-entity.schema.yaml#/definitions/BiologyEntityList"
+        $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
     additionalProperties: false
+
+  materialsUsed:
+    type: array
+    description: >
+      Narrative list of materials used in this run (not inventory tracking).
+    items:
+      $ref: "./datatypes/material-ref.schema.yaml"
+
+  results:
+    type: array
+    description: "Optional references to results produced by this run."
+    items:
+      type: object
+      properties:
+        label:
+          type: string
+          description: "Human-readable label for the result."
+        uri:
+          type: string
+          format: uri
+          description: "Location of the result artifact."
+        recordRef:
+          type: string
+          description: "Optional reference to another record containing the result."

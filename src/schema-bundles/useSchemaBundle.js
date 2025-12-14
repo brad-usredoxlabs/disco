@@ -10,7 +10,8 @@ function inferMetadataFields(schema) {
 }
 
 function deriveRecordType(filename, suffix) {
-  return filename.replace(new RegExp(`${suffix}$`), '')
+  const base = filename.split('/').pop()
+  return base.replace(new RegExp(`${suffix}$`), '')
 }
 
 export function useSchemaBundle(repoConnection) {

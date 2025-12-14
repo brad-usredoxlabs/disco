@@ -2,3 +2,5 @@ machines:
   - project.machine.yaml
   - experiment.machine.yaml
   - run.machine.yaml
+  - recipe.machine.yaml
+  - protocol.machine.yaml

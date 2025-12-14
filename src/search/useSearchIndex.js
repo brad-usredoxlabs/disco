@@ -76,10 +76,9 @@ export function useSearchIndex(recordGraph) {
     applyDocs(docs, 'shards')
   }
 
-  function fallbackToGraph() {
-    const graphValue = recordGraph.graph?.value || recordGraph.graph || { nodes: [] }
-    const nodes = graphValue.nodes || []
-    index.value = nodes.map((node) => {
+  function buildGraphDocs(graphValue = {}) {
+    const nodes = graphValue?.nodes || []
+    return nodes.map((node) => {
       const textParts = [node.title || '', JSON.stringify(node.frontMatter || {}), node.markdown || '']
       const text = textParts.join('\n').toLowerCase()
       return {
@@ -100,9 +99,11 @@ export function useSearchIndex(recordGraph) {
         plateId: ''
       }
     })
-    source.value = 'graph'
-    facetOptions.value = buildFacetOptions(index.value)
-    runSearch()
+  }
+
+  function fallbackToGraph(graphValue) {
+    const docs = buildGraphDocs(graphValue || recordGraph.graph?.value || recordGraph.graph || { nodes: [] })
+    applyDocs(docs, 'graph')
   }
 
   async function useCachedShards() {
@@ -171,11 +172,11 @@ export function useSearchIndex(recordGraph) {
 
   watch(
     () => recordGraph.graph?.value,
-    () => {
-      if (source.value === 'graph') {
-        fallbackToGraph()
-      }
-    }
+    (graphValue) => {
+      if (!graphValue?.nodes?.length) return
+      fallbackToGraph(graphValue)
+    },
+    { deep: true, immediate: true }
   )
 
   const hasResults = computed(() => results.value.length > 0)

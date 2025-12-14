@@ -1,0 +1,59 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-use.schema.yaml"
+title: MaterialUse
+type: object
+additionalProperties: false
+required: [material, role]
+
+properties:
+  material:
+    type: object
+    additionalProperties: false
+    required: [id]
+    properties:
+      id:
+        type: string
+        pattern: "^material:[a-z0-9_]+$"
+
+  role:
+    type: string
+    description: "Role of this material in the well context (from PlateEditorSpec.roleCatalog)."
+
+  amount:
+    $ref: "#/definitions/Amount"
+
+  lot:
+    type: string
+
+  notes:
+    type: string
+
+  control_intents:
+    type: array
+    description: "Optional per-feature control annotations for this material use."
+    items:
+      $ref: "#/definitions/ControlIntent"
+
+definitions:
+  Amount:
+    type: object
+    additionalProperties: false
+    required: [value, unit]
+    properties:
+      value: { type: number }
+      unit: { type: string, minLength: 1 }
+
+  ControlIntent:
+    type: object
+    additionalProperties: false
+    required: [feature, kind]
+    properties:
+      feature:
+        type: string
+        minLength: 1
+      kind:
+        type: string
+        enum: [positive_control, negative_control, baseline_control, reference_control, other]
+      expected_effect:
+        type: string
+        enum: [increase, decrease, none, unknown]

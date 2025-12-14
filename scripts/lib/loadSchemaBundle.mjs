@@ -45,7 +45,8 @@ async function loadYamlMap(files, bundleName, baseDir) {
 }
 
 function deriveRecordType(filename) {
-  return filename.replace(/\.schema\.ya?ml$/i, '').replace(/\.ui\.ya?ml$/i, '').replace(/\.ya?ml$/i, '')
+  const base = filename.split('/').pop()
+  return base.replace(/\.schema\.ya?ml$/i, '').replace(/\.ui\.ya?ml$/i, '').replace(/\.ya?ml$/i, '')
 }
 
 function buildMetadataFieldMap(config = {}, recordSchemas = {}) {
