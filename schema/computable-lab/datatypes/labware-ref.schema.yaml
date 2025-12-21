@@ -1,0 +1,34 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "labware-ref.schema.yaml"
+
+title: LabwareRef
+type: object
+description: >
+  Reference to labware involved in an event (plate, reservoir, trash, etc.).
+  This is conceptual labware, not a full deck definition.
+
+required:
+  - "@id"
+  - kind
+
+properties:
+  "@id":
+    type: string
+    description: "Labware record id, e.g. 'plate/CELL-PLATE-1' or 'reservoir/MEDIA-1'."
+
+  kind:
+    type: string
+    description: "Coarse category of labware."
+    enum:
+      - plate
+      - reservoir
+      - tube_rack
+      - tip_rack
+      - trash
+      - other
+
+  label:
+    type: string
+    description: "Optional human-readable name."
+
+additionalProperties: false

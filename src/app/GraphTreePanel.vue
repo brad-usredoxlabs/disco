@@ -37,7 +37,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['select-record', 'create-child', 'open-tiptap', 'create-supporting-doc'])
+const emit = defineEmits(['select-record', 'create-child', 'open-tiptap', 'create-supporting-doc', 'open-protocol'])
 
 const expandedIds = ref(new Set())
 
@@ -50,41 +50,65 @@ const isGraphReady = computed(() => graphStatus.value === 'ready' || hasGraphDat
 const relationships = computed(() => props.schemaLoader?.schemaBundle?.value?.relationships?.recordTypes || {})
 const childRelationMap = computed(() => buildChildRelationMap(relationships.value))
 
-const rootNodes = computed(() => {
-  const graph = graphRef.value
-  if (!graph?.nodes?.length) return []
-  if (props.defaultRootType && graph.nodesByType?.[props.defaultRootType]?.length) {
-    return graph.nodesByType[props.defaultRootType]
-  }
-  return graph.nodes
+const rootRecordTypes = computed(() => {
+  const list = []
+  Object.entries(relationships.value || {}).forEach(([recordType, descriptor]) => {
+    const hasParents = descriptor?.parents && Object.keys(descriptor.parents).length > 0
+    if (!hasParents) {
+      list.push(recordType)
+    }
+  })
+  return list
 })
 
-const visibleNodes = computed(() => {
+const rootGroups = computed(() => {
   const graph = graphRef.value
-  const roots = rootNodes.value
-  if (!graph || !roots.length) return []
-  const cache = new Map()
-  const list = []
-  const sortedRoots = [...roots].sort(byLabel)
+  if (!graph?.nodes?.length) return []
+  const seen = new Set()
+  const groups = []
 
-  const traverse = (node, depth) => {
-    if (!node) return
-    const children = getChildrenForNode(node, cache)
-    list.push({
-      node,
-      depth,
-      hasChildren: children.length > 0,
-      children
+  function addGroup(recordType, labelOverride) {
+    const nodes = (graph.nodesByType?.[recordType] || []).filter((node) => {
+      if (!node || seen.has(node.id)) return false
+      seen.add(node.id)
+      return true
     })
-    if (expandedIds.value.has(node.id)) {
-      const sortedChildren = [...children].sort((a, b) => byLabel(a.node, b.node))
-      sortedChildren.forEach((entry) => traverse(entry.node, depth + 1))
+    if (nodes.length) {
+      groups.push({
+        recordType,
+        label: labelOverride || typeLabel(recordType),
+        nodes
+      })
     }
   }
 
-  sortedRoots.forEach((node) => traverse(node, 0))
-  return list
+  if (props.defaultRootType) {
+    addGroup(props.defaultRootType, props.defaultRootLabel || typeLabel(props.defaultRootType))
+  }
+
+  rootRecordTypes.value
+    .filter((type) => type !== props.defaultRootType)
+    .forEach((type) => addGroup(type))
+
+  if (!groups.length) {
+    groups.push({
+      recordType: props.defaultRootType || 'record',
+      label: props.defaultRootLabel || 'Records',
+      nodes: [...graph.nodes]
+    })
+  }
+
+  return groups
 })
+
+const visibleGroups = computed(() =>
+  rootGroups.value.map((group) => ({
+    ...group,
+    rows: buildVisibleList(group.nodes)
+  }))
+)
+
+const totalVisibleRows = computed(() => visibleGroups.value.reduce((sum, group) => sum + group.rows.length, 0))
 
 watch(
   () => props.activePath,
@@ -158,6 +182,37 @@ function byLabel(a = {}, b = {}) {
   return aLabel.localeCompare(bLabel)
 }
 
+function typeLabel(recordType = '') {
+  if (!recordType) return 'Records'
+  return `${recordType.charAt(0).toUpperCase()}${recordType.slice(1)}`
+}
+
+function buildVisibleList(roots = []) {
+  const graph = graphRef.value
+  if (!graph || !roots.length) return []
+  const cache = new Map()
+  const list = []
+  const sortedRoots = [...roots].sort(byLabel)
+
+  const traverse = (node, depth) => {
+    if (!node) return
+    const children = getChildrenForNode(node, cache)
+    list.push({
+      node,
+      depth,
+      hasChildren: children.length > 0,
+      children
+    })
+    if (expandedIds.value.has(node.id)) {
+      const sortedChildren = [...children].sort((a, b) => byLabel(a.node, b.node))
+      sortedChildren.forEach((entry) => traverse(entry.node, depth + 1))
+    }
+  }
+
+  sortedRoots.forEach((node) => traverse(node, 0))
+  return list
+}
+
 function expandAncestors(node, bucket) {
   if (!node) return
   bucket.add(node.id)
@@ -183,6 +238,11 @@ function toggleNode(nodeId) {
 function handleSelect(node) {
   if (!node?.path) return
   emit('select-record', node.path)
+}
+
+function handleOpenProtocol(node) {
+  if (!node?.path) return
+  emit('open-protocol', node)
 }
 
 function handleAddChild(parentNode, relation = null) {
@@ -294,84 +354,104 @@ function supportingDocTitle(node) {
     <p v-else-if="!isGraphReady" class="status status-muted">
       {{ graphStatus === 'building' ? 'Building record graph…' : 'Graph is initializing.' }}
     </p>
-    <div v-else-if="!visibleNodes.length" class="placeholder">
+    <div v-else-if="!totalVisibleRows" class="placeholder">
       <p>No records detected for {{ rootHeading().toLowerCase() }}.</p>
     </div>
-    <div v-else class="tree-list" aria-label="Record graph tree">
-      <div
-        v-for="row in visibleNodes"
-        :key="row.node.id + '-' + row.depth"
-        class="tree-row"
-        :class="{ 'is-active': row.node.path === activePath }"
-        :style="{ paddingLeft: `${Math.min(row.depth, 6) * 1.1 + 0.5}rem` }"
-      >
-        <button
-          class="toggle"
-          type="button"
-          :aria-label="row.hasChildren ? (expandedIds.has(row.node.id) ? 'Collapse' : 'Expand') : 'No children'"
-          :disabled="!row.hasChildren"
-          @click="row.hasChildren ? toggleNode(row.node.id) : null"
-        >
-          <span v-if="row.hasChildren">
-            {{ expandedIds.has(row.node.id) ? '▾' : '▸' }}
-          </span>
-        </button>
-        <button class="tree-label" type="button" @click="handleSelect(row.node)">
-          <span class="tree-title">{{ row.node.title || row.node.id }}</span>
-          <span class="tree-meta">{{ row.node.recordType }}</span>
-          <span v-if="isNodeImmutable(row.node)" class="lock-pill" title="Immutable workflow state">Locked</span>
-        </button>
-        <div class="tree-actions">
-          <button
-            class="icon-button"
-            type="button"
-            title="Open record"
-            @click="handleSelect(row.node)"
-            :disabled="!row.node.path"
+    <div v-else class="tree-groups" aria-label="Record graph tree">
+      <section v-for="group in visibleGroups" :key="group.recordType" class="tree-group">
+        <header class="tree-group__header">
+          <h4>{{ group.label }}</h4>
+        </header>
+        <div v-if="group.rows.length" class="tree-list">
+          <div
+            v-for="row in group.rows"
+            :key="row.node.id + '-' + row.depth"
+            class="tree-row"
+            :class="{ 'is-active': row.node.path === activePath }"
+            :style="{ paddingLeft: `${Math.min(row.depth, 6) * 1.1 + 0.5}rem` }"
           >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path
-                d="M10 4c-4.5 0-8 3.5-8 6s3.5 6 8 6 8-3.5 8-6-3.5-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"
-              />
-            </svg>
-          </button>
-          <button
-            class="icon-button"
-            type="button"
-            :title="addChildTitle(row.node)"
-            :disabled="!canAddDefaultChild(row.node)"
-            :aria-label="'Add child record to ' + (row.node.title || row.node.id)"
-            @click="handleAddChild(row.node)"
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 4v12m6-6H4" />
-            </svg>
-          </button>
-          <button
-            class="icon-button"
-            type="button"
-            :title="supportingDocTitle(row.node)"
-            :disabled="!canAddSupportingDoc(row.node)"
-            :aria-label="'Add supporting document to ' + (row.node.title || row.node.id)"
-            @click="handleAddSupportingDoc(row.node)"
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M6 3h6l4 4v10a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1zm6 0v4h4" />
-            </svg>
-          </button>
-          <button
-            class="icon-button"
-            type="button"
-            title="Edit in TapTab"
-            :disabled="!nodeSupportsTapTap(row.node)"
-            @click="handleOpenTapTab(row.node)"
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8zM15 6l-2-2 1.5-1.5a1 1 0 011.4 0l0.6 0.6a1 1 0 010 1.4L15 6z" />
-            </svg>
-          </button>
+            <button
+              class="toggle"
+              type="button"
+              :aria-label="row.hasChildren ? (expandedIds.has(row.node.id) ? 'Collapse' : 'Expand') : 'No children'"
+              :disabled="!row.hasChildren"
+              @click="row.hasChildren ? toggleNode(row.node.id) : null"
+            >
+              <span v-if="row.hasChildren">
+                {{ expandedIds.has(row.node.id) ? '▾' : '▸' }}
+              </span>
+            </button>
+            <button class="tree-label" type="button" @click="handleSelect(row.node)">
+              <span class="tree-title">{{ row.node.title || row.node.id }}</span>
+              <span class="tree-meta">{{ row.node.recordType }}</span>
+              <span v-if="isNodeImmutable(row.node)" class="lock-pill" title="Immutable workflow state">Locked</span>
+            </button>
+            <div class="tree-actions">
+              <button
+                class="icon-button"
+                type="button"
+                title="Open record"
+                @click="handleSelect(row.node)"
+                :disabled="!row.node.path"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path
+                    d="M10 4c-4.5 0-8 3.5-8 6s3.5 6 8 6 8-3.5 8-6-3.5-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"
+                  />
+                </svg>
+              </button>
+              <button
+                v-if="row.node.recordType === 'protocol'"
+                class="icon-button"
+                type="button"
+                title="Open protocol editor"
+                :disabled="!row.node.path"
+                @click="handleOpenProtocol(row.node)"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M4 5h9l3 3v7a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm9 0v3h3" />
+                </svg>
+              </button>
+              <button
+                class="icon-button"
+                type="button"
+                :title="addChildTitle(row.node)"
+                :disabled="!canAddDefaultChild(row.node)"
+                :aria-label="'Add child record to ' + (row.node.title || row.node.id)"
+                @click="handleAddChild(row.node)"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M10 4v12m6-6H4" />
+                </svg>
+              </button>
+              <button
+                class="icon-button"
+                type="button"
+                :title="supportingDocTitle(row.node)"
+                :disabled="!canAddSupportingDoc(row.node)"
+                :aria-label="'Add supporting document to ' + (row.node.title || row.node.id)"
+                @click="handleAddSupportingDoc(row.node)"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M6 3h6l4 4v10a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1zm6 0v4h4" />
+                </svg>
+              </button>
+              <button
+                class="icon-button"
+                type="button"
+                title="Edit in TapTab"
+                :disabled="!nodeSupportsTapTap(row.node)"
+                @click="handleOpenTapTab(row.node)"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8zM15 6l-2-2 1.5-1.5a1 1 0 011.4 0l0.6 0.6a1 1 0 010 1.4L15 6z" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+        <p v-else class="group-empty">No {{ group.label.toLowerCase() }} yet.</p>
+      </section>
     </div>
   </div>
 </template>
@@ -395,6 +475,33 @@ function supportingDocTitle(node) {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+}
+
+.tree-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.tree-group__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.tree-group__header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #475569;
+}
+
+.group-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
 }
 
 .tree-row {

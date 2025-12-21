@@ -1,0 +1,40 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.incubate.schema.yaml"
+
+title: PlateEventIncubateDetails
+type: object
+description: "Details for an incubation event."
+
+required:
+  - type
+  - labware
+  - duration
+
+properties:
+  type:
+    type: string
+    const: "incubate"
+
+  labware:
+    $ref: "./labware-ref.schema.yaml"
+
+  wells:
+    type: array
+    description: "Optional subset of wells affected; omit to incubate entire labware."
+    items:
+      type: string
+      minLength: 1
+
+  duration:
+    type: string
+    description: "Incubation duration, e.g. '12 h', '30 min'."
+
+  temperature:
+    type: string
+    description: "Optional temperature, e.g. '37 C', 'room temperature'."
+
+  atmosphere:
+    type: string
+    description: "Optional atmosphere, e.g. '5% CO2'."
+
+additionalProperties: false

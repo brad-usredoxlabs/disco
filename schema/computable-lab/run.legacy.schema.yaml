@@ -1,0 +1,155 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "Run"
+type: object
+
+allOf:
+  - $ref: "./common.schema.yaml#/$defs/FAIRCommon"
+
+required:
+  - experimentId
+
+properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'run'."
+  state:
+    type: string
+    description: "Workflow state identifier (e.g., draft, approved)."
+  recordId:
+    type: string
+    description: "Stable filesystem identifier generated from naming rules."
+  experimentId:
+    type: string
+    description: >
+      Reference to the parent Experiment record. Must match an existing
+      experiment.id or a resolvable experiment record identifier.
+
+  runId:
+    type: string
+    description: >
+      Optional human-friendly run identifier. If omitted, the system may
+      auto-generate a canonical ID based on naming rules.
+
+  experimentShortSlug:
+    type: string
+    description: "Short slug inherited from the parent experiment for naming."
+
+  startedAt:
+    type: string
+    format: date-time
+    description: "Timestamp when the run started."
+
+  completedAt:
+    type: string
+    format: date-time
+    description: "Timestamp when the run completed."
+
+  plateLayout:
+    type: string
+    description: >
+      Optional plugin-owned JSON or YAML describing wells, plate layout, etc.
+      Stored as a string and interpreted by plate editor plugins.
+  plateLayouts:
+    type: array
+    description: >
+      Linked Plate Layout record identifiers associated with this run.
+    items:
+      type: string
+      description: "Plate Layout record id or relative path."
+
+  plateId:
+    type: string
+    description: "Identifier for the physical plate or instrument position."
+
+  notes:
+    type: string
+    description: "Free-text notes associated with this Run."
+
+  protocol:
+    type: object
+    description: "Protocol (specific version) executed during this run."
+    required: ["@id"]
+    properties:
+      "@id":
+        type: string
+        description: "Record id of the protocol version."
+      label:
+        type: string
+      family:
+        type: string
+      version:
+        type: string
+
+  protocolParameters:
+    type: object
+    description: "Concrete parameter values applied when running the protocol."
+    additionalProperties: true
+
+  assayType:
+    $ref: "./datatypes/ontology-term.schema.yaml"
+    description: "Type of assay performed (e.g. OBI:0000663)."
+
+  dataFiles:
+    type: array
+    description: >
+      Paths or identifiers for data outputs associated with this Run.
+      These may point to DVC pointer files, CSVs, or other artifacts.
+    items:
+      type: string
+      description: "Data file path or identifier."
+
+  binaryDataFiles:
+    type: array
+    description: "External data file identifiers (pointers, object storage paths)."
+    items:
+      type: string
+
+  outputType:
+    $ref: "./datatypes/ontology-term.schema.yaml"
+    description: "Output data type or measurement ontology term."
+
+  obiType:
+    $ref: "./datatypes/ontology-term.schema.yaml"
+    description: "OBI category corresponding to an assay."
+    default:
+      label: "assay"
+      identifier: "OBI:0000663"
+      ontology: "OBI"
+  operator:
+    type: object
+    description: "Operator or technician responsible for the run."
+    properties:
+      id:
+        type: string
+      label:
+        type: string
+  biology:
+    type: object
+    properties:
+      entities:
+        $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
+    additionalProperties: false
+
+  materialsUsed:
+    type: array
+    description: >
+      Narrative list of materials used in this run (not inventory tracking).
+    items:
+      $ref: "./datatypes/material-ref.schema.yaml"
+
+  results:
+    type: array
+    description: "Optional references to results produced by this run."
+    items:
+      type: object
+      properties:
+        label:
+          type: string
+          description: "Human-readable label for the result."
+        uri:
+          type: string
+          format: uri
+          description: "Location of the result artifact."
+        recordRef:
+          type: string
+          description: "Optional reference to another record containing the result."

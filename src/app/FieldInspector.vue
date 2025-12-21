@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import RecordMetadataForm from '../records/RecordMetadataForm.vue'
 import AssistantPanel from './AssistantPanel.vue'
+import RunActivitiesPanel from './RunActivitiesPanel.vue'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { generateMarkdownView } from '../records/markdownView'
 import { useRecordValidator } from '../records/recordValidator'
@@ -222,6 +223,35 @@ const workflowTransitions = computed(() => {
     })
   }
   return transitions
+})
+
+const isRunRecord = computed(() => activeRecordType.value === 'run')
+
+const runActivitiesModel = computed({
+  get: () => {
+    if (!isRunRecord.value) return []
+    return recordMetadata.value?.formData?.activities || []
+  },
+  set: (next) => {
+    if (!isRunRecord.value) return
+    const current = recordMetadata.value || {}
+    const nextFormData = { ...(current.formData || {}) }
+    nextFormData.activities = Array.isArray(next) ? next : []
+    recordMetadata.value = {
+      ...current,
+      formData: nextFormData
+    }
+  }
+})
+
+const runLabwareBindings = computed(() => {
+  if (!isRunRecord.value) return {}
+  return recordMetadata.value?.formData?.labware_bindings || {}
+})
+
+const runParameters = computed(() => {
+  if (!isRunRecord.value) return {}
+  return recordMetadata.value?.formData?.parameters || {}
 })
 
 const validationStatus = computed(() => {
@@ -772,6 +802,14 @@ loadFile()
           </div>
         </div>
       </section>
+
+      <RunActivitiesPanel
+        v-if="isRunRecord"
+        v-model:activities="runActivitiesModel"
+        :labware-bindings="runLabwareBindings"
+        :parameters="runParameters"
+        :read-only="isImmutable"
+      />
 
       <AssistantPanel
         v-if="isRecord && assistantDefinition"

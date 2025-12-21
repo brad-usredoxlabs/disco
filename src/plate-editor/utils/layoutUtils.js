@@ -1,4 +1,24 @@
 const LAYOUT_PRESETS = {
+  plate6: {
+    rows: 2,
+    columns: 3,
+    wellKeying: 'A01'
+  },
+  plate12: {
+    rows: 3,
+    columns: 4,
+    wellKeying: 'A01'
+  },
+  plate24: {
+    rows: 4,
+    columns: 6,
+    wellKeying: 'A01'
+  },
+  plate48: {
+    rows: 6,
+    columns: 8,
+    wellKeying: 'A01'
+  },
   plate96: {
     rows: 8,
     columns: 12,
@@ -8,6 +28,36 @@ const LAYOUT_PRESETS = {
     rows: 16,
     columns: 24,
     wellKeying: 'A01'
+  },
+  reservoir8: {
+    rows: 8,
+    columns: 1,
+    wellKeying: 'R1C1'
+  },
+  reservoir12: {
+    rows: 12,
+    columns: 1,
+    wellKeying: 'R1C1'
+  },
+  reservoir: {
+    rows: 12,
+    columns: 1,
+    wellKeying: 'R1C1'
+  },
+  tubeset6: {
+    rows: 1,
+    columns: 6,
+    wellKeying: 'T01'
+  },
+  tubeset8: {
+    rows: 1,
+    columns: 8,
+    wellKeying: 'T01'
+  },
+  tubeset12: {
+    rows: 1,
+    columns: 12,
+    wellKeying: 'T01'
   },
   tubeset: {
     rows: 1,

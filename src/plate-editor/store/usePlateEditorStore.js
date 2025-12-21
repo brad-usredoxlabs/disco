@@ -1,5 +1,7 @@
 import { reactive } from 'vue'
-import { createLayoutIndex, computeRangeSelection } from '../utils/layoutUtils'
+import { computeRangeSelection } from '../utils/layoutUtils'
+import { resolveLayoutIndex } from '../utils/layoutResolver'
+import { deriveWellsFromEvents } from '../utils/plateEventDeriver'
 
 export function usePlateEditorStore() {
   const state = reactive({
@@ -8,7 +10,8 @@ export function usePlateEditorStore() {
     layoutIndex: null,
     materialLibrary: {
       entries: [],
-      byId: {}
+      byId: {},
+      byLabel: {}
     },
     selection: {
       anchor: null,
@@ -21,8 +24,9 @@ export function usePlateEditorStore() {
   function initialize(payload = {}) {
     state.record = payload.record || null
     state.spec = payload.spec || null
-    state.layoutIndex = state.record ? createLayoutIndex(state.record.layout || {}) : null
+    state.layoutIndex = state.record ? resolveLayoutIndex(state.record.layout || {}) : null
     setMaterialLibrary(payload.materialLibrary || [])
+    syncDerivedWellsFromEvents()
     resetSelection()
     resetHistory()
   }
@@ -31,12 +35,18 @@ export function usePlateEditorStore() {
     const normalized = Array.isArray(entries) ? entries : []
     state.materialLibrary.entries = normalized
     const byId = {}
+    const byLabel = {}
     normalized.forEach((entry) => {
       if (entry?.id) {
         byId[entry.id] = entry
       }
+      if (entry?.label) {
+        byLabel[entry.label] = entry.id || entry.label
+      }
     })
     state.materialLibrary.byId = byId
+    state.materialLibrary.byLabel = byLabel
+    syncDerivedWellsFromEvents()
   }
 
   function resetSelection() {
@@ -132,58 +142,25 @@ export function usePlateEditorStore() {
   function restoreEventsSnapshot(collection = []) {
     if (!state.record) return
     state.record.events = collection.map((entry) => cloneValue(entry))
+    syncDerivedWellsFromEvents()
   }
 
   function applyMaterialUse(payload = {}) {
     if (!state.record) return
-    const { material, role, amount, notes, wells, lot, label } = payload
+    const { material, role, amount, wells, label, controlIntents } = payload
     const targets = Array.isArray(wells) && wells.length ? wells : [...state.selection.wells]
     if (!targets.length || !material || !role) return
-    state.record.wells ||= {}
-    const before = snapshotWells(targets)
-    const controlIntentInfo = normalizeControlIntentPayload(payload)
-    targets.forEach((wellId) => {
-      const well = ensureWell(state.record.wells, wellId)
-      const entryIndex = well.inputs.findIndex((entry) => entry.material?.id === material && entry.role === role)
-      const normalized = {
-        material: { id: material },
-        role,
-        amount: amount || null,
-        lot: lot || null,
-        notes: notes || ''
-      }
-      if (entryIndex >= 0) {
-        const updated = {
-          ...well.inputs[entryIndex],
-          ...normalized
-        }
-        applyControlIntents(updated, controlIntentInfo)
-        well.inputs[entryIndex] = updated
-      } else {
-        const nextEntry = {
-          ...normalized
-        }
-        applyControlIntents(nextEntry, controlIntentInfo)
-        well.inputs.push(nextEntry)
-      }
+    const eventPayload = buildTransferEvent({
+      material,
+      role,
+      amount,
+      wells: targets,
+      label,
+      controlIntents
     })
-    const after = snapshotWells(targets)
-    pushHistory({
-      kind: 'material',
-      action: 'apply',
-      wells: [...targets],
-      before,
-      after
-    })
-    appendEvent({
-      kind: 'apply_material',
-      wells: [...targets],
-      payload: {
-        material,
-        role,
-        label: label || ''
-      }
-    })
+    if (eventPayload) {
+      appendEvent(eventPayload)
+    }
   }
 
   function removeMaterialUse(payload = {}) {
@@ -191,78 +168,35 @@ export function usePlateEditorStore() {
     const { material, role, wells } = payload
     const targets = Array.isArray(wells) && wells.length ? wells : [...state.selection.wells]
     if (!targets.length || !material) return
-    state.record.wells ||= {}
-    const before = snapshotWells(targets)
-    targets.forEach((wellId) => {
-      const well = ensureWell(state.record.wells, wellId, false)
-      if (!well) return
-      well.inputs = well.inputs.filter((entry) => {
-        if (role && entry.role !== role) return true
-        return entry.material?.id !== material
-      })
-      if (!well.inputs.length) {
-        delete state.record.wells[wellId]
-      }
+    const eventPayload = buildWashEvent({
+      material,
+      role,
+      wells: targets
     })
-    const after = snapshotWells(targets)
-    pushHistory({
-      kind: 'material',
-      action: 'remove',
-      wells: [...targets],
-      before,
-      after
-    })
-    appendEvent({
-      kind: 'remove_material',
-      wells: [...targets],
-      payload: {
-        material,
-        role: role || null
-      }
-    })
+    if (eventPayload) {
+      appendEvent(eventPayload)
+    }
   }
 
   function appendEvent(eventInput = {}) {
     if (!state.record) return
-    const timestamp = eventInput.timestamp || new Date().toISOString()
     state.record.events ||= []
-    const before = state.record.events.map((entry) => cloneValue(entry))
-    const nextEntry = {
-      id: eventInput.id || `evt-${Math.random().toString(36).slice(2, 9)}`,
-      kind: eventInput.kind || 'event',
-      wells: Array.isArray(eventInput.wells) ? [...eventInput.wells] : [],
-      timestamp,
-      payload: cloneValue(eventInput.payload || {})
-    }
-    state.record.events.push(nextEntry)
-    const after = state.record.events.map((entry) => cloneValue(entry))
+    const normalized = normalizeEventPayload(eventInput, state.record)
+    if (!normalized) return
+    const before = snapshotEvents()
+    state.record.events.push(normalized)
+    const after = snapshotEvents()
     pushHistory({
       kind: 'event',
       action: 'append',
       before,
       after
     })
+    syncDerivedWellsFromEvents()
   }
 
-  function snapshotWells(wellIds = []) {
-    const snapshot = {}
-    wellIds.forEach((wellId) => {
-      const well = state.record?.wells?.[wellId]
-      snapshot[wellId] = well ? cloneValue(well) : null
-    })
-    return snapshot
-  }
-
-  function ensureWell(wellCollection, wellId, createOnMissing = true) {
-    if (!wellCollection) return null
-    if (!wellCollection[wellId] && createOnMissing) {
-      wellCollection[wellId] = { inputs: [] }
-    }
-    if (!wellCollection[wellId]) return null
-    if (!Array.isArray(wellCollection[wellId].inputs)) {
-      wellCollection[wellId].inputs = []
-    }
-    return wellCollection[wellId]
+  function snapshotEvents() {
+    return state.record?.events?.map((entry) => cloneValue(entry)) || []
   }
 
   function cloneValue(value) {
@@ -270,52 +204,161 @@ export function usePlateEditorStore() {
     return JSON.parse(JSON.stringify(value))
   }
 
+  function normalizeEventPayload(eventInput = {}, record = null) {
+    if (eventInput.event_type && eventInput.details) {
+      return {
+        id: eventInput.id || generateEventId(),
+        event_type: eventInput.event_type,
+        timestamp: eventInput.timestamp || new Date().toISOString(),
+        run: eventInput.run || record?.metadata?.runId || '',
+        labware: eventInput.labware?.length ? eventInput.labware : [resolvePrimaryLabwareRef(record)],
+        details: cloneValue(eventInput.details)
+      }
+    }
+    // Legacy fallback (pre-PlateEvent data)
+    return {
+      id: eventInput.id || generateEventId(),
+      kind: eventInput.kind || 'event',
+      timestamp: eventInput.timestamp || new Date().toISOString(),
+      wells: Array.isArray(eventInput.wells) ? [...eventInput.wells] : [],
+      payload: cloneValue(eventInput.payload || {}),
+      labware: eventInput.labware?.length ? eventInput.labware : [resolvePrimaryLabwareRef(record)]
+    }
+  }
+
+  function hasStructuredEvents(events) {
+    return Array.isArray(events) && events.some((entry) => entry && entry.event_type)
+  }
+
+  function syncDerivedWellsFromEvents() {
+    if (!state.record) return
+    if (!hasStructuredEvents(state.record.events)) {
+      return
+    }
+    const derived = deriveWellsFromEvents(state.record.events || [], {
+      materialsByLabel: state.materialLibrary.byLabel,
+      materialsById: state.materialLibrary.byId
+    })
+    state.record.wells = derived
+  }
+
+  function buildTransferEvent(options = {}) {
+    if (!state.record) return null
+    const labwareRef = resolvePrimaryLabwareRef(state.record)
+    const materialId = options.material
+    const role = options.role
+    const selectedWells = Array.isArray(options.wells) ? options.wells : []
+    const volume = formatVolumeString(options.amount)
+    const sourceWells = {}
+    selectedWells.forEach((wellId) => {
+      sourceWells[wellId] = {
+        material: {
+          label: resolveMaterialLabel(materialId, options.label),
+          kind: role || 'other'
+        },
+        role,
+        volume
+      }
+    })
+    const targetWells = {}
+    selectedWells.forEach((wellId) => {
+      targetWells[wellId] = {
+        well: wellId,
+        role,
+        material_id: materialId,
+        notes: options.label || '',
+        volume
+      }
+    })
+    return {
+      event_type: 'transfer',
+      timestamp: new Date().toISOString(),
+      run: state.record.metadata?.runId || '',
+      labware: [labwareRef],
+      details: {
+        type: 'transfer',
+        source: {
+          labware: {
+            '@id': `material/${materialId}`,
+            kind: 'reservoir',
+            label: resolveMaterialLabel(materialId, options.label)
+          },
+          wells: sourceWells
+        },
+        target: {
+          labware: labwareRef,
+          wells: targetWells
+        },
+        volume,
+        material: {
+          label: resolveMaterialLabel(materialId, options.label),
+          kind: role || 'other'
+        },
+        pipetting_hint: null
+      }
+    }
+  }
+
+  function buildWashEvent(options = {}) {
+    if (!state.record) return null
+    const labwareRef = resolvePrimaryLabwareRef(state.record)
+    return {
+      event_type: 'wash',
+      timestamp: new Date().toISOString(),
+      run: state.record.metadata?.runId || '',
+      labware: [labwareRef],
+      details: {
+        type: 'wash',
+        labware: labwareRef,
+        wells: Array.isArray(options.wells) ? options.wells : [],
+        buffer: {
+          label: options.material || resolveMaterialLabel(options.material),
+          kind: options.role || 'wash_buffer'
+        },
+        cycles: 1
+      }
+    }
+  }
+
+  function resolvePrimaryLabwareRef(record = null) {
+    if (!record) {
+      return {
+        '@id': 'plate/unknown',
+        kind: 'plate',
+        label: 'Plate layout'
+      }
+    }
+    const recordId = record.metadata?.recordId || record.metadata?.id || 'unknown'
+    return {
+      '@id': `plate/${recordId}`,
+      kind: 'plate',
+      label: record.metadata?.title || recordId
+    }
+  }
+
+  function resolveMaterialLabel(materialId, fallback = '') {
+    if (!materialId) return fallback || ''
+    const entry = state.materialLibrary.byId[materialId]
+    return entry?.label || fallback || materialId
+  }
+
+  function formatVolumeString(amount) {
+    if (!amount) return ''
+    if (typeof amount === 'string') return amount
+    if (typeof amount === 'object' && amount.value !== undefined && amount.unit) {
+      return `${amount.value} ${amount.unit}`
+    }
+    return ''
+  }
+
+  function generateEventId() {
+    return `evt-${Math.random().toString(36).slice(2, 9)}`
+  }
+
   function getSelectionSnapshot() {
     return {
       anchor: state.selection.anchor,
       wells: [...state.selection.wells]
-    }
-  }
-
-  function normalizeControlIntentPayload(payload = {}) {
-    if (Array.isArray(payload.controlIntents)) {
-      return {
-        provided: true,
-        list: normalizeControlIntents(payload.controlIntents)
-      }
-    }
-    if (Array.isArray(payload.control_intents)) {
-      return {
-        provided: true,
-        list: normalizeControlIntents(payload.control_intents)
-      }
-    }
-    return { provided: false, list: [] }
-  }
-
-  function normalizeControlIntents(collection = []) {
-    if (!Array.isArray(collection)) return []
-    const normalized = []
-    collection.forEach((entry) => {
-      const feature = typeof entry?.feature === 'string' ? entry.feature.trim() : ''
-      const kind = typeof entry?.kind === 'string' ? entry.kind.trim() : ''
-      if (!feature || !kind) return
-      const normalizedEntry = { feature, kind }
-      const effect = typeof entry?.expected_effect === 'string' ? entry.expected_effect.trim() : ''
-      if (effect) {
-        normalizedEntry.expected_effect = effect
-      }
-      normalized.push(normalizedEntry)
-    })
-    return normalized
-  }
-
-  function applyControlIntents(target = {}, info = { provided: false, list: [] }) {
-    if (!info?.provided) return
-    if (info.list.length) {
-      target.control_intents = info.list.map((entry) => ({ ...entry }))
-    } else {
-      delete target.control_intents
     }
   }
 

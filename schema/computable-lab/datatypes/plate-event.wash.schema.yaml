@@ -1,0 +1,40 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.wash.schema.yaml"
+
+title: PlateEventWashDetails
+type: object
+description: "Details for a wash event (aspirate/dispense cycles with wash buffer)."
+
+required:
+  - type
+  - labware
+
+properties:
+  type:
+    type: string
+    const: "wash"
+
+  labware:
+    $ref: "./labware-ref.schema.yaml"
+
+  wells:
+    type: array
+    description: "Optional subset of wells to wash; omit to wash all wells."
+    items:
+      type: string
+      minLength: 1
+
+  buffer:
+    $ref: "./material-ref.schema.yaml"
+    description: "Optional reference to wash buffer material."
+
+  cycles:
+    type: integer
+    minimum: 1
+    description: "Optional suggested number of wash cycles."
+
+  volume_per_cycle:
+    type: string
+    description: "Optional suggested volume per wash cycle, e.g. '200 uL'."
+
+additionalProperties: false

@@ -84,7 +84,7 @@ properties:
     type: array
     description: "Optional sequence of plate events applied to this layout."
     items:
-      $ref: "#/$defs/PlateEvent"
+      $ref: "./datatypes/plate-event.schema.yaml"
 
   annotations:
     type: object
@@ -139,27 +139,4 @@ $defs:
         type: string
       dataRef:
         type: string
-    additionalProperties: false
-
-  PlateEvent:
-    type: object
-    description: "Single event applied to a set of wells."
-    required: ["id", "kind", "wells"]
-    properties:
-      id:
-        type: string
-      kind:
-        type: string
-        description: "Event type identifier (apply_material, remove, transfer, measure, etc.)."
-      timestamp:
-        type: string
-        format: date-time
-      wells:
-        type: array
-        items:
-          type: string
-      payload:
-        type: object
-        description: "Event-specific data (material refs, instrument settings, etc.)."
-        additionalProperties: true
     additionalProperties: false

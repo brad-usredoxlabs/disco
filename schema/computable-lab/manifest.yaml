@@ -3,7 +3,23 @@ recordSchemas:
   - datatypes/ontology-term.schema.yaml
   - datatypes/biological-entity.schema.yaml
   - datatypes/material-library-entry.schema.yaml
+  - datatypes/material-ref.schema.yaml
   - datatypes/material-use.schema.yaml
+  - datatypes/labware-ref.schema.yaml
+  - datatypes/labware-role.schema.yaml
+  - datatypes/material-in-well.schema.yaml
+  - datatypes/plate-event.schema.yaml
+  - datatypes/plate-event.transfer.schema.yaml
+  - datatypes/plate-event.incubate.schema.yaml
+  - datatypes/plate-event.read.schema.yaml
+  - datatypes/plate-event.wash.schema.yaml
+  - datatypes/plate-event.other.schema.yaml
+  - datatypes/protocol-event.schema.yaml
+  - datatypes/protocol-event.transfer.schema.yaml
+  - datatypes/protocol-event.incubate.schema.yaml
+  - datatypes/protocol-event.read.schema.yaml
+  - datatypes/protocol-event.wash.schema.yaml
+  - datatypes/protocol-event.other.schema.yaml
   - recipe.schema.yaml
   - protocol.schema.yaml
   - project.schema.yaml

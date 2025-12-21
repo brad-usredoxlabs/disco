@@ -1,0 +1,41 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "labware-role.schema.yaml"
+
+title: LabwareRole
+type: object
+description: >
+  Named placeholder for labware that will be bound at run-time when a protocol executes.
+
+required:
+  - name
+  - kind
+
+properties:
+  name:
+    type: string
+    description: "Unique role identifier used in event templates (e.g., cell_plate)."
+
+  kind:
+    type: string
+    description: "Coarse category used for validation/deck mapping."
+    enum:
+      - plate
+      - reservoir
+      - tube_rack
+      - tip_rack
+      - trash
+      - other
+
+  plate_type:
+    type: string
+    description: "Optional plate definition or vendor identifier (e.g., 96-flat-clear)."
+
+  description:
+    type: string
+    description: "Human-readable description of this labware role."
+
+  default_labware_id:
+    type: string
+    description: "Optional @id to prefill when binding runs."
+
+additionalProperties: false

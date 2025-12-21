@@ -1,0 +1,55 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.read.schema.yaml"
+
+title: ProtocolEventReadDetails
+type: object
+description: "Template for a plate read or imaging step."
+
+required:
+  - type
+  - labware_role
+  - instrument
+  - mode
+
+properties:
+  type:
+    type: string
+    const: "read"
+
+  labware_role:
+    type: string
+    description: "Labware role being read or imaged."
+
+  instrument:
+    type: string
+    description: "Instrument identifier or label."
+
+  mode:
+    type: string
+    description: "Measurement mode (fluorescence, luminescence, brightfield, etc.)."
+
+  channels:
+    type: array
+    description: "Optional list of channels."
+    items:
+      type: string
+
+  result_files:
+    type: array
+    description: "Optional description of expected result files."
+    items:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        uri_template:
+          type: string
+          description: "Optional template for naming outputs."
+        record_ref:
+          type: string
+
+  notes:
+    type: string
+
+additionalProperties: false

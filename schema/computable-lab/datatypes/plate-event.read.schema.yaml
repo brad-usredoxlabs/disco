@@ -1,0 +1,53 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.read.schema.yaml"
+
+title: PlateEventReadDetails
+type: object
+description: "Details for a plate read / imaging event."
+
+required:
+  - type
+  - labware
+  - instrument
+  - mode
+
+properties:
+  type:
+    type: string
+    const: "read"
+
+  labware:
+    $ref: "./labware-ref.schema.yaml"
+
+  instrument:
+    type: string
+    description: "Plate reader or imaging instrument @id or label."
+
+  mode:
+    type: string
+    description: "Read mode, e.g. 'fluorescence', 'luminescence', 'brightfield'."
+
+  channels:
+    type: array
+    description: "Optional list of channels."
+    items:
+      type: string
+      minLength: 1
+
+  result_files:
+    type: array
+    description: "Optional list of result files (images, CSVs, etc.)."
+    items:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        uri:
+          type: string
+          format: uri
+        record_ref:
+          type: string
+          description: "Optional reference to another record containing the result."
+
+additionalProperties: false

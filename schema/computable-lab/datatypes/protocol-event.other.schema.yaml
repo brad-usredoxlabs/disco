@@ -1,0 +1,34 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.other.schema.yaml"
+
+title: ProtocolEventOtherDetails
+type: object
+description: "Catch-all template for custom steps."
+
+required:
+  - type
+  - name
+
+properties:
+  type:
+    type: string
+    const: "other"
+
+  name:
+    type: string
+    description: "Short name for the custom step."
+
+  description:
+    type: string
+    description: "Detailed description of what happens."
+
+  labware_role:
+    type: string
+    description: "Optional labware role affected by this step."
+
+  metadata:
+    type: object
+    description: "Arbitrary structured metadata for adapters or AI helpers."
+    additionalProperties: true
+
+additionalProperties: false

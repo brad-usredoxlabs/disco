@@ -1,0 +1,26 @@
+---
+metadata:
+  recordType: plateLayout
+  state: draft
+  id: PLT-TEST
+  title: Sample plate
+  runId: RUN-TEST
+  recordId: PLT-TEST
+data:
+  operations:
+    layout:
+      kind: plate96
+      wellKeying: A01
+    wells:
+      A01:
+        inputs:
+          - material:
+              id: material:cmpd_a
+            role: treatment
+            amount:
+              value: 5
+              unit: uL
+            notes: Primary compound
+---
+
+# Sample plate

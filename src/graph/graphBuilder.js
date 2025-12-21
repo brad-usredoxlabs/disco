@@ -15,7 +15,7 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
       const { data, body } = parseFrontMatter(file.text)
       const { metadata: hydratedMetadata, formData } = extractRecordData(file.recordType, data, schemaBundle)
       const schemaRecord = mergeMetadataAndFormData(hydratedMetadata, formData)
-      const id = schemaRecord?.id
+      const id = schemaRecord?.id || schemaRecord?.recordId
       const resolvedType = schemaRecord?.recordType || file.recordType
       if (!id || resolvedType !== file.recordType) continue
 

@@ -1,0 +1,74 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.transfer.schema.yaml"
+
+title: ProtocolEventTransferDetails
+type: object
+description: "Template for a transfer (aspirate + dispense) step."
+
+required:
+  - type
+  - source_role
+  - target_role
+  - mapping
+  - volume
+
+properties:
+  type:
+    type: string
+    const: "transfer"
+
+  source_role:
+    type: string
+    description: "Labware role providing the source liquid."
+
+  target_role:
+    type: string
+    description: "Labware role receiving the transfer."
+
+  mapping:
+    type: array
+    description: "Per-well mapping between source and target roles."
+    minItems: 1
+    items:
+      type: object
+      required:
+        - source_well
+        - target_well
+      additionalProperties: false
+      properties:
+        source_well:
+          type: string
+          description: "Source well (e.g., A1)."
+        target_well:
+          type: string
+          description: "Target well (e.g., B3)."
+        pattern:
+          type: string
+          description: "Optional description of how this mapping was generated."
+
+  volume:
+    type: string
+    description: "Literal or parameterized volume (e.g., '100 uL' or '${seed_volume}')."
+
+  material:
+    $ref: "./material-ref.schema.yaml"
+
+  pipetting_hint:
+    type: object
+    description: "Optional adapter hint."
+    additionalProperties: false
+    properties:
+      mode:
+        type: string
+        enum: ["single", "multi", "custom"]
+      channels:
+        type: integer
+        minimum: 1
+      pattern:
+        type: string
+        description: "High-level pattern (row, column, checkerboard, etc.)."
+
+  notes:
+    type: string
+
+additionalProperties: false

@@ -74,6 +74,7 @@ export function composeRecordFrontMatter(recordType, metadataInput = {}, formDat
     combinedOverrides,
     formDataInput
   )
+  mergeRunSpecificSections(resolvedRecordType, dataSections, metadataInput, resolvedFormData)
   ensureBiologyPrefixes(normalizedMetadata, dataSections, bundle, combinedOverrides)
   return {
     metadata: normalizedMetadata,
@@ -165,6 +166,44 @@ function normalizeMetadataSection(recordType, metadataSection = {}, bundle = {},
   }
   next['@type'] = normalizeTypesArray(next['@type'], jsonLdConfig, typeValue, formData)
   return next
+}
+
+function mergeRunSpecificSections(recordType, dataSections = {}, metadataInput = {}, resolvedFormData = {}) {
+  if (recordType !== 'run') return
+  const activities = pickArray(resolvedFormData.activities, metadataInput.activities, metadataInput?.data?.activities)
+  if (activities) {
+    dataSections.activities = cloneValue(activities)
+  }
+  const labwareBindings = pickObject(
+    resolvedFormData.labware_bindings,
+    metadataInput.labware_bindings,
+    metadataInput?.data?.labware_bindings
+  )
+  if (labwareBindings) {
+    dataSections.labware_bindings = cloneValue(labwareBindings)
+  }
+  const parameters = pickObject(resolvedFormData.parameters, metadataInput.parameters, metadataInput?.data?.parameters)
+  if (parameters) {
+    dataSections.parameters = cloneValue(parameters)
+  }
+}
+
+function pickArray(...candidates) {
+  for (const value of candidates) {
+    if (Array.isArray(value) && value.length) {
+      return value
+    }
+  }
+  return null
+}
+
+function pickObject(...candidates) {
+  for (const value of candidates) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value
+    }
+  }
+  return null
 }
 
 function deriveRecordIri(metadata, jsonLdConfig = {}) {

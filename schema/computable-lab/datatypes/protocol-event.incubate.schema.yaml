@@ -1,0 +1,43 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.incubate.schema.yaml"
+
+title: ProtocolEventIncubateDetails
+type: object
+description: "Template for an incubation step."
+
+required:
+  - type
+  - labware_role
+  - duration
+
+properties:
+  type:
+    type: string
+    const: "incubate"
+
+  labware_role:
+    type: string
+    description: "Labware role being incubated."
+
+  wells:
+    type: array
+    description: "Optional subset of wells; omit to use the entire labware role."
+    items:
+      type: string
+
+  duration:
+    type: string
+    description: "Literal or parameterized duration (e.g., '30 min' or '${incubation_time}')."
+
+  temperature:
+    type: string
+    description: "Optional temperature (e.g., '37 C')."
+
+  atmosphere:
+    type: string
+    description: "Optional atmosphere (e.g., '5% CO2')."
+
+  notes:
+    type: string
+
+additionalProperties: false

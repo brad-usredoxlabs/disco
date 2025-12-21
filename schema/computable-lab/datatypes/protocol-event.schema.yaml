@@ -1,0 +1,43 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.schema.yaml"
+
+title: ProtocolEvent
+type: object
+description: "Ordered event template executed when the protocol runs."
+
+required:
+  - event_type
+  - label
+  - details
+
+properties:
+  id:
+    type: string
+    description: "Optional stable identifier for referencing this step."
+
+  phase:
+    type: string
+    description: "Grouping label (e.g., 'Seed cells')."
+
+  event_type:
+    type: string
+    enum: ["transfer", "incubate", "read", "wash", "other"]
+
+  label:
+    type: string
+    description: "Short label shown in editors and previews."
+
+  notes:
+    type: string
+    description: "Free-form notes for operators."
+
+  details:
+    description: "Event-type-specific payload."
+    oneOf:
+      - $ref: "./protocol-event.transfer.schema.yaml"
+      - $ref: "./protocol-event.incubate.schema.yaml"
+      - $ref: "./protocol-event.read.schema.yaml"
+      - $ref: "./protocol-event.wash.schema.yaml"
+      - $ref: "./protocol-event.other.schema.yaml"
+
+additionalProperties: false

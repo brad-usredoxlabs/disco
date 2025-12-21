@@ -10,6 +10,7 @@ import RecordSearchPanel from './RecordSearchPanel.vue'
 import RecordCreatorModal from './RecordCreatorModal.vue'
 import GraphTreePanel from './GraphTreePanel.vue'
 import PlateEditorShell from '../plate-editor/PlateEditorShell.vue'
+import ProtocolEditorShell from '../protocol-editor/ProtocolEditorShell.vue'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
@@ -41,6 +42,7 @@ const schemaBundle = computed(() => schemaLoader.schemaBundle?.value)
 const recordValidator = useRecordValidator(schemaLoader)
 const tiptapTarget = ref(readTiptapTargetFromUrl())
 const plateEditorTarget = ref(readPlateEditorTargetFromUrl())
+const protocolEditorTarget = ref(readProtocolEditorTargetFromUrl())
 const inspectorTarget = ref(readInspectorTargetFromUrl())
 const tiptapStatus = ref('')
 const inspectorStatus = ref('')
@@ -49,6 +51,7 @@ const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
 const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
 const isStandalonePlateEditor = computed(() => !!plateEditorTarget.value)
+const isStandaloneProtocolEditor = computed(() => !!protocolEditorTarget.value)
 const isStandaloneInspector = computed(() => !!inspectorTarget.value)
 const isOnline = computed(() => offlineStatus.isOnline.value)
 const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
@@ -73,6 +76,10 @@ const plateEditorBundleMismatch = computed(() => {
   if (!plateEditorTarget.value?.bundle) return false
   return selectedBundleName.value !== plateEditorTarget.value.bundle
 })
+const protocolEditorBundleMismatch = computed(() => {
+  if (!protocolEditorTarget.value?.bundle) return false
+  return selectedBundleName.value !== protocolEditorTarget.value.bundle
+})
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
 )
@@ -94,13 +101,23 @@ const defaultGraphRootLabel = computed(() => {
   if (!defaultGraphRootType.value) return 'Records'
   return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
 })
-const rootCreateLabel = computed(() => {
-  if (!defaultGraphRootType.value) return 'Record'
-  return defaultGraphRootType.value.charAt(0).toUpperCase() + defaultGraphRootType.value.slice(1)
-})
 const activeRecordPath = ref('')
 const relationshipsConfig = computed(() => schemaBundle.value?.relationships?.recordTypes || {})
 const supportingDocumentEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.['supporting-document'])
+const topLevelRecordTypes = computed(() => {
+  const relations = relationshipsConfig.value || {}
+  const list = Object.entries(relations)
+    .filter(([, descriptor]) => {
+      const parents = descriptor?.parents || {}
+      return !Object.keys(parents).length
+    })
+    .map(([type]) => type)
+    .sort((a, b) => a.localeCompare(b))
+  if (list.length) return list
+  return defaultGraphRootType.value ? [defaultGraphRootType.value] : []
+})
+const selectedRootRecordType = ref('')
+const protocolEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.protocol)
 
 watch(
   () => tiptapTarget.value?.bundle,
@@ -113,6 +130,15 @@ watch(
 
 watch(
   () => plateEditorTarget.value?.bundle,
+  (bundle) => {
+    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
+      schemaLoader.selectBundle(bundle)
+    }
+  }
+)
+
+watch(
+  () => protocolEditorTarget.value?.bundle,
   (bundle) => {
     if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
       schemaLoader.selectBundle(bundle)
@@ -136,6 +162,20 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => topLevelRecordTypes.value,
+  (list) => {
+    if (!list.length) {
+      selectedRootRecordType.value = ''
+      return
+    }
+    if (!list.includes(selectedRootRecordType.value)) {
+      selectedRootRecordType.value = list[0]
+    }
+  },
+  { immediate: true }
+)
+
 function readTiptapTargetFromUrl() {
   if (typeof window === 'undefined') return null
   const params = new URLSearchParams(window.location.search)
@@ -154,6 +194,16 @@ function readPlateEditorTargetFromUrl() {
   return {
     path: decodeURIComponent(params.get('plateEditorPath')),
     bundle: params.get('plateEditorBundle') || ''
+  }
+}
+
+function readProtocolEditorTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('protocolEditorPath')) return null
+  return {
+    path: decodeURIComponent(params.get('protocolEditorPath')),
+    bundle: params.get('protocolEditorBundle') || ''
   }
 }
 
@@ -184,6 +234,16 @@ function clearPlateEditorTarget() {
     const url = new URL(window.location.href)
     url.searchParams.delete('plateEditorPath')
     url.searchParams.delete('plateEditorBundle')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
+
+function clearProtocolEditorTarget() {
+  protocolEditorTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('protocolEditorPath')
+    url.searchParams.delete('protocolEditorBundle')
     window.history.replaceState({}, '', url.toString())
   }
 }
@@ -254,6 +314,10 @@ function handleSelect(nodeOrPath) {
     openPlateEditorWindow(path)
     return
   }
+  if (node?.recordType === 'protocol' && path) {
+    openProtocolEditorWindow(path)
+    return
+  }
   if (path) {
     openFileInspectorWindow(path)
     activeRecordPath.value = path
@@ -289,6 +353,10 @@ async function handleRecordCreated(payload) {
       openPlateEditorWindow(path)
       handled = true
     }
+  }
+  if (recordType === 'protocol' && path) {
+    openProtocolEditorWindow(path)
+    handled = true
   }
   if (!handled && path) {
     openFileInspectorWindow(path)
@@ -466,9 +534,30 @@ function openPlateEditorWindow(path) {
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
 
+function openProtocolEditorWindow(path) {
+  if (!path) return
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('protocolEditorPath')
+  url.searchParams.delete('protocolEditorBundle')
+  url.searchParams.set('protocolEditorPath', path)
+  const bundle = schemaLoader.selectedBundle?.value
+  if (bundle) {
+    url.searchParams.set('protocolEditorBundle', bundle)
+  }
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+}
+
 function handleGraphOpenTipTap(payload) {
   if (!payload?.path || !payload?.recordType) return
   openTipTapWindow(payload.path, payload.recordType)
+}
+
+function handleGraphOpenProtocol(payload) {
+  if (!payload) return
+  const path = payload.path || payload.node?.path || ''
+  if (!path) return
+  openProtocolEditorWindow(path)
 }
 
 function handleGraphSupportingDoc(payload) {
@@ -476,13 +565,26 @@ function handleGraphSupportingDoc(payload) {
   openSupportingDocumentFromGraph(payload.node)
 }
 
-function handleCreateRootRecord() {
+function handleCreateSelectedRecord() {
   if (!isReady.value) return
-  if (defaultGraphRootType.value) {
-    openCreator({ recordType: defaultGraphRootType.value })
-  } else {
+  const recordType = selectedRootRecordType.value || defaultGraphRootType.value || ''
+  if (!recordType) {
     openCreator()
+    return
   }
+  const simpleModeTypes = new Set(['project', 'protocol'])
+  openCreator({
+    recordType,
+    simpleMode: simpleModeTypes.has(recordType)
+  })
+}
+
+function handleCreateProtocol() {
+  if (!isReady.value || !protocolEnabled.value) return
+  openCreator({
+    recordType: 'protocol',
+    simpleMode: true
+  })
 }
 </script>
 
@@ -594,6 +696,43 @@ function handleCreateRootRecord() {
       </div>
     </div>
   </div>
+  <div v-else-if="isStandaloneProtocolEditor" class="protocol-editor-standalone">
+    <header class="protocol-editor-standalone__header">
+      <div>
+        <p class="app-kicker">Protocol Editor</p>
+        <h1>Protocol</h1>
+        <p class="app-subtitle">{{ protocolEditorTarget?.path }}</p>
+      </div>
+      <div class="protocol-editor-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button class="secondary" type="button" @click="clearProtocolEditorTarget">Return to workspace</button>
+      </div>
+    </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <div class="protocol-editor-standalone__body">
+      <div v-if="!isReady" class="protocol-editor-standalone__message">
+        <p>Connect your repository to edit this protocol.</p>
+        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+      </div>
+      <div v-else-if="protocolEditorBundleMismatch" class="protocol-editor-standalone__message">
+        <p>Loading schema bundle {{ protocolEditorTarget?.bundle }}…</p>
+      </div>
+      <div v-else-if="!protocolEditorTarget?.path" class="protocol-editor-standalone__message">
+        <p>Missing protocol path.</p>
+      </div>
+      <div v-else class="protocol-editor-standalone__editor">
+        <ProtocolEditorShell
+          :repo="repo"
+          :record-path="protocolEditorTarget.path"
+          :schema-loader="schemaLoader"
+        />
+      </div>
+    </div>
+  </div>
   <div v-else class="app-shell">
     <header class="app-header">
       <div class="header-main">
@@ -637,15 +776,35 @@ function handleCreateRootRecord() {
               <p v-if="graphTreeEnabled">Config-driven navigation sourced directly from relationships.yaml.</p>
               <p v-else>Fallback tree built from the repo handle while graph mode is disabled.</p>
             </div>
-            <button
-              v-if="graphTreeEnabled"
-              class="ghost-button"
-              type="button"
-              :disabled="!isReady"
-              @click="handleCreateRootRecord"
-            >
-              + Create {{ rootCreateLabel }}
-            </button>
+            <div v-if="graphTreeEnabled" class="graph-panel__actions">
+              <label class="graph-panel__actions-label" for="graph-create-select">New</label>
+              <select
+                id="graph-create-select"
+                v-model="selectedRootRecordType"
+                :disabled="!isReady || !topLevelRecordTypes.length"
+              >
+                <option v-for="type in topLevelRecordTypes" :key="type" :value="type">
+                  {{ type }}
+                </option>
+              </select>
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="!isReady || !selectedRootRecordType"
+                @click="handleCreateSelectedRecord"
+              >
+                + Add record
+              </button>
+              <button
+                v-if="protocolEnabled"
+                class="ghost-button"
+                type="button"
+                :disabled="!isReady"
+                @click="handleCreateProtocol"
+              >
+                + Add protocol
+              </button>
+            </div>
           </div>
           <GraphTreePanel
             v-if="graphTreeEnabled"
@@ -660,6 +819,7 @@ function handleCreateRootRecord() {
             @select-record="handleSelect"
             @create-child="handleGraphCreate"
             @open-tiptap="handleGraphOpenTipTap"
+            @open-protocol="handleGraphOpenProtocol"
             @create-supporting-doc="handleGraphSupportingDoc"
           />
           <FileTreeBrowser
@@ -872,6 +1032,48 @@ function handleCreateRootRecord() {
   background: #fff;
 }
 
+.protocol-editor-standalone {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.protocol-editor-standalone__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.protocol-editor-standalone__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.protocol-editor-standalone__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.protocol-editor-standalone__message {
+  border: 1px dashed #cbd5f5;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.protocol-editor-standalone__editor {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+}
+
 .inspector-standalone {
   max-width: 1400px;
   margin: 0 auto;
@@ -925,6 +1127,26 @@ function handleCreateRootRecord() {
 .graph-panel__header p {
   margin: 0.25rem 0 0;
   color: #64748b;
+}
+
+.graph-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.graph-panel__actions-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.graph-panel__actions select {
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.9rem;
 }
 
 .ghost-button {

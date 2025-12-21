@@ -1,0 +1,27 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-in-well.schema.yaml"
+
+title: MaterialInWell
+type: object
+description: "Description of a material present in a specific well at the time of an event."
+
+required:
+  - material
+
+properties:
+  material:
+    $ref: "./material-ref.schema.yaml"
+
+  role:
+    type: string
+    description: "Role of this material in the well context (e.g., treatment, control)."
+
+  stock_concentration:
+    type: string
+    description: "Optional stock concentration, e.g. '10 mM', '5 µg/mL'."
+
+  volume:
+    type: string
+    description: "Optional volume present, e.g. '100 uL'."
+
+additionalProperties: false

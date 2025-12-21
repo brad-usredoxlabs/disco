@@ -60,6 +60,7 @@ const creationContextPatch = ref(null)
 const pendingParentLink = ref(null)
 const lockedParentFields = ref({})
 const incomingContext = computed(() => props.creationContext || props.parentContext || null)
+const simpleMode = computed(() => !!incomingContext.value?.simpleMode)
 
 const bundle = computed(() => props.schemaLoader.schemaBundle?.value)
 const namingRules = computed(() => bundle.value?.naming || {})
@@ -256,6 +257,16 @@ function applyCreationContextPatch() {
   }
 }
 
+watch(
+  () => simpleMode.value,
+  (flag) => {
+    if (flag) {
+      state.showAdvanced = false
+    }
+  },
+  { immediate: true }
+)
+
 function applyPendingParentLink() {
   const link = pendingParentLink.value
   if (!link || !link.field || !link.id) return false
@@ -358,8 +369,9 @@ function cloneMetadata(metadata) {
 <template>
   <BaseModal v-if="open" title="Create new record" @close="close">
   <div class="creator-body">
-    <label>Record type</label>
-    <select v-model="state.recordType" :disabled="!availableRecordTypes.length">
+    <template v-if="!simpleMode">
+      <label>Record type</label>
+      <select v-model="state.recordType" :disabled="!availableRecordTypes.length">
         <option value="" disabled>Select type…</option>
         <option v-for="type in availableRecordTypes" :key="type" :value="type">
           {{ type }}
@@ -368,6 +380,10 @@ function cloneMetadata(metadata) {
       <p v-if="!availableRecordTypes.length" class="status status-muted">
         {{ isBundleReady ? 'No record types detected. Connect to a repository with a valid naming configuration.' : 'Loading schema bundle…' }}
       </p>
+    </template>
+    <div v-else class="simple-mode-pill">
+      <span>Record type: {{ state.recordType || 'record' }}</span>
+    </div>
 
     <div v-if="state.recordType" class="creator-form">
       <label>Title</label>
@@ -400,11 +416,16 @@ function cloneMetadata(metadata) {
         </select>
       </div>
 
-      <button class="toggle-advanced" type="button" @click="state.showAdvanced = !state.showAdvanced">
+      <button
+        v-if="!simpleMode"
+        class="toggle-advanced"
+        type="button"
+        @click="state.showAdvanced = !state.showAdvanced"
+      >
         {{ state.showAdvanced ? 'Hide advanced options' : 'Show advanced options' }}
       </button>
 
-      <div v-if="state.showAdvanced" class="advanced-panel">
+      <div v-if="state.showAdvanced && !simpleMode" class="advanced-panel">
         <label>Record ID</label>
         <input type="text" v-model="state.metadata.id" />
 
@@ -469,6 +490,17 @@ textarea {
 .locked-parent__label {
   font-weight: 600;
   color: #0f172a;
+}
+
+.simple-mode-pill {
+  border: 1px solid #cbd5f5;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  background: #f1f5f9;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+  align-self: flex-start;
 }
 
 .creator-form {

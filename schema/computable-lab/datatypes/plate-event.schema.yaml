@@ -1,0 +1,52 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.schema.yaml"
+
+title: PlateEvent
+type: object
+description: >
+  Semantic event that affects plate layout or observes plate state.
+  Plate layout derives from initial labware contents plus the time-ordered sequence of PlateEvents.
+
+required:
+  - event_type
+  - timestamp
+  - run
+  - labware
+  - details
+
+properties:
+  event_type:
+    type: string
+    enum:
+      - transfer
+      - incubate
+      - read
+      - wash
+      - other
+
+  timestamp:
+    type: string
+    format: date-time
+    description: "When this event occurred (or started)."
+
+  run:
+    type: string
+    description: "Run @id where this event occurred."
+
+  labware:
+    type: array
+    description: "Labware this event touches."
+    minItems: 1
+    items:
+      $ref: "./labware-ref.schema.yaml"
+
+  details:
+    description: "Event-type-specific payload."
+    oneOf:
+      - $ref: "./plate-event.transfer.schema.yaml"
+      - $ref: "./plate-event.incubate.schema.yaml"
+      - $ref: "./plate-event.read.schema.yaml"
+      - $ref: "./plate-event.wash.schema.yaml"
+      - $ref: "./plate-event.other.schema.yaml"
+
+additionalProperties: false

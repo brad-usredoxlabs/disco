@@ -78,6 +78,41 @@ Validates:
 - LLM produces patches or structured suggestions  
 - LLM never writes files directly; all changes require user confirmation
 
+### 4.7 Record Graph + JSON-LD Queries
+- JSON-LD metadata is treated as the canonical graph language. `src/records/jsonLdFrontmatter.js` normalizes every record into `@context`, `@id`, `@type`, and structured `data` sections using bundle-specific config (see §5.3).
+- `src/graph/useRecordGraph.js` orchestrates graph rebuilds whenever the repo handle or schema bundle changes. It pulls Markdown files via `src/graph/collectRecordFiles.js`, hydrates them with JSON-LD metadata, and constructs a snapshot through `src/graph/graphBuilder.js`.
+- Each node includes derived IRIs, record type, semantic tags, biology entities, and relationship edges defined in the bundle (`relationships.recordTypes`). Backlinks are generated so parent/child/related traversals remain O(1).
+- The UI’s primary exploration surface is `src/app/GraphTreePanel.vue`, embedded in the File Workbench. It renders schema-aware trees, supports inline child creation (respecting workflow and relationship rules), and keeps selection synchronized with the active file.
+- Declarative graph queries live at `/graph/<schema-set>/queries.yaml`, loaded via `src/schema-bundles/useSchemaBundle.js` and evaluated by `src/graph/useGraphQuery.js`. Filters operate on JSON-LD paths (e.g., `metadata.@type`, `data.operations.samples[]`) so schema authors can define saved searches and expansion rules without touching the UI.
+
+### 4.8 Plate Layout Editor
+- Plate layout records (`recordType: plateLayout`, e.g., files under `09_PLATE_LAYOUTS/`) can be opened directly from the File Tree or by visiting `http://localhost:5174/?plateEditorPath=<path>&plateEditorBundle=<bundle>` (same query params also work on the primary Vite server). `src/app/AppShell.vue` watches the `plateEditorPath` query parameter and launches a standalone editor window so plate design work can happen outside the general markdown workbench.
+- `src/plate-editor/PlateEditorShell.vue` is the top-level Vue shell that loads the selected Markdown file, parses JSON-LD front matter, and binds it to the dedicated plate editor store (`src/plate-editor/store/usePlateEditorStore.js`). It keeps the record hash in sync so the “Save plate layout” button only activates when well assignments or timeline events change.
+- Visual editing lives in `src/plate-editor/components`: `PlateGrid.vue` renders wells + selection overlays, `ApplyBar.vue` applies materials/roles to a selection, and `MaterialDetailsDrawer.vue` manages the shared material library. Supporting composables and services (`composables/useMaterialLibrary.js`, `services/materialLibraryWriter.js`, `utils/layoutUtils.js`) encapsulate grid geometry, presets, and persistence. `LabwareGrid.vue` + `TransferStepSidecar.vue` provide dual-grid, protocol-style transfer step building with separate source/target selections.
+- Schema authors define allowable plate specs via `spec/plate-editor/PlateEditorSpec.*` (role catalog, well geometry, default events). The registry in `src/plate-editor/specRegistry.js` exposes those specs, and `schema/computable-lab/plate-layout.schema.yaml` links each record to a spec through the `editorSpecId` field so layouts render with the right template.
+
+### 4.9 Robot Adapter Tooling
+- Lightweight conversion scripts live under `scripts/adapters/`. `plate-events-to-pylabrobot.mjs` emits a JSON command list that PyLabRobot developers can consume, while `plate-events-to-pyalab.mjs` prints a human-readable step list compatible with pyalab/Vialab workflows.
+- Both adapters reuse `scripts/adapters/lib/plateEventConverter.mjs`, which parses plate layout records (via `src/records/frontMatter.js`), normalizes legacy and structured events, and exposes helper mappers (`toPyLabRobotCommands`, `toPyalabSteps`). This keeps robot-specific hints optional and prevents schema drift.
+- Example PlateEvents for transfer/incubate/read/wash/custom scenarios are documented in `tmp/plate-event-examples.md` so operators and adapter authors can copy canonical YAML snippets directly into records.
+- Plate editor transfer steps now emit protocol-style `details.mapping` plus derived `target.wells`, so adapters and the derivation pipeline can replay mappings into per-well contents.
+
+### 4.10 Stabilization & Migration
+- `scripts/migrations/backfill-plate-events.mjs` upgrades legacy plate layouts by converting `wells.inputs` entries into JSON-LD PlateEvents. It can run in dry-run mode or target specific files, and the core logic lives in `scripts/migrations/lib/backfillPlateEvents.mjs`.
+- Regression coverage lives in `tests/backfillPlateEvents.test.mjs` and `tests/plateEventDeriver.test.mjs`, ensuring derived wells stay in sync with PlateEvents and the migration keeps emitting canonical transfer payloads.
+
+### 4.11 Protocol Templates
+- Protocol records now define labware roles, parameter schemas, and ordered event templates (see `schema/computable-lab/protocol.schema.yaml` plus `datatypes/protocol-event*.schema.yaml`).  
+- The Protocol Editor (`src/protocol-editor/ProtocolEditorShell.vue`) provides Info/Labware/Events/Preview tabs so users can manage roles, author event templates, and review the simulated timeline without touching plate layouts directly.  
+- `src/protocols/instantiateProtocol.js` expands a protocol + binding context into concrete PlateEvents; `scripts/protocols/run-protocol.mjs` wraps this into a CLI for generating run records.  
+- Example assets live under `tmp/protocol-prototypes/ros-mmp-insulin/` (protocol, run, PlateEvents), and `docs/ProtocolEditorSpec.md` documents the UX + AI brief so new contributors can follow the model.
+
+### 4.12 Run Activities & Multi-Segment Execution
+- Runs now serialize an ordered `data.activities` array (see `schema/computable-lab/run.schema.yaml`), turning the run record into the canonical timeline of protocol segments, acquisitions, and sample operations. Plate state is derived by replaying each segment’s embedded `plate_events`, and sample provenance lives alongside `sample_operation` entries (supporting labware sources, destination send-outs, produced sample metadata, splits, and file attachments).
+- The CLI at `scripts/protocols/run-protocol.mjs` instantiates a protocol segment and **appends** it to an existing run instead of overwriting files. Each invocation binds its own `labware`/`parameters`, so you can layer “seed cells → T=24 imaging → insulin protocol → fluorescent reads → send-outs” into one record.
+- `src/app/RunActivitiesPanel.vue` (rendered inside `FieldInspector.vue` for `recordType: run`) is the primary UI for viewing and editing the timeline. It surfaces run-level bindings/parameters, supports reordering, and provides quick actions to add acquisitions tied back to the latest segment’s PlateEvents. Sample operations expose inline editors for produced samples, splits, and attachments.
+- Migration helpers under `scripts/migrations/backfill-run-activities.mjs` convert legacy run records (`data.operations.events`) into the new activity model so the Plate Editor, adapters, and query tooling all consume a single timeline structure.
+
 ---
 
 ## 5. Record and Schema Formats
@@ -120,6 +155,12 @@ signoff:
 Markdown content begins **immediately after** the terminating `---` line.
 
 Markdown must not contain additional `---` YAML blocks outside the front matter to avoid breaking parsing.
+
+### 5.3 JSON-LD Configuration
+- All record front matter is authored as JSON-LD. `src/records/jsonLdFrontmatter.js` composes the metadata/data envelope, merges form inputs, and injects `@context`, `@id`, and `@type` values.
+- JSON-LD settings are bundled per schema under `schema/<schema-set>/jsonld-config.yaml`. Config drives base IRIs, record-type-specific path segments, required class IRIs, biology-derived type mappings, and custom prefixes.
+- The same module extracts JSON-LD when loading files, ensuring UI components, validators, and the record graph all work with the exact same semantic payload.
+- Graph queries (`/graph/<schema-set>/queries.yaml`) and search helpers (`src/graph/useGraphQuery.js`) reference JSON-LD paths directly, so introducing new ontology-backed fields only requires updating schema + config files.
 
 ---
 
@@ -274,4 +315,3 @@ All behavior—research or regulated—is determined entirely by schemas:
 
 The application itself remains static, serverless, and platform-independent (within Chromium browser constraints).
 This approach combines the flexibility required in research settings with the structure and enforceability required for regulated processes, without duplicating logic or fragmenting the codebase.
-

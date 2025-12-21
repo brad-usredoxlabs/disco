@@ -3,10 +3,15 @@ import { computed, reactive, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { resolvePlateEditorSpec, DEFAULT_PLATE_EDITOR_SPEC_ID } from './specRegistry'
 import { usePlateEditorStore } from './store/usePlateEditorStore'
+import { useGridSelection } from './composables/useGridSelection'
+import TransferStepSidecar from './components/TransferStepSidecar.vue'
+import LabwareGrid from './components/LabwareGrid.vue'
 import PlateGrid from './components/PlateGrid.vue'
 import ApplyBar from './components/ApplyBar.vue'
 import MaterialDetailsDrawer from './components/MaterialDetailsDrawer.vue'
 import { useMaterialLibrary } from './composables/useMaterialLibrary'
+import { loadLabwareLibrary, resolveLabwareLayout } from './utils/labwareLibrary'
+import { resolveLayoutIndex } from './utils/layoutResolver'
 import { upsertMaterialLibraryEntry } from './services/materialLibraryWriter'
 
 const props = defineProps({
@@ -49,6 +54,19 @@ const recordModel = computed(() => store.state.record || null)
 const specModel = computed(() => store.state.spec || null)
 const layoutIndex = computed(() => store.state.layoutIndex)
 
+const sourceSelection = useGridSelection(layoutIndex)
+const targetSelection = useGridSelection(layoutIndex)
+const transferFocusSide = ref('target')
+const transferParameterNames = computed(() => [])
+const labwareEntries = ref([])
+const sourceLabwareId = ref('')
+const targetLabwareId = ref('')
+const sourceLayoutIndexDisplay = computed(() => resolveSelectedLayout(sourceLabwareId.value) || layoutIndex.value)
+const targetLayoutIndexDisplay = computed(() => resolveSelectedLayout(targetLabwareId.value) || layoutIndex.value)
+const activeSelection = computed(() =>
+  transferFocusSide.value === 'source' ? sourceSelection.selection.value : targetSelection.selection.value
+)
+
 const isRepoReady = computed(() => !!props.repo?.directoryHandle?.value)
 const recordTitle = computed(() => recordModel.value?.metadata?.title || 'Plate layout')
 const specLabel = computed(() => specModel.value?.label || 'Plate editor')
@@ -61,11 +79,13 @@ const availableMaterials = computed(() => {
 const materialLibraryIds = computed(() => materialLibrary.entries.value?.map((entry) => entry.id) || [])
 const materialCount = computed(() => availableMaterials.value.length)
 const wellCount = computed(() => Object.keys(recordModel.value?.wells || {}).length)
-const selectionCount = computed(() => store.state.selection.wells.length)
+const selectionCount = computed(() => activeSelection.value.length)
 const selectionEmpty = computed(() => selectionCount.value === 0)
+const sourceSelectionCount = computed(() => sourceSelection.selection.value.length)
+const targetSelectionCount = computed(() => targetSelection.selection.value.length)
 const canUndo = computed(() => store.state.history.length > 0)
 const canRedo = computed(() => store.state.future.length > 0)
-const eventEntries = computed(() => recordModel.value?.events || [])
+const eventEntries = computed(() => formatEventSummaries(recordModel.value?.events || []))
 const specRoles = computed(() => specModel.value?.roleCatalog || [])
 const observableFeatures = computed(() => deriveObservableFeatures(recordModel.value?.assay))
 const currentHash = computed(() => hashPlateRecord(recordModel.value))
@@ -74,6 +94,10 @@ const canSave = computed(() => isDirty.value && !saving.value)
 const timelineForm = reactive({
   kind: 'custom',
   notes: ''
+})
+
+onMounted(async () => {
+  await loadLabwareCatalog()
 })
 
 const RECENTS_KEY = 'plateEditor.recentMaterials'
@@ -89,6 +113,9 @@ watch(
       frontMatterRef.value = { metadata: {}, data: {} }
       bodyRef.value = ''
       originalHash.value = ''
+      sourceSelection.reset()
+      targetSelection.reset()
+      setDefaultLabwareSelections()
       return
     }
     loadRecord()
@@ -108,6 +135,19 @@ watch(selectionCount, (count) => {
   if (count > 0) {
     showHelp.value = false
   }
+})
+
+watch(
+  () => targetSelection.selection.value,
+  (wells) => {
+    store.setSelection(wells)
+  },
+  { deep: true }
+)
+
+watch(layoutIndex, () => {
+  sourceSelection.reset()
+  targetSelection.reset()
 })
 
 function handleApplyBarApply(payload) {
@@ -229,6 +269,8 @@ async function loadRecord() {
   if (!props.recordPath || !isRepoReady.value) return
   loading.value = true
   error.value = ''
+  sourceSelection.reset()
+  targetSelection.reset()
   try {
     const raw = await props.repo.readFile(props.recordPath)
     const { data: frontMatter, body } = parseFrontMatter(raw)
@@ -255,12 +297,46 @@ function handleGridInteraction(payload) {
   const wellId = payload?.wellId
   const event = payload?.event
   if (!wellId) return
+  const selectionApi = transferFocusSide.value === 'source' ? sourceSelection : targetSelection
   if (event?.shiftKey) {
-    store.rangeSelect(wellId)
+    selectionApi.rangeSelect(wellId)
   } else if (event?.metaKey || event?.ctrlKey) {
-    store.toggleSelection(wellId)
+    selectionApi.toggleSelection(wellId)
   } else {
-    store.selectSingle(wellId)
+    selectionApi.selectSingle(wellId)
+  }
+}
+
+function handleTransferFocusSide(side) {
+  transferFocusSide.value = side === 'source' ? 'source' : 'target'
+  store.setSelection(activeSelection.value)
+}
+
+function handleSourceSelectionUpdate(wells = []) {
+  sourceSelection.setSelection(wells || [])
+  if (transferFocusSide.value === 'source') {
+    store.setSelection(sourceSelection.selection.value)
+  }
+}
+
+function handleTargetSelectionUpdate(wells = []) {
+  targetSelection.setSelection(wells || [])
+  if (transferFocusSide.value === 'target') {
+    store.setSelection(targetSelection.selection.value)
+  }
+}
+
+function handleSourceGridInteraction(payload) {
+  const wellId = payload?.wellId
+  const event = payload?.event
+  if (!wellId) return
+  transferFocusSide.value = 'source'
+  if (event?.shiftKey) {
+    sourceSelection.rangeSelect(wellId)
+  } else if (event?.metaKey || event?.ctrlKey) {
+    sourceSelection.toggleSelection(wellId)
+  } else {
+    sourceSelection.selectSingle(wellId)
   }
 }
 
@@ -276,25 +352,135 @@ function handleRedo() {
 
 const selectionLabel = computed(() => {
   if (!selectionCount.value) return 'No wells selected'
-  if (selectionCount.value === 1) return `Selected: ${store.state.selection.wells[0]}`
-  return `Selected wells: ${selectionCount.value}`
+  if (selectionCount.value === 1) return `Selected (${transferFocusSide.value}): ${activeSelection.value[0]}`
+  return `${selectionCount.value} ${transferFocusSide.value} well(s)`
 })
 
 function handleAddTimelineEvent(kindOverride = null) {
   const kind = kindOverride || timelineForm.kind || 'custom'
-  if (!store.state.selection.wells.length) {
+  if (kind === 'transfer') {
+    const mapping = buildSelectionMapping()
+    if (!mapping.length) {
+      notifyStatus('Select at least one source and one target well before logging a transfer.')
+      return
+    }
+    const eventPayload = buildTransferEventFromMapping(mapping, timelineForm.notes)
+    store.appendEvent(eventPayload)
+    timelineForm.notes = ''
+    notifyStatus(`Added transfer event with ${mapping.length} mapping(s).`)
+    return
+  }
+  if (!activeSelection.value.length) {
     notifyStatus('Select at least one well before logging an event.')
     return
   }
-  store.appendEvent({
-    kind,
-    wells: [...store.state.selection.wells],
-    payload: {
-      notes: timelineForm.notes
-    }
-  })
+  const eventPayload = buildTimelineEvent(kind, timelineForm.notes, activeSelection.value)
+  store.appendEvent(eventPayload)
   timelineForm.notes = ''
   notifyStatus(`Added ${kind} event for ${selectionCount.value} wells.`)
+}
+
+function handleCreateTransferStep(step) {
+  let mapping = Array.isArray(step?.details?.mapping) ? step.details.mapping : []
+  if (!mapping.length) {
+    mapping = buildSelectionMapping()
+  }
+  const mappingCount = mapping.length
+  if (!mappingCount) {
+    notifyStatus('Add at least one mapping before creating a transfer step.')
+    return
+  }
+  const targetWells = buildTargetWellsFromMapping(mapping, {
+    material: step.details.material,
+    volume: step.details.volume
+  })
+
+  store.appendEvent({
+    event_type: 'transfer',
+    timestamp: new Date().toISOString(),
+    run: recordModel.value?.metadata?.runId || '',
+    labware: [],
+    details: {
+      type: 'transfer',
+      source_role: step.details.source_role,
+      target_role: step.details.target_role,
+      mapping,
+      volume: step.details.volume || '',
+      material: step.details.material || null,
+      target: {
+        wells: targetWells
+      }
+    },
+    label: step.label || 'Transfer',
+    notes: step.notes || ''
+  })
+  notifyStatus(`Added transfer step with ${mappingCount} mapping(s).`)
+}
+
+function buildSelectionMapping() {
+  const source = orderWells(sourceSelection.selection.value, layoutIndex.value)
+  const target = orderWells(targetSelection.selection.value, layoutIndex.value)
+  if (!target.length || !source.length) return []
+  if (source.length === 1) {
+    return target.map((t) => ({ source_well: source[0], target_well: t }))
+  }
+  const count = Math.min(source.length, target.length)
+  return Array.from({ length: count }).map((_, idx) => ({
+    source_well: source[idx],
+    target_well: target[idx]
+  }))
+}
+
+function orderWells(wells = [], index) {
+  if (!Array.isArray(wells) || !wells.length) return []
+  if (!index?.positionById) return [...wells].sort()
+  const rank = index.positionById
+  return [...wells].sort((a, b) => {
+    const pa = rank[a] || {}
+    const pb = rank[b] || {}
+    if (pa.rowIndex === pb.rowIndex) {
+      return (pa.columnIndex || 0) - (pb.columnIndex || 0)
+    }
+    return (pa.rowIndex || 0) - (pb.rowIndex || 0)
+  })
+}
+
+function buildTransferEventFromMapping(mapping = [], notes = '') {
+  const labwareRef = resolvePlateLabwareRef()
+  const targetWells = buildTargetWellsFromMapping(mapping, { volume: '' })
+  return {
+    event_type: 'transfer',
+    timestamp: new Date().toISOString(),
+    run: recordModel.value?.metadata?.runId || '',
+    labware: labwareRef ? [labwareRef] : [],
+    details: {
+      type: 'transfer',
+      source_role: 'source_plate',
+      target_role: 'target_plate',
+      mapping,
+      target: {
+        wells: targetWells
+      }
+    },
+    label: 'Transfer',
+    notes
+  }
+}
+
+function buildTargetWellsFromMapping(mapping = [], options = {}) {
+  const wells = {}
+  if (!Array.isArray(mapping)) return wells
+  mapping.forEach((entry) => {
+    if (!entry?.target_well) return
+    wells[entry.target_well] = {
+      well: entry.target_well,
+      material_id: options.material?.id || '',
+      material_label: options.material?.label || '',
+      role: entry.role || '',
+      volume: entry.volume || options.volume || ''
+    }
+  })
+  return wells
 }
 
 function notifyStatus(message) {
@@ -378,6 +564,156 @@ function lookupMaterial(materialId) {
 function resolveMaterialLabel(materialId, fallback = '') {
   const entry = lookupMaterial(materialId)
   return entry?.label || fallback || materialId
+}
+
+function formatEventSummaries(events = []) {
+  return events.map((event) => {
+    if (event?.event_type) {
+      return formatStructuredEvent(event)
+    }
+    return {
+      id: resolveEventId(event),
+      label: event?.kind || 'event',
+      timestamp: event?.timestamp || '',
+      wellSummary: summarizeLegacyWells(event),
+      notes: event?.payload?.notes || ''
+    }
+  })
+}
+
+function formatStructuredEvent(event = {}) {
+  return {
+    id: resolveEventId(event),
+    label: event.label || event.event_type,
+    timestamp: event.timestamp || '',
+    wellSummary: summarizeStructuredWells(event),
+    notes: extractStructuredNotes(event)
+  }
+}
+
+function summarizeStructuredWells(event = {}) {
+  if (event.event_type === 'transfer') {
+    const mappingCount = Array.isArray(event.details?.mapping) ? event.details.mapping.length : 0
+    if (mappingCount) {
+      return `${mappingCount} mapping${mappingCount === 1 ? '' : 's'}`
+    }
+    const count = Object.keys(event.details?.target?.wells || {}).length
+    return `${count} well${count === 1 ? '' : 's'}`
+  }
+  if (event.event_type === 'wash') {
+    const wells = Array.isArray(event.details?.wells) ? event.details.wells.length : 0
+    return wells ? `${wells} well${wells === 1 ? '' : 's'}` : 'All wells'
+  }
+  if (event.event_type === 'incubate') {
+    const wells = Array.isArray(event.details?.wells) ? event.details.wells.length : 0
+    return wells ? `${wells} well${wells === 1 ? '' : 's'}` : 'All wells'
+  }
+  return summarizeLegacyWells(event)
+}
+
+function summarizeLegacyWells(event = {}) {
+  const count = Array.isArray(event?.wells) ? event.wells.length : 0
+  if (!count) return 'All wells'
+  return `${count} well${count === 1 ? '' : 's'}`
+}
+
+function extractStructuredNotes(event = {}) {
+  if (event.notes) {
+    return event.notes
+  }
+  if (event.event_type === 'transfer') {
+    return event.details?.material?.label || 'Transfer'
+  }
+  if (event.event_type === 'wash') {
+    return `Wash ${event.details?.buffer?.label || ''}`.trim()
+  }
+  if (event.event_type === 'other') {
+    return event.details?.description || ''
+  }
+  if (event.details?.notes) {
+    return event.details.notes
+  }
+  return ''
+}
+
+function buildTimelineEvent(kind = 'custom', notes = '', wells = []) {
+  const labwareRef = resolvePlateLabwareRef()
+  return {
+    event_type: 'other',
+    timestamp: new Date().toISOString(),
+    run: recordModel.value?.metadata?.runId || '',
+    labware: labwareRef ? [labwareRef] : [],
+    details: {
+      type: 'other',
+      name: kind || 'custom',
+      description: notes || '',
+      metadata: {
+        wells: [...wells]
+      }
+    }
+  }
+}
+
+async function loadLabwareCatalog() {
+  try {
+    const mod = await import('./utils/labwareLibrary.js')
+    const loader = mod?.loadLabwareLibrary
+    const entries = loader ? await loader(props.repo) : []
+    if (Array.isArray(entries) && entries.length) {
+      labwareEntries.value = entries
+    } else {
+      labwareEntries.value = fallbackLabware()
+    }
+    setDefaultLabwareSelections()
+  } catch (err) {
+    console.warn('Failed to load labware library', err)
+    labwareEntries.value = fallbackLabware()
+    setDefaultLabwareSelections()
+  }
+}
+
+function setDefaultLabwareSelections() {
+  if (!labwareEntries.value?.length) return
+  if (!sourceLabwareId.value) {
+    sourceLabwareId.value = labwareEntries.value[0].id
+  }
+  if (!targetLabwareId.value) {
+    const preferred = labwareEntries.value.find((entry) => entry.id === 'plate:96')
+    targetLabwareId.value = preferred?.id || labwareEntries.value[0].id
+  }
+}
+
+function resolveSelectedLayout(labwareId) {
+  if (!labwareId) return null
+  const entry = labwareEntries.value.find((item) => item.id === labwareId)
+  if (!entry) return null
+  const layout = resolveLabwareLayout(entry)
+  if (!layout) return null
+  return resolveLayoutIndex(layout)
+}
+
+function fallbackLabware() {
+  return [
+    { id: 'plate:96', label: '96-well plate', kind: 'plate', layout: { rows: 8, columns: 12, wellKeying: 'A01' } },
+    { id: 'plate:384', label: '384-well plate', kind: 'plate', layout: { rows: 16, columns: 24, wellKeying: 'A01' } },
+    { id: 'plate:24', label: '24-well plate', kind: 'plate', layout: { rows: 4, columns: 6, wellKeying: 'A01' } },
+    { id: 'tubeset:8', label: '8-tube strip', kind: 'tubeset', layout: { rows: 1, columns: 8, wellKeying: 'T01' } },
+    { id: 'reservoir:12', label: '12-channel reservoir', kind: 'reservoir', layout: { rows: 1, columns: 12, wellKeying: 'R1C1' } }
+  ]
+}
+
+function resolvePlateLabwareRef() {
+  const metadata = recordModel.value?.metadata || {}
+  const recordId = metadata.recordId || metadata.id || 'unknown'
+  return {
+    '@id': `plate/${recordId}`,
+    kind: 'plate',
+    label: metadata.title || recordId
+  }
+}
+
+function resolveEventId(event = {}) {
+  return event.id || `evt-${Math.random().toString(36).slice(2, 9)}`
 }
 
 function deriveObservableFeatures(assay = null) {
@@ -471,10 +807,28 @@ function sortWells(wellMap = {}) {
 }
 
 function sortEvents(events = []) {
-  return events.map((event) => ({
-    ...event,
-    wells: Array.isArray(event.wells) ? [...event.wells].sort() : []
-  }))
+  return events.map((event) => {
+    if (event?.event_type) {
+      return sortStructuredEvent(event)
+    }
+    return {
+      ...event,
+      wells: Array.isArray(event.wells) ? [...event.wells].sort() : []
+    }
+  })
+}
+
+function sortStructuredEvent(event) {
+  const clone = cloneValue(event)
+  if (clone.details?.target?.wells && typeof clone.details.target.wells === 'object') {
+    clone.details.target.wells = Object.keys(clone.details.target.wells)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = clone.details.target.wells[key]
+        return acc
+      }, {})
+  }
+  return clone
 }
 
 function sortMaterials(materials = []) {
@@ -558,67 +912,17 @@ function openInspectorWindow() {
     <p v-else-if="loading" class="status status-muted">Loading plate layout…</p>
     <p v-else-if="actionStatus" class="status status-ok">{{ actionStatus }}</p>
 
-    <div v-if="recordModel && specModel" class="plate-editor-layout">
-      <aside class="materials-panel">
-        <h3>Apply materials</h3>
-        <p class="panel-subtitle">Pick a role, choose a material, and apply to the selected wells.</p>
-        <ApplyBar
-          :roles="specRoles"
-          :materials="availableMaterials"
-          :selection-count="selectionCount"
-          :recent-ids="recentMaterialIds"
-          :favorite-ids="favoriteMaterialIds"
-          :features="observableFeatures"
-          :prefill-selection="materialPrefill"
-          @apply="handleApplyBarApply"
-          @remove="handleApplyBarRemove"
-          @favorite-toggle="handleFavoriteToggle"
-          @request-create="handleMaterialCreateRequest"
-          @request-edit="handleMaterialEditRequest"
-        />
-      </aside>
-
-      <section class="grid-panel">
-        <div class="grid-toolbar">
-          <div class="selection-chip">{{ selectionLabel }}</div>
-          <div class="toolbar-actions">
-            <button class="ghost-button" type="button" @click="showHelp = !showHelp">
-              {{ showHelp ? 'Hide help' : 'Show help' }}
-            </button>
-            <button type="button" :disabled="!canUndo" @click="handleUndo">Undo</button>
-            <button type="button" :disabled="!canRedo" @click="handleRedo">Redo</button>
-          </div>
-        </div>
-        <div v-if="layoutIndex">
-          <PlateGrid
-            :layout-index="layoutIndex"
-            :wells="recordModel?.wells || {}"
-            :selection="store.state.selection.wells"
-            @well-click="handleGridInteraction"
-          />
-          <div v-if="showHelp" class="grid-help">
-            <h4>How to edit</h4>
-            <ul>
-              <li>Click: select a single well.</li>
-              <li>Shift + click: select a rectangular range.</li>
-              <li>Ctrl/Cmd + click: toggle wells in the selection.</li>
-              <li>Use the Apply bar to add/remove materials for the selection.</li>
-            </ul>
-          </div>
-        </div>
-        <p v-else class="status status-muted">Layout data missing from record.</p>
-      </section>
-
-      <aside class="timeline-panel">
+    <div v-if="recordModel && specModel" class="plate-editor-shell__content">
+      <section class="timeline-panel timeline-panel--wide">
         <h3>Timeline</h3>
         <p class="panel-subtitle">Event stream ({{ eventEntries.length }})</p>
         <ul>
           <li v-if="!eventEntries.length" class="empty">No events recorded yet.</li>
-          <li v-for="event in eventEntries" :key="event.id || event.timestamp">
-            <strong>{{ event.kind || 'event' }}</strong>
-            <span> · {{ event.wells?.length || 0 }} wells</span>
+          <li v-for="event in eventEntries" :key="event.id">
+            <strong>{{ event.label }}</strong>
+            <span> · {{ event.wellSummary }}</span>
             <p v-if="event.timestamp">{{ event.timestamp }}</p>
-            <p v-if="event.payload?.notes" class="event-notes">{{ event.payload.notes }}</p>
+            <p v-if="event.notes" class="event-notes">{{ event.notes }}</p>
           </li>
         </ul>
         <div class="timeline-form">
@@ -634,7 +938,95 @@ function openInspectorWindow() {
           <textarea v-model="timelineForm.notes" rows="3" placeholder="Describe event or instrument settings" />
           <button class="primary" type="button" :disabled="selectionEmpty" @click="handleAddTimelineEvent()">Add event</button>
         </div>
-      </aside>
+      </section>
+
+      <div class="plate-editor-layout">
+        <aside class="materials-panel">
+          <TransferStepSidecar
+            :focus-side="transferFocusSide"
+            :source-selection="sourceSelection.selection"
+            :target-selection="targetSelection.selection"
+            :parameter-names="transferParameterNames"
+            source-role="source_plate"
+            target-role="target_plate"
+            @update:focus-side="handleTransferFocusSide"
+            @update:source-selection="handleSourceSelectionUpdate"
+            @update:target-selection="handleTargetSelectionUpdate"
+            @create-step="handleCreateTransferStep"
+          />
+        <div class="labware-selectors" v-if="labwareEntries.length">
+          <label>
+            Source labware
+            <select v-model="sourceLabwareId">
+              <option v-for="entry in labwareEntries" :key="entry.id" :value="entry.id">{{ entry.label }}</option>
+            </select>
+          </label>
+          <label>
+            Target labware
+            <select v-model="targetLabwareId">
+              <option v-for="entry in labwareEntries" :key="entry.id" :value="entry.id">{{ entry.label }}</option>
+            </select>
+          </label>
+          <p class="labware-hint">Selections apply immediately to the grids below.</p>
+        </div>
+          <LabwareGrid
+            v-if="sourceLayoutIndexDisplay"
+            :layout-index="sourceLayoutIndexDisplay"
+            :wells="recordModel?.wells || {}"
+            :selection="sourceSelection.selection"
+            title="Source selection"
+            :subtitle="`Use shift/cmd to multi-select · ${sourceSelectionCount} selected`"
+            @well-click="handleSourceGridInteraction"
+          />
+          <h3>Apply materials</h3>
+          <p class="panel-subtitle">Pick a role, choose a material, and apply to the selected wells.</p>
+          <ApplyBar
+            :roles="specRoles"
+            :materials="availableMaterials"
+            :selection-count="selectionCount"
+            :recent-ids="recentMaterialIds"
+            :favorite-ids="favoriteMaterialIds"
+            :features="observableFeatures"
+            :prefill-selection="materialPrefill"
+            @apply="handleApplyBarApply"
+            @remove="handleApplyBarRemove"
+            @favorite-toggle="handleFavoriteToggle"
+            @request-create="handleMaterialCreateRequest"
+            @request-edit="handleMaterialEditRequest"
+          />
+        </aside>
+
+        <section class="grid-panel">
+          <div class="grid-toolbar">
+            <div class="selection-chip">{{ selectionLabel }}</div>
+            <div class="toolbar-actions">
+              <button class="ghost-button" type="button" @click="showHelp = !showHelp">
+                {{ showHelp ? 'Hide help' : 'Show help' }}
+              </button>
+              <button type="button" :disabled="!canUndo" @click="handleUndo">Undo</button>
+              <button type="button" :disabled="!canRedo" @click="handleRedo">Redo</button>
+            </div>
+          </div>
+          <div v-if="layoutIndex">
+            <PlateGrid
+              :layout-index="targetLayoutIndexDisplay || layoutIndex"
+              :wells="recordModel?.wells || {}"
+              :selection="targetSelection.selection"
+              @well-click="handleGridInteraction"
+            />
+            <div v-if="showHelp" class="grid-help">
+              <h4>How to edit</h4>
+              <ul>
+                <li>Click: select a single well.</li>
+                <li>Shift + click: select a rectangular range.</li>
+                <li>Ctrl/Cmd + click: toggle wells in the selection.</li>
+                <li>Use the Apply bar to add/remove materials for the selection.</li>
+              </ul>
+            </div>
+          </div>
+          <p v-else class="status status-muted">Layout data missing from record.</p>
+        </section>
+      </div>
     </div>
 
     <footer class="status-bar">
@@ -684,9 +1076,15 @@ function openInspectorWindow() {
   gap: 0.5rem;
 }
 
+.plate-editor-shell__content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .plate-editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 6fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
   gap: 1rem;
 }
 
@@ -699,6 +1097,23 @@ function openInspectorWindow() {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.timeline-panel--wide {
+  width: 100%;
+}
+
+.labware-selectors {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.labware-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.85rem;
 }
 
 .panel-subtitle {

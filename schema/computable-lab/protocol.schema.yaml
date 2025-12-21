@@ -94,4 +94,17 @@ properties:
       Runs should validate protocol_parameters against this schema if provided.
     additionalProperties: true
 
+  labwareRoles:
+    type: object
+    description: >
+      Named labware placeholders referenced by protocol events (e.g., cell_plate, media_reservoir).
+    additionalProperties:
+      $ref: "./datatypes/labware-role.schema.yaml"
+
+  events:
+    type: array
+    description: "Ordered list of event templates executed when this protocol runs."
+    items:
+      $ref: "./datatypes/protocol-event.schema.yaml"
+
 additionalProperties: false

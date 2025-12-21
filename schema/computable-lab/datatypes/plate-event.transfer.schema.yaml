@@ -1,0 +1,91 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.transfer.schema.yaml"
+
+title: PlateEventTransferDetails
+type: object
+description: "Details for a transfer (aspirate + dispense) event."
+
+required:
+  - type
+  - source
+  - target
+  - volume
+
+properties:
+  type:
+    type: string
+    const: "transfer"
+
+  source:
+    type: object
+    description: "Source labware and wells for the transfer."
+    required: ["labware", "wells"]
+    properties:
+      labware:
+        $ref: "./labware-ref.schema.yaml"
+      wells:
+        type: object
+        description: "Map of source well name to optional material description."
+        additionalProperties:
+          $ref: "./material-in-well.schema.yaml"
+    additionalProperties: false
+
+  target:
+    type: object
+    description: "Target labware and well mapping for the transfer."
+    required: ["labware", "wells"]
+    properties:
+      labware:
+        $ref: "./labware-ref.schema.yaml"
+      wells:
+        type: object
+        description: "Map of target well name to optional metadata."
+        additionalProperties:
+          type: object
+          properties:
+            well:
+              type: string
+              description: "Target well name (explicit override)."
+            mix_after:
+              type: boolean
+              description: "Optional hint to mix after dispense."
+            material_id:
+              type: string
+              description: "Optional reference to a local material identifier."
+            role:
+              type: string
+              description: "Role of the material in this well."
+            notes:
+              type: string
+              description: "Optional free-form notes for this placement."
+            volume:
+              type: string
+              description: "Optional per-well volume override."
+          additionalProperties: false
+    additionalProperties: false
+
+  volume:
+    type: string
+    description: "Volume to transfer, e.g. '5 uL'."
+
+  material:
+    $ref: "./material-ref.schema.yaml"
+    description: "Optional explicit material reference, if not obvious from the source wells."
+
+  pipetting_hint:
+    type: object
+    description: "Optional robot hint; never required for correctness."
+    properties:
+      mode:
+        type: string
+        enum: ["single", "multi"]
+      channels:
+        type: integer
+        minimum: 1
+        description: "Suggested number of channels."
+      pattern:
+        type: string
+        description: "High-level pattern, e.g. 'column', 'row', 'block'."
+    additionalProperties: false
+
+additionalProperties: false

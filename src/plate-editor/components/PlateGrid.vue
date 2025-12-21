@@ -12,14 +12,18 @@ const props = defineProps({
     default: () => ({})
   },
   selection: {
-    type: Array,
+    type: [Array, Object],
     default: () => []
   }
 })
 
 const emit = defineEmits(['well-click'])
 
-const selectedSet = computed(() => new Set(props.selection || []))
+const selectedSet = computed(() => new Set(normalizeSelection(props.selection)))
+
+const isReservoir = computed(() => {
+  return props.layoutIndex?.kind?.includes('reservoir')
+})
 
 const idLookup = computed(() => {
   const lookup = new Map()
@@ -55,10 +59,16 @@ const cellMatrix = computed(() => {
 function handleWellClick(event, wellId) {
   emit('well-click', { event, wellId })
 }
+
+function normalizeSelection(selectionInput) {
+  if (Array.isArray(selectionInput)) return selectionInput
+  if (selectionInput && Array.isArray(selectionInput.value)) return selectionInput.value
+  return []
+}
 </script>
 
 <template>
-  <div class="plate-grid">
+  <div class="plate-grid" :class="{ 'is-reservoir': isReservoir }">
     <table>
       <thead>
         <tr>
@@ -97,6 +107,12 @@ function handleWellClick(event, wellId) {
 .plate-grid {
   overflow: auto;
   max-height: 600px;
+}
+
+.plate-grid.is-reservoir table {
+  width: auto;
+  min-width: unset;
+  max-width: 200px;
 }
 
 table {

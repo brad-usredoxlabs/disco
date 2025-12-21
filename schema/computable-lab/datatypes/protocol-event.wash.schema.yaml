@@ -1,0 +1,42 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "protocol-event.wash.schema.yaml"
+
+title: ProtocolEventWashDetails
+type: object
+description: "Template for a wash step."
+
+required:
+  - type
+  - labware_role
+
+properties:
+  type:
+    type: string
+    const: "wash"
+
+  labware_role:
+    type: string
+    description: "Labware role to wash."
+
+  wells:
+    type: array
+    description: "Optional subset of wells to wash."
+    items:
+      type: string
+
+  buffer:
+    $ref: "./material-ref.schema.yaml"
+
+  cycles:
+    type: integer
+    minimum: 1
+    description: "Number of wash cycles (literal or parameterized)."
+
+  volume_per_cycle:
+    type: string
+    description: "Volume per cycle (literal or parameterized)."
+
+  notes:
+    type: string
+
+additionalProperties: false

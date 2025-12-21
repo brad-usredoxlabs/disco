@@ -1,0 +1,59 @@
+{
+  "event_type": "transfer",
+  "timestamp": "2025-01-01T12:00:00Z",
+  "run": "run/RUN-0001",
+  "labware": [
+    {
+      "@id": "plate/PLT-0001",
+      "kind": "plate",
+      "label": "Source plate"
+    },
+    {
+      "@id": "plate/PLT-0002",
+      "kind": "plate",
+      "label": "Target plate"
+    }
+  ],
+  "details": {
+    "type": "transfer",
+    "source": {
+      "labware": {
+        "@id": "plate/PLT-0001",
+        "kind": "plate",
+        "label": "Source plate"
+      },
+      "wells": {
+        "A01": {
+          "material": {
+            "label": "Sample A",
+            "kind": "sample"
+          },
+          "volume": "50 uL"
+        }
+      }
+    },
+    "target": {
+      "labware": {
+        "@id": "plate/PLT-0002",
+        "kind": "plate",
+        "label": "Target plate"
+      },
+      "wells": {
+        "B01": {
+          "well": "B01",
+          "mix_after": true
+        }
+      }
+    },
+    "volume": "5 uL",
+    "material": {
+      "label": "Sample A",
+      "kind": "sample"
+    },
+    "pipetting_hint": {
+      "mode": "single",
+      "channels": 1,
+      "pattern": "column"
+    }
+  }
+}
