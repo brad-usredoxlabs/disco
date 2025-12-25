@@ -8,11 +8,12 @@ const DEFAULT_DEPLETION = {
 }
 
 export function replayPlateEvents(events = [], options = {}) {
-  const sorted = [...events].sort(compareTimestamp)
+  const sorted = stableSortEvents(events)
   const state = {}
   const edges = []
   sorted.forEach((event) => {
     if (!event || !event.event_type) return
+    if (options.focusLabwareId && !eventTouchesLabware(event, options.focusLabwareId)) return
     switch (event.event_type) {
       case 'transfer':
         applyTransferEvent(state, event, edges, options)
@@ -38,9 +39,11 @@ export function replayPlateEvents(events = [], options = {}) {
 
 export function plateStateAtTime(events = [], timestamp, options = {}) {
   const cutoff = timestamp ? Date.parse(timestamp) : null
-  const filtered = cutoff
-    ? events.filter((evt) => Date.parse(evt?.timestamp || '') <= cutoff)
-    : events
+  const filtered = stableSortEvents(events).filter((evt) => {
+    if (!cutoff) return true
+    const ts = Date.parse(evt?.timestamp || '')
+    return Number.isFinite(ts) ? ts <= cutoff : true
+  })
   return replayPlateEvents(filtered, options).state
 }
 
@@ -53,9 +56,9 @@ export function wellCompositionAtTime(events = [], timestamp, labwareId, wellId,
 
 export function eventTimelineForLabware(events = [], labwareId) {
   if (!labwareId) return []
-  return [...events]
-    .filter((evt) => Array.isArray(evt?.labware) && evt.labware.some((l) => l?.['@id'] === labwareId))
-    .sort(compareTimestamp)
+  return stableSortEvents(events).filter(
+    (evt) => Array.isArray(evt?.labware) && evt.labware.some((l) => l?.['@id'] === labwareId)
+  )
 }
 
 export function buildLineageGraph(edges = []) {
@@ -71,8 +74,32 @@ export function buildLineageGraph(edges = []) {
   return { nodes: Array.from(nodes.values()), edges: edgeList }
 }
 
-function compareTimestamp(a = {}, b = {}) {
-  return (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0)
+function stableSortEvents(events = []) {
+  return (events || []).map((evt, index) => ({ evt, index })).sort((a, b) => {
+    const tsA = Date.parse(a.evt?.timestamp || '')
+    const tsB = Date.parse(b.evt?.timestamp || '')
+    const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
+    if (diff !== 0) return diff
+    return a.index - b.index
+  }).map((entry) => entry.evt)
+}
+
+function eventTouchesLabware(event = {}, focusLabwareId = '') {
+  if (!focusLabwareId) return true
+  const targetId = event.details?.target?.labware?.['@id'] || event.details?.target?.labware
+  const sourceId = event.details?.source?.labware?.['@id'] || event.details?.source?.labware
+  const washId = event.details?.labware?.['@id'] || event.details?.labware
+  const sampleLabware = event.details?.inputs?.labware?.['@id'] || event.details?.inputs?.labware
+  const listed =
+    Array.isArray(event.labware) &&
+    event.labware.some((lw) => (lw?.['@id'] || lw) === focusLabwareId)
+  return (
+    listed ||
+    targetId === focusLabwareId ||
+    sourceId === focusLabwareId ||
+    washId === focusLabwareId ||
+    sampleLabware === focusLabwareId
+  )
 }
 
 function applyTransferEvent(state, event, edges, options) {

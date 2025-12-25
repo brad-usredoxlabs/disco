@@ -20,10 +20,13 @@ export function useRunEditorStore() {
     activeActivityId: null,
     activeLabwareId: '',
     cursor: '',
+    nowTime: '',
     derivedWellsByLabware: {},
+    derivedWellsNowByLabware: {},
     depletion: {},
     history: [],
-    future: []
+    future: [],
+    syncSourceToCursor: false
   })
 
   function initialize(payload = {}) {
@@ -34,7 +37,8 @@ export function useRunEditorStore() {
     setMaterialLibrary(payload.materialLibrary || [])
     state.activeActivityId = resolveInitialActivityId()
     state.activeLabwareId = resolveInitialLabwareId(payload?.labwareId)
-    state.cursor = ''
+    updateNowTime(getActiveActivity()?.plate_events || [])
+    setCursorToNow()
     syncDerivedWellsFromEvents()
     resetSelection()
     resetHistory()
@@ -131,7 +135,9 @@ export function useRunEditorStore() {
 
   function setActiveActivityId(activityId) {
     state.activeActivityId = activityId || null
-    state.cursor = ''
+    const events = getActiveActivity()?.plate_events || []
+    updateNowTime(events)
+    setCursorToNow()
     syncDerivedWellsFromEvents()
   }
 
@@ -152,7 +158,8 @@ export function useRunEditorStore() {
     if (!Array.isArray(state.run.data.activities)) state.run.data.activities = []
     state.run.data.activities.push(activity)
     state.activeActivityId = activity.id
-    state.cursor = ''
+    updateNowTime(activity.plate_events)
+    setCursorToNow()
     return activity
   }
 
@@ -219,7 +226,8 @@ export function useRunEditorStore() {
     activity.plate_events.push(normalized)
     const after = snapshotEvents(activity)
     // Jump cursor to latest so the grid reflects newly added events
-    state.cursor = ''
+    updateNowTime(activity.plate_events)
+    setCursorToNow()
     pushHistory({
       kind: 'event',
       action: 'append',
@@ -535,36 +543,82 @@ export function useRunEditorStore() {
 
   function syncDerivedWellsFromEvents() {
     const activity = getActiveActivity()
-    if (!activity || !Array.isArray(activity.plate_events)) {
+    const plateEvents = Array.isArray(activity?.plate_events) ? activity.plate_events : []
+    updateNowTime(plateEvents)
+    if (!plateEvents.length) {
       state.derivedWells = {}
+      state.derivedWellsByLabware = {}
+      state.derivedWellsNowByLabware = {}
       return
     }
-    const filteredEvents = filterEventsByCursor(activity.plate_events, state.cursor)
+    const filteredEvents = filterEventsByCursor(plateEvents, state.cursor)
     const plateState = plateStateAtTime(filteredEvents, null, {
       depletionDefaults: optionsDepletionDefaults()
     })
+    const plateStateNow = plateStateAtTime(plateEvents, null, {
+      depletionDefaults: optionsDepletionDefaults()
+    })
     const byLabware = {}
+    const byLabwareNow = {}
     Object.entries(plateState || {}).forEach(([labwareId, wellsState]) => {
       byLabware[labwareId] = toWellInputs(wellsState || {}, state.materialLibrary)
     })
+    Object.entries(plateStateNow || {}).forEach(([labwareId, wellsState]) => {
+      byLabwareNow[labwareId] = toWellInputs(wellsState || {}, state.materialLibrary)
+    })
     state.derivedWellsByLabware = byLabware
+    state.derivedWellsNowByLabware = byLabwareNow
     const labwareId = resolveActiveLabwareId(filteredEvents)
     state.activeLabwareId = labwareId
   }
 
   function filterEventsByCursor(events = [], cursor = '') {
-    if (!cursor) return events
+    const sorted = sortEventsStable(events)
+    if (!cursor) return sorted
     const cursorTs = Date.parse(cursor)
-    if (!Number.isFinite(cursorTs)) return events
-    return events.filter((evt) => {
+    if (!Number.isFinite(cursorTs)) return sorted
+    return sorted.filter((evt) => {
       const ts = Date.parse(evt?.timestamp || '')
       if (!Number.isFinite(ts)) return true
       return ts <= cursorTs
     })
   }
 
+  function computeNowTime(events = []) {
+    let maxTs = Number.NEGATIVE_INFINITY
+    events.forEach((evt, idx) => {
+      const ts = Date.parse(evt?.timestamp || '')
+      if (Number.isFinite(ts) && ts > maxTs) {
+        maxTs = ts
+      }
+    })
+    if (Number.isFinite(maxTs)) {
+      return new Date(maxTs).toISOString()
+    }
+    return resolveRunCreatedAt()
+  }
+
+  function resolveRunCreatedAt() {
+    return state.run?.metadata?.createdAt || state.run?.metadata?.created_at || state.run?.createdAt || ''
+  }
+
+  function updateNowTime(events = []) {
+    state.nowTime = computeNowTime(events)
+  }
+
+  function setCursorToNow() {
+    state.cursor = state.nowTime || ''
+  }
+
+  function isInspecting() {
+    const nowTs = Date.parse(state.nowTime || '')
+    const cursorTs = Date.parse(state.cursor || '')
+    if (!Number.isFinite(nowTs) || !Number.isFinite(cursorTs)) return false
+    return cursorTs < nowTs
+  }
+
   function setCursor(timestamp) {
-    state.cursor = timestamp || ''
+    state.cursor = timestamp || state.nowTime || ''
     syncDerivedWellsFromEvents()
   }
 
@@ -578,6 +632,24 @@ export function useRunEditorStore() {
   function getDerivedWells(labwareId) {
     if (!labwareId) return state.derivedWellsByLabware[state.activeLabwareId] || {}
     return state.derivedWellsByLabware[labwareId] || {}
+  }
+
+  function getDerivedWellsAtNow(labwareId) {
+    if (!labwareId) return state.derivedWellsNowByLabware[state.activeLabwareId] || {}
+    return state.derivedWellsNowByLabware[labwareId] || {}
+  }
+
+  function sortEventsStable(events = []) {
+    return (events || [])
+      .map((evt, index) => ({ evt, index }))
+      .sort((a, b) => {
+        const tsA = Date.parse(a.evt?.timestamp || '')
+        const tsB = Date.parse(b.evt?.timestamp || '')
+        const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
+        if (diff !== 0) return diff
+        return a.index - b.index
+      })
+      .map((entry) => entry.evt)
   }
 
   return {
@@ -604,6 +676,8 @@ export function useRunEditorStore() {
     addActivity,
     resolveLabwareRef,
     resolveRunRef,
-    getDerivedWells
+    getDerivedWells,
+    getDerivedWellsAtNow,
+    isInspecting
   }
 }

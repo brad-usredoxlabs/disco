@@ -119,7 +119,7 @@
           </div>
           <PlateGrid
             :layout-index="layoutIndex"
-            :wells="store.getDerivedWells(activeLabwareId)"
+            :wells="destinationPlateWells"
             :selection="selection"
             :overlay="overlay"
             @well-click="handleGridInteraction"
@@ -163,6 +163,7 @@
           <p class="timeline-title">Timeline</p>
           <p class="timeline-subtitle">Use scrubber or click an event to preview state.</p>
         </div>
+        <p v-if="isInspecting" class="inspection-banner">Inspecting history — new events will be added at Now.</p>
         <TimelineScrubber :events="activeEvents" :cursor="cursor" @update:cursor="setCursor" />
         <div class="legend-row">
           <span class="legend-item">
@@ -273,6 +274,18 @@ const drawerState = reactive({
   wellState: null,
   lineage: { nodes: [], edges: [] }
 })
+function sortEventsByTimestamp(events = []) {
+  return (events || [])
+    .map((evt, index) => ({ evt, index }))
+    .sort((a, b) => {
+      const tsA = Date.parse(a.evt?.timestamp || '')
+      const tsB = Date.parse(b.evt?.timestamp || '')
+      const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
+      if (diff !== 0) return diff
+      return a.index - b.index
+    })
+    .map((entry) => entry.evt)
+}
 
 watch(
   () => ({
@@ -307,13 +320,12 @@ const activeActivityId = computed({
 
 const activeEvents = computed(() => {
   const activity = activities.value.find((act) => act?.id === activeActivityId.value)
-  return activity?.plate_events || []
+  return sortEventsByTimestamp(activity?.plate_events || [])
 })
 
 const cursor = computed(() => store.state.cursor)
 
 const layoutIndex = computed(() => store.state.layoutIndex)
-const derivedWells = computed(() => store.state.derivedWells || {})
 const sourceLabwareId = computed(() => {
   const roleId = store.resolveLabwareIdForRole(sourceLabwareRole.value)
   if (roleId) return roleId
@@ -328,8 +340,13 @@ const targetLabwareId = computed(() => {
   const ref = store.resolveLabwareRef(targetLabwareRole.value || 'plate')
   return ref?.['@id'] || ''
 })
-const sourceDerivedWells = computed(() => store.getDerivedWells(sourceLabwareId.value))
+const sourceDerivedWells = computed(() => {
+  // Keep source at Now; hook for future cursor sync via state flag
+  if (store.state.syncSourceToCursor) return store.getDerivedWells(sourceLabwareId.value)
+  return store.getDerivedWellsAtNow(sourceLabwareId.value)
+})
 const targetDerivedWells = computed(() => store.getDerivedWells(targetLabwareId.value))
+const destinationPlateWells = computed(() => store.getDerivedWells(activeLabwareId.value))
 const selection = computed(() => store.state.selection?.wells || [])
 const activeLabwareId = computed(() => store.state.activeLabwareId || '')
 const activeSelection = computed(() =>
@@ -366,6 +383,7 @@ const activeLabwareIdLocal = computed({
     store.setActiveLabwareId(value)
   }
 })
+const isInspecting = computed(() => store.isInspecting())
 
 watch(
   () => targetLabwareRole.value,
@@ -382,7 +400,7 @@ const overlay = computed(() => {
   if (!Array.isArray(activeEvents.value)) return {}
   if (overlayMode.value === 'material') {
     const entries = {}
-    Object.entries(derivedWells.value || {}).forEach(([wellId, data]) => {
+    Object.entries(destinationPlateWells.value || {}).forEach(([wellId, data]) => {
       const first = data?.inputs?.[0]
       if (!first?.material?.id) return
       entries[wellId] = {
@@ -526,6 +544,7 @@ function handleCreateTransferStep(step = {}) {
   const volume = step.details.volume || ''
   const sourceRef = store.resolveLabwareRef(sourceLabwareRole.value || step.details.source_role || 'reservoir')
   const targetRef = store.resolveLabwareRef(targetLabwareRole.value || step.details.target_role || 'plate')
+  const timestamp = new Date().toISOString()
   const sourceWells = {}
   const targetWells = {}
   mapping.forEach((entry) => {
@@ -544,7 +563,7 @@ function handleCreateTransferStep(step = {}) {
   })
   store.appendEvent({
     event_type: 'transfer',
-    timestamp: step.timestamp || new Date().toISOString(),
+    timestamp,
     run: store.resolveRunRef(),
     labware: [sourceRef, targetRef],
     details: {
@@ -624,10 +643,9 @@ function jumpToActivity(activityId) {
   if (!activityId) return
   activeActivityId.value = activityId
   const activity = activities.value.find((a) => a.id === activityId)
-  const latest = activity?.plate_events?.[activity.plate_events.length - 1]
-  if (latest?.timestamp) {
-    setCursor(latest.timestamp)
-  }
+  const sorted = sortEventsByTimestamp(activity?.plate_events || [])
+  const latest = sorted[sorted.length - 1]
+  if (latest?.timestamp) setCursor(latest.timestamp)
 }
 
 function openWellDrawer() {
@@ -795,6 +813,15 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+.inspection-banner {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #0f172a;
+  font-size: 12px;
 }
 
 .grid-title,
