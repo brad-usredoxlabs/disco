@@ -26,24 +26,32 @@
     </div>
 
     <section class="run-editor-shell__body">
-      <div class="activity-create">
-        <label>
-          New activity label
-          <input v-model="newActivityLabel" type="text" placeholder="Dose cells" />
-        </label>
-        <label>
-          Kind
-          <select v-model="newActivityKind">
-            <option value="protocol_segment">protocol_segment</option>
-            <option value="acquisition">acquisition</option>
-            <option value="sample_operation">sample_operation</option>
-          </select>
-        </label>
-        <button class="ghost-button" type="button" :disabled="!newActivityLabel" @click="handleCreateActivity">
-          + Add activity
-        </button>
+      <!-- Activity Creator Row -->
+      <div class="activity-create-row">
+        <div class="activity-create">
+          <label>
+            New activity label
+            <input v-model="newActivityLabel" type="text" placeholder="Dose cells" />
+          </label>
+          <label>
+            Kind
+            <select v-model="newActivityKind">
+              <option value="protocol_segment">protocol_segment</option>
+              <option value="acquisition">acquisition</option>
+              <option value="sample_operation">sample_operation</option>
+            </select>
+          </label>
+          <button class="ghost-button" type="button" :disabled="!newActivityLabel" @click="handleCreateActivity">
+            + Add activity
+          </button>
+        </div>
       </div>
-      <div class="run-editor-shell__grid-panel">
+
+      <!-- Scrubber + Plates Container with Collapsible Sidebar -->
+      <div class="timeline-plates-container">
+        <div class="timeline-plates-main">
+          <!-- Plates Grid Panel -->
+          <div class="run-editor-shell__grid-panel run-editor-shell__panel">
         <div class="grid-header">
           <div>
             <p class="grid-title">Labware</p>
@@ -58,17 +66,6 @@
               Active labware
               <select v-model="activeLabwareIdLocal">
                 <option v-for="id in labwareOptions" :key="id" :value="id">{{ id }}</option>
-              </select>
-            </label>
-            <div class="history-actions">
-              <button type="button" :disabled="!canUndo" @click="store.undo()">Undo</button>
-              <button type="button" :disabled="!canRedo" @click="store.redo()">Redo</button>
-            </div>
-            <label class="labware-picker">
-              Overlay
-              <select v-model="overlayMode">
-                <option value="event">Event</option>
-                <option value="material">Material</option>
               </select>
             </label>
           </div>
@@ -99,6 +96,24 @@
               <button class="ghost-button tiny" type="button" @click="addBinding()">Add</button>
             </div>
           </div>
+
+          <!-- Timeline Scrubber (nested below bindings) -->
+          <div class="scrubber-row-nested">
+            <div class="scrubber-content">
+              <TimelineScrubber :events="activeEvents" :cursor="cursor" @update:cursor="setCursor" />
+              <div class="scrubber-actions">
+                <div class="history-actions">
+                  <button type="button" :disabled="!canUndo" @click="store.undo()">Undo</button>
+                  <button type="button" :disabled="!canRedo" @click="store.redo()">Redo</button>
+                </div>
+                <button type="button" class="sidebar-toggle" @click="toggleEventsExpanded">
+                  {{ eventsExpanded ? '▼' : '▶' }} Details
+                </button>
+              </div>
+            </div>
+            <p v-if="isInspecting" class="inspection-banner">Inspecting history — new events will be added at Now.</p>
+          </div>
+
           <div class="dual-grids">
             <LabwareGrid
               :layout-index="layoutIndex"
@@ -117,18 +132,59 @@
               @well-click="handleTargetGridInteraction"
             />
           </div>
-          <PlateGrid
-            :layout-index="layoutIndex"
-            :wells="destinationPlateWells"
-            :selection="selection"
-            :overlay="overlay"
-            @well-click="handleGridInteraction"
-          />
           <div class="grid-actions">
             <button type="button" :disabled="!singleSelectedWell" @click="openWellDrawer">View well details</button>
           </div>
         </div>
         <p v-else class="status status-muted">Layout data missing.</p>
+          </div>
+        </div>
+
+        <!-- Collapsible Sidebar -->
+        <div v-if="eventsExpanded" class="timeline-sidebar run-editor-shell__panel">
+          <div class="sidebar-header">
+            <h3 class="sidebar-title">Timeline Details</h3>
+            <button type="button" class="ghost-button tiny" @click="toggleEventsExpanded">Close</button>
+          </div>
+          
+          <div class="activity-list">
+            <p class="activity-list__title">Activities</p>
+            <ul>
+              <li v-for="act in activitySummaries" :key="act.id">
+                <button type="button" class="ghost-button tiny" @click="jumpToActivity(act.id)">
+                  {{ act.label }} ({{ act.count }})
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="mappingPreview.length" class="mapping-preview">
+            <p class="mapping-preview__title">Mapping preview</p>
+            <ul>
+              <li v-for="entry in mappingPreview" :key="`${entry.source_well}-${entry.target_well}`">
+                {{ entry.source_well }} → {{ entry.target_well }} <span v-if="entry.volume">({{ entry.volume }})</span>
+              </li>
+            </ul>
+          </div>
+
+          <ul class="event-list">
+            <li
+              v-for="evt in activeEvents"
+              :key="evt.id || evt.timestamp"
+              :class="{ 'is-active': evt.timestamp === cursor }"
+            >
+              <button type="button" class="event-row" @click="setCursor(evt.timestamp)">
+                <span class="event-type">{{ evt.event_type || 'event' }}</span>
+                <span class="event-ts">{{ formatTs(evt.timestamp) }}</span>
+                <span class="event-label" v-if="evt.details?.material?.label">{{ evt.details.material.label }}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Tools Section -->
+      <div class="run-editor-shell__actions run-editor-shell__panel">
         <div class="apply-panel">
           <div class="labware-selectors" v-if="bindingRoles.length">
             <label>
@@ -156,48 +212,6 @@
             @remove="handleRemove"
           />
         </div>
-      </div>
-
-      <div class="run-editor-shell__timeline">
-        <div class="timeline-header">
-          <p class="timeline-title">Timeline</p>
-          <p class="timeline-subtitle">Use scrubber or click an event to preview state.</p>
-        </div>
-        <p v-if="isInspecting" class="inspection-banner">Inspecting history — new events will be added at Now.</p>
-        <TimelineScrubber :events="activeEvents" :cursor="cursor" @update:cursor="setCursor" />
-        <div class="legend-row">
-          <span class="legend-item">
-            <span class="legend-swatch legend-swatch--event"></span>
-            Cursor event wells
-          </span>
-        </div>
-        <div class="activity-list">
-          <p class="activity-list__title">Activities</p>
-          <ul>
-            <li v-for="act in activitySummaries" :key="act.id">
-              <button type="button" class="ghost-button tiny" @click="jumpToActivity(act.id)">
-                {{ act.label }} ({{ act.count }})
-              </button>
-            </li>
-          </ul>
-        </div>
-        <div v-if="mappingPreview.length" class="mapping-preview">
-          <p class="mapping-preview__title">Mapping preview</p>
-          <ul>
-            <li v-for="entry in mappingPreview" :key="`${entry.source_well}-${entry.target_well}`">
-              {{ entry.source_well }} → {{ entry.target_well }} <span v-if="entry.volume">({{ entry.volume }})</span>
-            </li>
-          </ul>
-        </div>
-        <ul class="event-list">
-          <li v-for="evt in activeEvents" :key="evt.id || evt.timestamp" :class="{ 'is-active': evt.timestamp === cursor }">
-            <button type="button" class="event-row" @click="setCursor(evt.timestamp)">
-              <span class="event-type">{{ evt.event_type || 'event' }}</span>
-              <span class="event-ts">{{ formatTs(evt.timestamp) }}</span>
-              <span class="event-label" v-if="evt.details?.material?.label">{{ evt.details.material.label }}</span>
-            </button>
-          </li>
-        </ul>
         <TransferStepSidecar
           mode="run"
           :focus-side="transferFocusSide"
@@ -229,7 +243,6 @@
 
 <script setup>
 import { computed, watch, ref, reactive } from 'vue'
-import PlateGrid from '../plate-editor/components/PlateGrid.vue'
 import TimelineScrubber from '../explorer/TimelineScrubber.vue'
 import ApplyBar from '../plate-editor/components/ApplyBar.vue'
 import LabwareGrid from '../plate-editor/components/LabwareGrid.vue'
@@ -266,7 +279,7 @@ const newActivityKind = ref('protocol_segment')
 const newBindingRole = ref('')
 const newBindingId = ref('')
 const bindingValueEdits = ref({})
-const overlayMode = ref('event')
+const eventsExpanded = ref(false)
 const drawerState = reactive({
   open: false,
   wellId: '',
@@ -274,6 +287,10 @@ const drawerState = reactive({
   wellState: null,
   lineage: { nodes: [], edges: [] }
 })
+
+function toggleEventsExpanded() {
+  eventsExpanded.value = !eventsExpanded.value
+}
 function sortEventsByTimestamp(events = []) {
   return (events || [])
     .map((evt, index) => ({ evt, index }))
@@ -346,8 +363,6 @@ const sourceDerivedWells = computed(() => {
   return store.getDerivedWellsAtNow(sourceLabwareId.value)
 })
 const targetDerivedWells = computed(() => store.getDerivedWells(targetLabwareId.value))
-const destinationPlateWells = computed(() => store.getDerivedWells(activeLabwareId.value))
-const selection = computed(() => store.state.selection?.wells || [])
 const activeLabwareId = computed(() => store.state.activeLabwareId || '')
 const activeSelection = computed(() =>
   transferFocusSide.value === 'source' ? sourceSelection.selection.value : targetSelection.selection.value
@@ -396,46 +411,6 @@ watch(
   { immediate: true }
 )
 
-const overlay = computed(() => {
-  if (!Array.isArray(activeEvents.value)) return {}
-  if (overlayMode.value === 'material') {
-    const entries = {}
-    Object.entries(destinationPlateWells.value || {}).forEach(([wellId, data]) => {
-      const first = data?.inputs?.[0]
-      if (!first?.material?.id) return
-      entries[wellId] = {
-        color: 'rgba(59, 76, 202, 0.12)',
-        borderColor: '#0ea5e9',
-        label: first.material.id
-      }
-    })
-    return entries
-  }
-  const latest =
-    activeEvents.value.find((evt) => evt && evt.timestamp === cursor.value) ||
-    activeEvents.value[activeEvents.value.length - 1]
-  if (!latest?.details) return {}
-  const targetLabware =
-    latest.details?.target?.labware?.['@id'] ||
-    latest.details?.target?.labware ||
-    latest.labware?.find((lw) => (lw?.['@id'] || lw) === activeLabwareId.value) ||
-    ''
-  const targetLabwareId = typeof targetLabware === 'object' ? targetLabware?.['@id'] : targetLabware
-  const wells = latest?.details?.target?.wells || latest?.details?.wells || {}
-  const entries = {}
-  const isMatchingLabware = targetLabwareId ? targetLabwareId === activeLabwareId.value : true
-  if (isMatchingLabware) {
-    Object.keys(wells || {}).forEach((wellId) => {
-      entries[wellId] = {
-        color: 'rgba(59, 76, 202, 0.12)',
-        borderColor: '#3b4cca',
-        label: latest?.event_type || 'event'
-      }
-    })
-  }
-  return entries
-})
-
 const mappingPreview = computed(() => {
   const latest =
     activeEvents.value.find((evt) => evt && evt.timestamp === cursor.value) ||
@@ -467,20 +442,9 @@ const validationIssues = computed(() => {
   return result?.issues || []
 })
 
-function handleGridInteraction(payload = {}) {
-  if (!payload?.wellId) return
-  const isShift = payload.event?.shiftKey
-  const isMeta = payload.event?.metaKey || payload.event?.ctrlKey
-  if (isShift) {
-    store.rangeSelect(payload.wellId)
-  } else if (isMeta) {
-    store.toggleSelection(payload.wellId)
-  } else {
-    store.selectSingle(payload.wellId)
-  }
-}
-
 function resetSelection() {
+  sourceSelection.reset()
+  targetSelection.reset()
   store.resetSelection()
 }
 
@@ -780,31 +744,94 @@ defineExpose({
 }
 
 .run-editor-shell__body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) 360px;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
+}
+
+.activity-create-row {
+  width: 100%;
 }
 
 .activity-create {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  grid-column: 1;
 }
 
-.run-editor-shell__grid-panel,
-.run-editor-shell__timeline {
+.run-editor-shell__panel {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 12px;
   background: #fff;
 }
 
-.run-editor-shell__timeline {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+.timeline-plates-container {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.timeline-plates-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.scrubber-row {
+  padding: 8px 12px;
+}
+
+.scrubber-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.scrubber-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-toggle {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sidebar-toggle:hover {
+  background: #f8fafc;
+}
+
+.timeline-sidebar {
+  width: 320px;
+  max-height: 600px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sidebar-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .grid-header,
@@ -871,14 +898,18 @@ defineExpose({
 
 .dual-grids {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: auto 1fr;
   gap: 12px;
 }
 
+.run-editor-shell__actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
 .apply-panel {
-  margin-top: 12px;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1036,6 +1067,13 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.scrubber-row-nested {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 8px;
+  border-radius: 6px;
 }
 
 .bindings-label {
