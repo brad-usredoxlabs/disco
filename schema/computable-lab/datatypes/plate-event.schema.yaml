@@ -8,6 +8,7 @@ description: >
   Plate layout derives from initial labware contents plus the time-ordered sequence of PlateEvents.
 
 required:
+  - id
   - event_type
   - timestamp
   - run
@@ -15,6 +16,10 @@ required:
   - details
 
 properties:
+  id:
+    type: string
+    description: "Stable event identifier (unique within the run)."
+
   event_type:
     type: string
     enum:
@@ -22,6 +27,8 @@ properties:
       - incubate
       - read
       - wash
+      - harvest
+      - sample_operation
       - other
 
   timestamp:
@@ -47,6 +54,8 @@ properties:
       - $ref: "./plate-event.incubate.schema.yaml"
       - $ref: "./plate-event.read.schema.yaml"
       - $ref: "./plate-event.wash.schema.yaml"
+      - $ref: "./plate-event.harvest.schema.yaml"
+      - $ref: "./plate-event.sample-operation.schema.yaml"
       - $ref: "./plate-event.other.schema.yaml"
 
 additionalProperties: false

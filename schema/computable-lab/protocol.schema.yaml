@@ -9,7 +9,8 @@ required:
   - title
   - family
   - version
-  - recipes
+  - labwareRoles
+  - events
 
 properties:
   recordType:
@@ -45,47 +46,6 @@ properties:
   supersedes:
     type: string
     description: "@id of the protocol version superseded by this record (if any)."
-
-  recipes:
-    type: array
-    minItems: 1
-    description: >
-      References to recipe records that this protocol orchestrates (e.g., gel mix, running buffer).
-    items:
-      type: object
-      required:
-        - role
-        - recipeId
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-          description: "Local identifier within this protocol (e.g., 'gel_mix')."
-        role:
-          type: string
-          description: "Semantic role of this recipe in the protocol."
-          enum:
-            - gel_mix
-            - running_buffer
-            - sample_prep
-            - master_mix
-            - cleanup_buffer
-            - other
-        recipeId:
-          type: string
-          description: "Record id (@id) of the recipe to use."
-        recipeVersion:
-          type: string
-          description: "Optional specific recipe version label."
-        scaleParameter:
-          type: string
-          description: "Optional name of a protocol parameter that scales this recipe (e.g., 'num_gels')."
-
-  executionSteps:
-    type: array
-    description: "Instructions for executing the protocol once recipes have been prepared."
-    items:
-      type: string
 
   parametersSchema:
     type: object

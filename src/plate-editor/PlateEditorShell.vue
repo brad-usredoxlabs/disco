@@ -140,7 +140,19 @@ watch(selectionCount, (count) => {
 watch(
   () => targetSelection.selection.value,
   (wells) => {
-    store.setSelection(wells)
+    if (transferFocusSide.value === 'target') {
+      store.setSelection(wells)
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => sourceSelection.selection.value,
+  (wells) => {
+    if (transferFocusSide.value === 'source') {
+      store.setSelection(wells)
+    }
   },
   { deep: true }
 )
@@ -152,8 +164,13 @@ watch(layoutIndex, () => {
 
 function handleApplyBarApply(payload) {
   const materialId = sanitizeMaterialId(payload?.materialId || '')
+  const wells = activeSelection.value
   if (!materialId || !payload?.role) {
     notifyStatus('Select a material and role before applying.')
+    return
+  }
+  if (!wells.length) {
+    notifyStatus('Select at least one well before applying materials.')
     return
   }
   store.applyMaterialUse({
@@ -161,26 +178,37 @@ function handleApplyBarApply(payload) {
     role: payload.role,
     amount: payload.amount || null,
     controlIntents: Array.isArray(payload.controlIntents) ? payload.controlIntents : [],
-    label: payload.materialLabel || resolveMaterialLabel(materialId)
+    label: payload.materialLabel || resolveMaterialLabel(materialId),
+    wells,
+    labware: resolveLabwareRefForSide(transferFocusSide.value)
   })
   ensureMaterialInPalette(materialId, payload.role)
   addRecentMaterial(materialId)
   const label = payload.materialLabel || resolveMaterialLabel(materialId)
-  notifyStatus(`Applied ${label} (${payload.role}) to ${selectionCount.value} wells.`)
+  notifyStatus(
+    `Applied ${label} (${payload.role}) to ${selectionCount.value} ${transferFocusSide.value} well(s).`
+  )
 }
 
 function handleApplyBarRemove(payload) {
   const materialId = sanitizeMaterialId(payload?.materialId || '')
+  const wells = activeSelection.value
   if (!materialId) {
     notifyStatus('Select a material to remove.')
     return
   }
+  if (!wells.length) {
+    notifyStatus('Select at least one well before removing materials.')
+    return
+  }
   store.removeMaterialUse({
     material: materialId,
-    role: payload?.role || null
+    role: payload?.role || null,
+    wells,
+    labware: resolveLabwareRefForSide(transferFocusSide.value)
   })
   const label = resolveMaterialLabel(materialId)
-  notifyStatus(`Removed ${label} from ${selectionCount.value} wells.`)
+  notifyStatus(`Removed ${label} from ${selectionCount.value} ${transferFocusSide.value} well(s).`)
 }
 
 function handleFavoriteToggle(payload) {
@@ -702,6 +730,19 @@ function fallbackLabware() {
   ]
 }
 
+function resolveLabwareRefForSide(side = 'target') {
+  const labwareId = side === 'source' ? sourceLabwareId.value : targetLabwareId.value
+  const entry = labwareEntries.value.find((item) => item.id === labwareId)
+  if (entry) {
+    return {
+      '@id': entry.id || `labware/${side}`,
+      kind: entry.kind || 'plate',
+      label: entry.label || labwareId || side
+    }
+  }
+  return resolvePlateLabwareRef()
+}
+
 function resolvePlateLabwareRef() {
   const metadata = recordModel.value?.metadata || {}
   const recordId = metadata.recordId || metadata.id || 'unknown'
@@ -944,6 +985,7 @@ function openInspectorWindow() {
         <aside class="materials-panel">
           <TransferStepSidecar
             :focus-side="transferFocusSide"
+            mode="run"
             :source-selection="sourceSelection.selection"
             :target-selection="targetSelection.selection"
             :parameter-names="transferParameterNames"

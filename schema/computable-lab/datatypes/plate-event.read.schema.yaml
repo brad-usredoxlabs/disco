@@ -34,20 +34,42 @@ properties:
       type: string
       minLength: 1
 
-  result_files:
+  acquisitions:
     type: array
-    description: "Optional list of result files (images, CSVs, etc.)."
+    description: "One or more acquisition timepoints/slices."
+    minItems: 1
     items:
       type: object
+      required: ["timepoint"]
       additionalProperties: false
       properties:
-        label:
+        timepoint:
           type: string
-        uri:
+          description: "Relative or named timepoint label (e.g., '-30 min', '0 min', '5 min')."
+        acquired_at:
           type: string
-          format: uri
-        record_ref:
-          type: string
-          description: "Optional reference to another record containing the result."
+          format: date-time
+        files:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              label:
+                type: string
+              uri:
+                type: string
+                format: uri
+              record_ref:
+                type: string
+                description: "Optional reference to another record containing the result."
+        metrics:
+          type: object
+          description: "Optional computed metrics for this acquisition."
+          additionalProperties: true
+        settings:
+          type: object
+          description: "Optional instrument settings for this slice."
+          additionalProperties: true
 
 additionalProperties: false

@@ -1,0 +1,68 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.sample-operation.schema.yaml"
+
+title: PlateEventSampleOperationDetails
+type: object
+description: "Sample-handling event to pair with a sample_operation activity (lineage edges)."
+
+required:
+  - type
+  - operation
+  - inputs
+
+properties:
+  type:
+    type: string
+    const: "sample_operation"
+
+  operation:
+    type: string
+    description: "Operation name (e.g., collect_supernatant, split_cells, aliquot)."
+
+  inputs:
+    type: object
+    description: "Source material (labware+wells or sample refs)."
+    properties:
+      labware:
+        $ref: "./labware-ref.schema.yaml"
+      wells:
+        type: array
+        items:
+          type: string
+      samples:
+        type: array
+        items:
+          type: string
+    additionalProperties: false
+
+  outputs:
+    type: array
+    description: "Produced samples (optional if none)."
+    items:
+      type: object
+      required: ["@id"]
+      additionalProperties: false
+      properties:
+        "@id":
+          type: string
+        label:
+          type: string
+        record_ref:
+          type: string
+        material:
+          $ref: "./material-ref.schema.yaml"
+        volume:
+          type: string
+        notes:
+          type: string
+
+  files:
+    type: array
+    description: "Optional supporting artifacts (photos, sheets, etc.)."
+    items:
+      $ref: "./plate-event.read.schema.yaml#/properties/result_files/items"
+
+  notes:
+    type: string
+
+additionalProperties: false

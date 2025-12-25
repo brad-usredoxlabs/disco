@@ -2,6 +2,10 @@
 import { computed, reactive, watch } from 'vue'
 
 const props = defineProps({
+  mode: {
+    type: String,
+    default: 'run' // run | protocol
+  },
   focusSide: {
     type: String,
     default: 'target'
@@ -147,8 +151,8 @@ function clear(side) {
 
 function createStep() {
   if (!canCreate.value) return
-  const src = sorted(props.sourceSelection)
-  const dst = sorted(props.targetSelection)
+  const src = sorted(normalizeSelection(props.sourceSelection))
+  const dst = sorted(normalizeSelection(props.targetSelection))
 
   let mapping = []
   if (state.mappingMode === 'broadcast') {
@@ -161,7 +165,13 @@ function createStep() {
     mapping = Array.from({ length: n }).map((_, i) => ({ source_well: src[i], target_well: dst[i] }))
   }
 
-  const step = {
+  const mappingSpec = {
+    mode: state.mappingMode,
+    source_wells: src,
+    target_wells: dst
+  }
+
+  const base = {
     event_type: 'transfer',
     label: state.label || 'Transfer',
     notes: state.notes || '',
@@ -170,9 +180,12 @@ function createStep() {
       source_role: props.sourceRole,
       target_role: props.targetRole,
       mapping,
+      mapping_spec: mappingSpec,
       volume: volumeValue()
     }
   }
+
+  const step = props.mode === 'protocol' ? base : { ...base, timestamp: new Date().toISOString() }
 
   emit('create-step', step)
 }
@@ -356,8 +369,13 @@ textarea {
 
 .volumeRow {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
+  align-items: center;
+}
+
+.volumeRow input[type='text'] {
+  min-width: 140px;
 }
 
 .segmented {

@@ -90,6 +90,7 @@ Validates:
 - `src/plate-editor/PlateEditorShell.vue` is the top-level Vue shell that loads the selected Markdown file, parses JSON-LD front matter, and binds it to the dedicated plate editor store (`src/plate-editor/store/usePlateEditorStore.js`). It keeps the record hash in sync so the “Save plate layout” button only activates when well assignments or timeline events change.
 - Visual editing lives in `src/plate-editor/components`: `PlateGrid.vue` renders wells + selection overlays, `ApplyBar.vue` applies materials/roles to a selection, and `MaterialDetailsDrawer.vue` manages the shared material library. Supporting composables and services (`composables/useMaterialLibrary.js`, `services/materialLibraryWriter.js`, `utils/layoutUtils.js`) encapsulate grid geometry, presets, and persistence. `LabwareGrid.vue` + `TransferStepSidecar.vue` provide dual-grid, protocol-style transfer step building with separate source/target selections.
 - Schema authors define allowable plate specs via `spec/plate-editor/PlateEditorSpec.*` (role catalog, well geometry, default events). The registry in `src/plate-editor/specRegistry.js` exposes those specs, and `schema/computable-lab/plate-layout.schema.yaml` links each record to a spec through the `editorSpecId` field so layouts render with the right template.
+- PlateEvents authored in plate layouts remain useful as templates, but **runs are the canonical source of PlateEvents**. Layouts can still be ingested as seed data when a run lacks inline events.
 
 ### 4.9 Robot Adapter Tooling
 - Lightweight conversion scripts live under `scripts/adapters/`. `plate-events-to-pylabrobot.mjs` emits a JSON command list that PyLabRobot developers can consume, while `plate-events-to-pyalab.mjs` prints a human-readable step list compatible with pyalab/Vialab workflows.
@@ -112,6 +113,12 @@ Validates:
 - The CLI at `scripts/protocols/run-protocol.mjs` instantiates a protocol segment and **appends** it to an existing run instead of overwriting files. Each invocation binds its own `labware`/`parameters`, so you can layer “seed cells → T=24 imaging → insulin protocol → fluorescent reads → send-outs” into one record.
 - `src/app/RunActivitiesPanel.vue` (rendered inside `FieldInspector.vue` for `recordType: run`) is the primary UI for viewing and editing the timeline. It surfaces run-level bindings/parameters, supports reordering, and provides quick actions to add acquisitions tied back to the latest segment’s PlateEvents. Sample operations expose inline editors for produced samples, splits, and attachments.
 - Migration helpers under `scripts/migrations/backfill-run-activities.mjs` convert legacy run records (`data.operations.events`) into the new activity model so the Plate Editor, adapters, and query tooling all consume a single timeline structure.
+- A dedicated Run Editor (`src/run-editor/RunEditorShell.vue`, launched via `runEditorPath` URL param or the workspace picker/graph) now authors PlateEvents directly into run activities. It reuses dual grids, TransferStepSidecar, material ApplyBar, and Explorer overlays, supports multi-labware replay with depletion toggles, activity creation, inline validation, and save-to-frontmatter. Well details drawer and overlay modes (event/material) aid lineage/composition review.
+
+### 4.13 Event Graph Explorer & Promotion
+- The Event Graph Explorer is now wired into the main workspace nav with a picker for runs and plate layouts. It renders an overlay legend, lane-level mapping previews/highlights, and a lineage edge list in the drawer. A standalone Explorer view can be launched from the nav or via query params; the `AppShell` keeps selection and overlays in sync with the File Workbench.
+- The event-graph engine lives under `src/event-graph/` (units/state/replay/selectors) and replays PlateEvents from runs (falling back to linked plate layouts when needed). Helper utilities in `src/explorer/helpers.js` centralize mapping, cursor, and overlay logic.
+- Promotion workflow: both the UI modal (“Promote to protocol”) and CLI script (`scripts/promote-run-to-protocol.mjs`) share helpers in `src/app/promotionUtils.js`. They suggest labware roles, validate against protocol schema, and write promoted protocols to `06_PROTOCOLS/..._PROMOTED.md`. Fixtures under `tmp/fixtures/` exercise round-trip promotion.
 
 ---
 
@@ -224,6 +231,8 @@ Validation is fully declarative:
 * Ontology references validated against local vocabularies
 * DVC pointers validated by hash comparison
 * Regulated schema bundles enforce stricter rules, not the application
+* Repository drift checks run via `npm run test:validate`, which executes `scripts/validate-fixtures.mjs` across fixtures/runs/protocols using the same schemas shipped with the app.
+* Automated coverage (Vitest + jsdom) exercises the Explorer UI, event-graph helpers, timeline replay, and promotion pipeline to prevent regressions in overlays, lineage rendering, and protocol promotion.
 
 ---
 
@@ -314,4 +323,5 @@ All behavior—research or regulated—is determined entirely by schemas:
 * Privilege/immutability constraints
 
 The application itself remains static, serverless, and platform-independent (within Chromium browser constraints).
+Recent additions (Event Graph Explorer, inline run activities with PlateEvents, promotion helpers, shared validation scripts/tests) deepen lineage/replay fidelity without compromising the schema-first contract.
 This approach combines the flexibility required in research settings with the structure and enforceability required for regulated processes, without duplicating logic or fragmenting the codebase.

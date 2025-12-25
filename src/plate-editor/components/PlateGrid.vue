@@ -11,6 +11,10 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  overlay: {
+    type: Object,
+    default: () => ({})
+  },
   selection: {
     type: [Array, Object],
     default: () => []
@@ -60,10 +64,36 @@ function handleWellClick(event, wellId) {
   emit('well-click', { event, wellId })
 }
 
+function tooltipText(cell = {}) {
+  if (!Array.isArray(cell.inputs) || !cell.inputs.length) {
+    return `${cell.wellId || 'Well'}: empty`
+  }
+  const lines = cell.inputs.map((input, idx) => {
+    const label = input?.material?.label || input?.material?.id || 'Material'
+    const role = input?.role ? ` (${input.role})` : ''
+    const amount =
+      input?.amount && input.amount.value !== undefined && input.amount.unit
+        ? ` · ${input.amount.value} ${input.amount.unit}`
+        : ''
+    const notes = input?.notes ? ` — ${input.notes}` : ''
+    return `${idx + 1}. ${label}${role}${amount}${notes}`
+  })
+  return `${cell.wellId}: ${lines.join('\n')}`
+}
+
 function normalizeSelection(selectionInput) {
   if (Array.isArray(selectionInput)) return selectionInput
   if (selectionInput && Array.isArray(selectionInput.value)) return selectionInput.value
   return []
+}
+
+function overlayStyle(wellId) {
+  const entry = props.overlay?.[wellId]
+  if (!entry || !entry.color) return null
+  return {
+    background: entry.color,
+    borderColor: entry.borderColor || entry.color
+  }
 }
 </script>
 
@@ -89,11 +119,16 @@ function normalizeSelection(selectionInput) {
                 'is-selected': selectedSet.has(cell.wellId),
                 'has-content': cell.inputs.length
               }"
+              :style="overlayStyle(cell.wellId)"
+              :title="tooltipText(cell)"
               @click="handleWellClick($event, cell.wellId)"
             >
               <span class="well-id">{{ cell.wellId }}</span>
               <span v-if="cell.inputs.length" class="well-meta">
                 {{ cell.inputs.length }} inputs
+              </span>
+              <span v-if="overlay?.[cell.wellId]?.label" class="well-overlay-label">
+                {{ overlay[cell.wellId].label }}
               </span>
             </button>
           </td>
@@ -169,5 +204,13 @@ th {
 .well-meta {
   font-size: 0.7rem;
   color: #475569;
+}
+
+.well-overlay-label {
+  font-size: 0.7rem;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0.1rem 0.3rem;
+  border-radius: 6px;
 }
 </style>

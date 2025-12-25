@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, reactive } from 'vue'
 import AppPanel from '../ui/panels/AppPanel.vue'
 import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
@@ -11,6 +11,10 @@ import RecordCreatorModal from './RecordCreatorModal.vue'
 import GraphTreePanel from './GraphTreePanel.vue'
 import PlateEditorShell from '../plate-editor/PlateEditorShell.vue'
 import ProtocolEditorShell from '../protocol-editor/ProtocolEditorShell.vue'
+import ExplorerShell from '../explorer/ExplorerShell.vue'
+import RunEditorShell from '../run-editor/RunEditorShell.vue'
+import { resolveLayoutIndex } from '../plate-editor/utils/layoutResolver'
+import { useMaterialLibrary } from '../plate-editor/composables/useMaterialLibrary'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
@@ -23,6 +27,8 @@ import { useSystemConfig } from '../config/useSystemConfig'
 import { configureOntologyService } from '../ontology/service'
 import { useOfflineStatus } from '../composables/useOfflineStatus'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
+import { buildZodSchema } from '../records/zodBuilder'
+import { promoteEvents, mappingFromTarget, resolveRole, buildProtocolFrontmatter } from './promotionUtils'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -40,12 +46,35 @@ const isTreeBootstrapping = tree.isBootstrapping
 const showPrompt = ref(true)
 const schemaBundle = computed(() => schemaLoader.schemaBundle?.value)
 const recordValidator = useRecordValidator(schemaLoader)
+const materialLibrary = useMaterialLibrary(repo)
 const tiptapTarget = ref(readTiptapTargetFromUrl())
 const plateEditorTarget = ref(readPlateEditorTargetFromUrl())
 const protocolEditorTarget = ref(readProtocolEditorTargetFromUrl())
 const inspectorTarget = ref(readInspectorTargetFromUrl())
 const tiptapStatus = ref('')
 const inspectorStatus = ref('')
+const explorerTarget = ref(readExplorerTargetFromUrl())
+const runEditorTarget = ref(readRunEditorTargetFromUrl())
+const runEditorRef = ref(null)
+const runEditorState = reactive({
+  run: null,
+  body: '',
+  layout: null,
+  materialLibrary: [],
+  status: '',
+  error: ''
+})
+const runEditorSaving = ref(false)
+const explorerState = reactive({
+  events: [],
+  labwareId: '',
+  layoutIndex: null,
+  status: '',
+  error: '',
+  activities: [],
+  runFrontmatter: null,
+  runBody: ''
+})
 const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
 const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
@@ -53,7 +82,10 @@ const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
 const isStandalonePlateEditor = computed(() => !!plateEditorTarget.value)
 const isStandaloneProtocolEditor = computed(() => !!protocolEditorTarget.value)
 const isStandaloneInspector = computed(() => !!inspectorTarget.value)
+const isStandaloneExplorer = computed(() => !!explorerTarget.value)
+const isStandaloneRunEditor = computed(() => !!runEditorTarget.value)
 const isOnline = computed(() => offlineStatus.isOnline.value)
+const fallbackLayout = computed(() => resolveLayoutIndex({}, { fallbackKind: 'plate96' }))
 const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
 const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
 const tiptapSchema = computed(() =>
@@ -79,6 +111,14 @@ const plateEditorBundleMismatch = computed(() => {
 const protocolEditorBundleMismatch = computed(() => {
   if (!protocolEditorTarget.value?.bundle) return false
   return selectedBundleName.value !== protocolEditorTarget.value.bundle
+})
+const explorerBundleMismatch = computed(() => {
+  if (!explorerTarget.value?.bundle) return false
+  return selectedBundleName.value !== explorerTarget.value.bundle
+})
+const runEditorBundleMismatch = computed(() => {
+  if (!runEditorTarget.value?.bundle) return false
+  return selectedBundleName.value !== runEditorTarget.value.bundle
 })
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
@@ -147,6 +187,24 @@ watch(
 )
 
 watch(
+  () => explorerTarget.value?.bundle,
+  (bundle) => {
+    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
+      schemaLoader.selectBundle(bundle)
+    }
+  }
+)
+
+watch(
+  () => runEditorTarget.value?.bundle,
+  (bundle) => {
+    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
+      schemaLoader.selectBundle(bundle)
+    }
+  }
+)
+
+watch(
   [
     () => repo.directoryHandle.value,
     () => schemaLoader.schemaBundle?.value,
@@ -158,6 +216,30 @@ watch(
       systemConfig: bioportal,
       vocabSchemas: bundle?.vocabSchemas || {}
     })
+  },
+  { immediate: true }
+)
+
+watch(
+  [() => explorerTarget.value?.path, () => repo.directoryHandle.value],
+  () => {
+    loadExplorerData()
+  },
+  { immediate: true }
+)
+
+watch(
+  [() => runEditorTarget.value?.path, () => repo.directoryHandle.value],
+  () => {
+    loadRunEditorData()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => materialLibrary.entries.value,
+  (entries) => {
+    runEditorState.materialLibrary = Array.isArray(entries) ? entries : []
   },
   { immediate: true }
 )
@@ -217,6 +299,27 @@ function readInspectorTargetFromUrl() {
   }
 }
 
+function readExplorerTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('explorerPath')) return null
+  return {
+    path: decodeURIComponent(params.get('explorerPath')),
+    bundle: params.get('explorerBundle') || '',
+    labware: params.get('explorerLabware') || ''
+  }
+}
+
+function readRunEditorTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (!params.has('runEditorPath')) return null
+  return {
+    path: decodeURIComponent(params.get('runEditorPath')),
+    bundle: params.get('runEditorBundle') || ''
+  }
+}
+
 function clearTiptapTarget() {
   tiptapTarget.value = null
   if (typeof window !== 'undefined') {
@@ -246,6 +349,151 @@ function clearProtocolEditorTarget() {
     url.searchParams.delete('protocolEditorBundle')
     window.history.replaceState({}, '', url.toString())
   }
+}
+
+function clearExplorerTarget() {
+  explorerTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('explorerPath')
+    url.searchParams.delete('explorerBundle')
+    url.searchParams.delete('explorerLabware')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
+
+function clearRunEditorTarget() {
+  runEditorTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('runEditorPath')
+    url.searchParams.delete('runEditorBundle')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
+
+async function loadExplorerData() {
+  if (!explorerTarget.value || !repo.directoryHandle.value || repo.isRestoring.value) return
+  if (!explorerTarget.value.path) return
+  explorerState.status = 'Loading…'
+  explorerState.error = ''
+  try {
+    const raw = await repo.readFile(explorerTarget.value.path)
+    const { data, body } = parseFrontMatter(raw)
+    const events = await collectPlateEvents(data)
+    explorerState.events = events
+    explorerState.activities = Array.isArray(data.activities) ? data.activities : data.operations?.activities || []
+    explorerState.runFrontmatter = data
+    explorerState.runBody = body || ''
+    explorerState.labwareId =
+      explorerTarget.value.labware ||
+      resolveLabwareFromEvents(events) ||
+      resolveLabwareFromActivities(explorerState.activities) ||
+      'plate/UNKNOWN'
+    explorerState.layoutIndex = fallbackLayout.value
+    explorerState.status = events.length ? '' : 'No PlateEvents found in run.'
+  } catch (err) {
+    explorerState.error = err?.message || 'Failed to load run for explorer.'
+    explorerState.events = []
+    explorerState.activities = []
+  }
+}
+
+async function loadRunEditorData() {
+  if (!runEditorTarget.value || !repo.directoryHandle.value || repo.isRestoring.value) return
+  if (!runEditorTarget.value.path) return
+  runEditorState.status = 'Loading…'
+  runEditorState.error = ''
+  try {
+    const raw = await repo.readFile(runEditorTarget.value.path)
+    const { data, body } = parseFrontMatter(raw)
+    runEditorState.run = data || null
+    runEditorState.body = body || ''
+    runEditorState.layout = null
+    runEditorState.materialLibrary = Array.isArray(materialLibrary.entries.value)
+      ? materialLibrary.entries.value
+      : []
+    runEditorState.status = ''
+  } catch (error) {
+    runEditorState.error = error?.message || 'Failed to load run.'
+    runEditorState.status = ''
+    console.error('Error loading run editor data', error)
+  }
+}
+
+async function handleRunEditorSave() {
+  if (!runEditorTarget.value?.path || !repo.directoryHandle.value) return
+  if (!runEditorRef.value?.store?.state?.run) return
+  runEditorSaving.value = true
+  runEditorState.status = 'Saving…'
+  runEditorState.error = ''
+  try {
+    const updated = runEditorRef.value.store.state.run
+    const validation = recordValidator.validate('run', updated)
+    if (!validation.ok) {
+      runEditorState.error = `Run validation failed: ${validation.issues.map((i) => i.message).join('; ')}`
+      runEditorState.status = ''
+      return
+    }
+    const text = serializeFrontMatter(updated, runEditorState.body || '')
+    await repo.writeFile(runEditorTarget.value.path, text)
+    runEditorState.status = 'Saved.'
+  } catch (error) {
+    runEditorState.error = error?.message || 'Failed to save run.'
+    runEditorState.status = ''
+    console.error('Run editor save error', error)
+  } finally {
+    runEditorSaving.value = false
+  }
+}
+
+async function collectPlateEvents(data = {}) {
+  const events = []
+  const activities = data.activities || data.operations?.activities || []
+  activities.forEach((act) => {
+    if (Array.isArray(act?.plate_events)) {
+      events.push(...act.plate_events)
+    }
+  })
+  if (!events.length && Array.isArray(data.operations?.events)) {
+    events.push(...data.operations.events)
+  }
+  if (!events.length) {
+    const layoutPath = data.operations?.plateLayout || (Array.isArray(data.operations?.plateLayouts) && data.operations.plateLayouts[0])
+    if (layoutPath && repo?.readFile) {
+      try {
+        const rawLayout = await repo.readFile(layoutPath)
+        const { data: layoutData } = parseFrontMatter(rawLayout)
+        const layoutEvents = layoutData?.operations?.events || []
+        events.push(...layoutEvents)
+        explorerState.status = 'Loaded events from plate layout.'
+      } catch (err) {
+        console.warn('Failed to read plate layout for events', err)
+      }
+    }
+  }
+  return events
+}
+
+function resolveLabwareFromEvents(events = []) {
+  for (const evt of events) {
+    if (Array.isArray(evt?.labware) && evt.labware.length) {
+      const entry = evt.labware.find((l) => l?.['@id']) || evt.labware[0]
+      if (entry?.['@id']) return entry['@id']
+    }
+    if (evt?.details?.target?.labware?.['@id']) return evt.details.target.labware['@id']
+  }
+  return ''
+}
+
+function resolveLabwareFromActivities(activities = []) {
+  for (const act of activities) {
+    if (Array.isArray(act?.plate_events)) {
+      const id = resolveLabwareFromEvents(act.plate_events)
+      if (id) return id
+    }
+  }
+  return ''
 }
 
 watch(
@@ -316,6 +564,10 @@ function handleSelect(nodeOrPath) {
   }
   if (node?.recordType === 'protocol' && path) {
     openProtocolEditorWindow(path)
+    return
+  }
+  if (node?.recordType === 'run' && path) {
+    openRunEditorWindow(path)
     return
   }
   if (path) {
@@ -443,6 +695,296 @@ function handleInspectorSaved() {
   searchIndex?.rebuild?.()
 }
 
+const explorerFilePath = ref('')
+const explorerLabwareId = ref('')
+const showExplorerModal = ref(false)
+const runEditorFilePath = ref('')
+const showRunEditorModal = ref(false)
+const explorerForm = reactive({
+  activityId: '',
+  sourceWell: '',
+  targetWell: '',
+  volume: '',
+  materialId: '',
+  status: '',
+  error: ''
+})
+const showPromotionModal = ref(false)
+const promotionForm = reactive({
+  runPath: '',
+  family: '',
+  version: '0.1.0',
+  title: 'Promoted protocol',
+  volumeParam: '',
+  labwareRows: [
+    { role: 'source_role', id: 'labware:res1' },
+    { role: 'target_role', id: 'plate/PLT-0001' }
+  ],
+  status: '',
+  error: ''
+})
+const canAppendExplorerEvent = computed(() => {
+  return (
+    explorerForm.activityId &&
+    explorerForm.sourceWell.trim() &&
+    explorerForm.targetWell.trim() &&
+    explorerForm.volume.trim() &&
+    explorerTarget.value?.path
+  )
+})
+
+async function handleExplorerOpen() {
+  if (!explorerFilePath.value) return
+  const bundle = schemaLoader.selectedBundle?.value
+  const url = new URL(window.location.href)
+  url.searchParams.delete('explorerPath')
+  url.searchParams.delete('explorerBundle')
+  url.searchParams.delete('explorerLabware')
+  url.searchParams.set('explorerPath', explorerFilePath.value)
+  if (bundle) url.searchParams.set('explorerBundle', bundle)
+  if (explorerLabwareId.value) url.searchParams.set('explorerLabware', explorerLabwareId.value)
+  explorerTarget.value = {
+    path: explorerFilePath.value,
+    bundle,
+    labware: explorerLabwareId.value
+  }
+  window.history.replaceState({}, '', url.toString())
+  loadExplorerData()
+  showExplorerModal.value = false
+}
+
+async function handleRunEditorOpen() {
+  if (!runEditorFilePath.value) return
+  const bundle = schemaLoader.selectedBundle?.value
+  const url = new URL(window.location.href)
+  url.searchParams.delete('runEditorPath')
+  url.searchParams.delete('runEditorBundle')
+  url.searchParams.set('runEditorPath', runEditorFilePath.value)
+  if (bundle) url.searchParams.set('runEditorBundle', bundle)
+  runEditorTarget.value = {
+    path: runEditorFilePath.value,
+    bundle
+  }
+  window.history.replaceState({}, '', url.toString())
+  loadRunEditorData()
+  showRunEditorModal.value = false
+}
+
+watch(
+  () => showExplorerModal.value,
+  (open) => {
+    if (open && !explorerFilePath.value && activeRecordPath.value) {
+      explorerFilePath.value = activeRecordPath.value
+    }
+  }
+)
+
+watch(
+  () => showRunEditorModal.value,
+  (open) => {
+    if (open && !runEditorFilePath.value && activeRecordPath.value) {
+      runEditorFilePath.value = activeRecordPath.value
+    }
+  }
+)
+
+function resetExplorerForm() {
+  explorerForm.activityId = ''
+  explorerForm.sourceWell = ''
+  explorerForm.targetWell = ''
+  explorerForm.volume = ''
+  explorerForm.materialId = ''
+  explorerForm.status = ''
+  explorerForm.error = ''
+}
+
+async function appendExplorerEvent() {
+  if (!canAppendExplorerEvent.value || !explorerState.runFrontmatter || !explorerTarget.value?.path) return
+  explorerForm.status = 'Saving…'
+  explorerForm.error = ''
+  try {
+    const fm = JSON.parse(JSON.stringify(explorerState.runFrontmatter || {}))
+    const data = fm.data || {}
+    const activities = Array.isArray(data.activities) ? data.activities : data.operations?.activities || []
+    const idx = activities.findIndex((a) => a.id === explorerForm.activityId)
+    if (idx === -1) throw new Error('Activity not found on run.')
+    activities[idx].plate_events ||= []
+    const event = buildQuickTransferEvent(explorerForm, fm)
+    activities[idx].plate_events.push(event)
+    data.activities = activities
+    fm.data = data
+    const serialized = serializeFrontMatter(fm, explorerState.runBody || '')
+    await repo.writeFile(explorerTarget.value.path, serialized)
+    explorerForm.status = 'Event appended.'
+    await loadExplorerData()
+  } catch (err) {
+    explorerForm.error = err?.message || 'Failed to append event.'
+  }
+}
+
+function buildQuickTransferEvent(form, fm = {}) {
+  const runId = fm.metadata?.id || fm.metadata?.recordId || fm.metadata?.runId || ''
+  const labwareId = explorerState.labwareId || 'plate/UNKNOWN'
+  const timestamp = new Date().toISOString()
+  return {
+    id: `evt-${Date.now()}`,
+    event_type: 'transfer',
+    timestamp,
+    run: runId,
+    labware: [{ '@id': labwareId, kind: 'plate' }],
+    details: {
+      type: 'transfer',
+      source: {
+        labware: { '@id': labwareId, kind: 'plate' },
+        wells: {
+          [form.sourceWell.trim()]: {}
+        }
+      },
+      target: {
+        labware: { '@id': labwareId, kind: 'plate' },
+        wells: {
+          [form.targetWell.trim()]: {
+            well: form.targetWell.trim(),
+            material_id: form.materialId?.trim() || ''
+          }
+        }
+      },
+      mapping: [
+        {
+          source_well: form.sourceWell.trim(),
+          target_well: form.targetWell.trim(),
+          volume: form.volume.trim()
+        }
+      ],
+      volume: form.volume.trim(),
+    material: form.materialId?.trim() ? { id: form.materialId.trim() } : null
+    }
+  }
+}
+
+function openPromotionModal() {
+  promotionForm.runPath = activeRecordPath.value || ''
+  promotionForm.status = ''
+  promotionForm.error = ''
+  if (!promotionForm.labwareRows.length) {
+    promotionForm.labwareRows = [{ role: 'source_role', id: '' }]
+  }
+  prefillLabwareRowsFromRun()
+  showPromotionModal.value = true
+}
+
+function prefillLabwareRowsFromRun() {
+  if (!explorerState.activities?.length) return
+  const idToKind = new Map()
+  explorerState.activities.forEach((act) => {
+    ;(act.plate_events || []).forEach((evt) => {
+      if (Array.isArray(evt.labware)) {
+        evt.labware.forEach((lw) => lw?.['@id'] && idToKind.set(lw['@id'], lw.kind || ''))
+      }
+      if (evt.details?.source?.labware?.['@id']) {
+        idToKind.set(evt.details.source.labware['@id'], evt.details.source.labware.kind || '')
+      }
+      if (evt.details?.target?.labware?.['@id']) {
+        idToKind.set(evt.details.target.labware['@id'], evt.details.target.labware.kind || '')
+      }
+    })
+  })
+  const existingIds = new Set(promotionForm.labwareRows.map((row) => row.id))
+  const usedRoles = new Set(promotionForm.labwareRows.map((row) => row.role).filter(Boolean))
+  idToKind.forEach((kind, id) => {
+    if (existingIds.has(id)) return
+    const suggestedRole = suggestRoleForLabware(id, kind, usedRoles)
+    usedRoles.add(suggestedRole)
+    promotionForm.labwareRows.push({ role: suggestedRole, id })
+  })
+}
+
+function suggestRoleForLabware(id, kind = '', usedRoles = new Set()) {
+  const lower = String(id || '').toLowerCase()
+  let base = 'labware'
+  if (kind === 'reservoir' || lower.includes('res')) base = 'reservoir'
+  else if (kind === 'plate' || lower.includes('qpcr')) base = 'qpcr_plate'
+  else if (lower.includes('plate')) base = 'plate'
+  else if (lower.includes('tube')) base = 'tube_rack'
+  let role = base
+  let counter = 1
+  while (usedRoles.has(role)) {
+    role = `${base}_${counter}`
+    counter += 1
+  }
+  return role
+}
+
+async function handlePromoteRun() {
+  if (!promotionForm.runPath) {
+    promotionForm.error = 'Select a run path.'
+    return
+  }
+  promotionForm.status = 'Promoting…'
+  promotionForm.error = ''
+  try {
+    const raw = await repo.readFile(promotionForm.runPath)
+    const { data } = parseFrontMatter(raw)
+    const events = await collectPlateEvents(data)
+    if (!events.length) {
+      throw new Error('No PlateEvents found in run.')
+    }
+    const mapping = labwareRowsToMap(promotionForm.labwareRows)
+    const promotedEvents = promoteEvents(events, mapping, promotionForm.volumeParam)
+    const frontmatter = buildProtocolFrontmatter(
+      data,
+      promotedEvents,
+      promotionForm.family,
+      promotionForm.version,
+      promotionForm.title,
+      mapping
+    )
+    const validation = validateProtocolFrontmatter(frontmatter)
+    if (!validation.ok) {
+      throw new Error(validation.issues.map((i) => `${i.path}: ${i.message}`).join(' | '))
+    }
+    const outPath =
+      promotionForm.runPath.replace(/^08_RUNS\//, '06_PROTOCOLS/').replace(/\.md$/i, '') + '_PROMOTED.md'
+    const serialized = serializeFrontMatter(frontmatter, '# Promoted protocol\n\nGenerated from run promotion.')
+    await repo.writeFile(outPath, serialized)
+    promotionForm.status = `Wrote ${outPath}`
+    showPromotionModal.value = false
+  } catch (err) {
+    promotionForm.error = err?.message || 'Promotion failed.'
+  }
+}
+
+function labwareRowsToMap(rows = []) {
+  return rows
+    .filter((row) => row.role && row.id)
+    .reduce((acc, row) => {
+      acc[row.role.trim()] = row.id.trim()
+      return acc
+    }, {})
+}
+
+function validateProtocolFrontmatter(frontmatter) {
+  const schema = schemaLoader.schemaBundle?.value?.recordSchemas?.protocol
+  if (!schema) return { ok: true, issues: [] }
+  try {
+    const zodSchema = buildZodSchema(schema, { schemas: schemaLoader.schemaBundle.value.recordSchemas })
+    const payload = {
+      ...(frontmatter.metadata || {}),
+      ...(frontmatter.data || {}),
+      ...(frontmatter.data?.operations || {})
+    }
+    const result = zodSchema.safeParse(payload)
+    if (result.success) return { ok: true, issues: [] }
+    const issues = result.error.issues.map((issue) => ({
+      path: issue.path?.length ? issue.path.join('.') : 'root',
+      message: issue.message
+    }))
+    return { ok: false, issues }
+  } catch (err) {
+    return { ok: false, issues: [{ path: 'schema', message: err?.message || 'Schema build failed' }] }
+  }
+}
+
 function handleGraphCreate(payload) {
   if (!payload?.recordType) return
   const metadataPatch = {}
@@ -544,6 +1086,20 @@ function openProtocolEditorWindow(path) {
   const bundle = schemaLoader.selectedBundle?.value
   if (bundle) {
     url.searchParams.set('protocolEditorBundle', bundle)
+  }
+  window.open(url.toString(), '_blank', 'noopener,noreferrer')
+}
+
+function openRunEditorWindow(path) {
+  if (!path) return
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('runEditorPath')
+  url.searchParams.delete('runEditorBundle')
+  url.searchParams.set('runEditorPath', path)
+  const bundle = schemaLoader.selectedBundle?.value
+  if (bundle) {
+    url.searchParams.set('runEditorBundle', bundle)
   }
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
@@ -733,6 +1289,136 @@ function handleCreateProtocol() {
       </div>
     </div>
   </div>
+  <div v-else-if="isStandaloneRunEditor" class="protocol-editor-standalone">
+    <header class="protocol-editor-standalone__header">
+      <div>
+        <p class="app-kicker">Run Editor</p>
+        <h1>Run</h1>
+        <p class="app-subtitle">{{ runEditorTarget?.path }}</p>
+      </div>
+      <div class="protocol-editor-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button
+          class="primary"
+          type="button"
+          :disabled="runEditorSaving || !runEditorState.run"
+          @click="handleRunEditorSave"
+        >
+          {{ runEditorSaving ? 'Saving…' : 'Save run' }}
+        </button>
+        <button class="secondary" type="button" @click="clearRunEditorTarget">Return to workspace</button>
+      </div>
+    </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <div class="protocol-editor-standalone__body">
+      <div v-if="!isReady" class="protocol-editor-standalone__message">
+        <p>Connect your repository to edit this run.</p>
+        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+      </div>
+      <div v-else-if="runEditorBundleMismatch" class="protocol-editor-standalone__message">
+        <p>Loading schema bundle {{ runEditorTarget?.bundle }}…</p>
+      </div>
+      <div v-else-if="!runEditorTarget?.path" class="protocol-editor-standalone__message">
+        <p>Missing run path.</p>
+      </div>
+      <div v-else class="protocol-editor-standalone__editor">
+        <p v-if="runEditorState.error" class="status status-error">{{ runEditorState.error }}</p>
+        <p v-else-if="runEditorState.status" class="status status-ok">{{ runEditorState.status }}</p>
+        <RunEditorShell
+          v-if="runEditorState.run"
+          ref="runEditorRef"
+          :run="runEditorState.run"
+          :layout="runEditorState.layout"
+          :material-library="runEditorState.materialLibrary"
+          :validate-record="recordValidator.validate"
+        />
+        <p v-else class="protocol-editor-standalone__message">Loading run…</p>
+      </div>
+    </div>
+  </div>
+  <div v-else-if="isStandaloneExplorer" class="explorer-standalone">
+    <header class="protocol-editor-standalone__header">
+      <div>
+        <p class="app-kicker">Lab Event Graph Explorer</p>
+        <h1>Explorer</h1>
+        <p class="app-subtitle">{{ explorerTarget?.path }}</p>
+      </div>
+      <div class="protocol-editor-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button class="secondary" type="button" @click="clearExplorerTarget">Return to workspace</button>
+      </div>
+    </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <div class="protocol-editor-standalone__body">
+      <div v-if="!isReady" class="protocol-editor-standalone__message">
+        <p>Connect your repository to open the explorer.</p>
+        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+      </div>
+      <div v-else-if="explorerBundleMismatch" class="protocol-editor-standalone__message">
+        <p>Loading schema bundle {{ explorerTarget?.bundle }}…</p>
+      </div>
+      <div v-else-if="!explorerTarget?.path" class="protocol-editor-standalone__message">
+        <p>Missing run path.</p>
+      </div>
+      <div v-else class="protocol-editor-standalone__editor">
+        <p v-if="explorerState.status" class="status status-muted">{{ explorerState.status }}</p>
+        <p v-if="explorerState.error" class="status status-error">{{ explorerState.error }}</p>
+        <ExplorerShell
+          v-if="explorerState.layoutIndex && explorerState.labwareId"
+          :events="explorerState.events"
+          :layout-index="explorerState.layoutIndex || fallbackLayout"
+          :labware-id="explorerState.labwareId"
+        />
+        <div class="explorer-form">
+          <h4>Append PlateEvent</h4>
+          <p class="muted">Quick transfer into the selected run.</p>
+          <div class="modal-form">
+            <label>
+              Activity
+              <select v-model="explorerForm.activityId">
+                <option value="" disabled>Select activity…</option>
+                <option v-for="act in explorerState.activities" :key="act.id" :value="act.id">
+                  {{ act.label || act.id || act.kind }}
+                </option>
+              </select>
+            </label>
+            <label>
+              Source well
+              <input v-model="explorerForm.sourceWell" type="text" placeholder="SRC1 or A01" />
+            </label>
+            <label>
+              Target well
+              <input v-model="explorerForm.targetWell" type="text" placeholder="A01" />
+            </label>
+            <label>
+              Volume
+              <input v-model="explorerForm.volume" type="text" placeholder="50 uL" />
+            </label>
+            <label>
+              Material ID (optional)
+              <input v-model="explorerForm.materialId" type="text" placeholder="material:drug" />
+            </label>
+          </div>
+          <div class="explorer-form__actions">
+            <button class="ghost-button" type="button" @click="resetExplorerForm">Clear</button>
+            <button class="primary" type="button" :disabled="!canAppendExplorerEvent" @click="appendExplorerEvent">
+              Append event
+            </button>
+          </div>
+          <p v-if="explorerForm.status" class="status status-muted">{{ explorerForm.status }}</p>
+          <p v-if="explorerForm.error" class="status status-error">{{ explorerForm.error }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
   <div v-else class="app-shell">
     <header class="app-header">
       <div class="header-main">
@@ -804,6 +1490,30 @@ function handleCreateProtocol() {
               >
                 + Add protocol
               </button>
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="!isReady"
+                @click="openPromotionModal"
+              >
+                Promote to protocol
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="!isReady"
+                @click="showExplorerModal = true"
+              >
+                Open Explorer
+              </button>
+              <button
+                class="ghost-button"
+                type="button"
+                :disabled="!isReady"
+                @click="showRunEditorModal = true"
+              >
+                Open Run Editor
+              </button>
             </div>
           </div>
           <GraphTreePanel
@@ -856,6 +1566,94 @@ function handleCreateProtocol() {
           @click="handleConnect"
         >
           {{ repo.isRequesting ? 'Awaiting permission…' : 'Select folder' }}
+        </button>
+      </template>
+    </BaseModal>
+    <BaseModal v-if="showPromotionModal" title="Promote run to protocol" @close="showPromotionModal = false">
+      <template #body>
+        <p>Convert a run’s PlateEvents into a protocol template.</p>
+        <div class="modal-form">
+          <label>
+            Run path
+            <input v-model="promotionForm.runPath" type="text" placeholder="08_RUNS/RUN-0001.md" />
+          </label>
+          <label>
+            Protocol title
+            <input v-model="promotionForm.title" type="text" placeholder="Promoted protocol" />
+          </label>
+          <label>
+            Family
+            <input v-model="promotionForm.family" type="text" placeholder="protocol family" />
+          </label>
+          <label>
+            Version
+            <input v-model="promotionForm.version" type="text" placeholder="0.1.0" />
+          </label>
+          <label>
+            Volume param (optional)
+            <input v-model="promotionForm.volumeParam" type="text" placeholder="transfer_volume" />
+          </label>
+          <div class="labware-rows">
+            <label>Labware role bindings</label>
+            <div
+              v-for="(row, idx) in promotionForm.labwareRows"
+              :key="idx"
+              class="labware-row"
+            >
+              <input v-model="row.role" type="text" placeholder="source_role" />
+              <input v-model="row.id" type="text" placeholder="labware:@id" />
+              <button class="ghost-button tiny" type="button" @click="promotionForm.labwareRows.splice(idx, 1)">
+                Remove
+              </button>
+            </div>
+            <button class="ghost-button" type="button" @click="promotionForm.labwareRows.push({ role: '', id: '' })">
+              + Add mapping
+            </button>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <button class="ghost-button" type="button" @click="showPromotionModal = false">Cancel</button>
+        <button class="primary" type="button" :disabled="!promotionForm.runPath" @click="handlePromoteRun">
+          Promote
+        </button>
+      </template>
+    </BaseModal>
+    <BaseModal v-if="showExplorerModal" title="Open Lab Event Graph Explorer" @close="showExplorerModal = false">
+      <template #body>
+        <p>Select a Run file to explore PlateEvents.</p>
+        <div class="modal-form">
+          <label>
+            Run path
+            <input v-model="explorerFilePath" type="text" placeholder="08_RUNS/RUN-0001.md" />
+          </label>
+          <label>
+            Labware @id (optional)
+            <input v-model="explorerLabwareId" type="text" placeholder="plate/PLT-0001" />
+          </label>
+        </div>
+      </template>
+      <template #footer>
+        <button class="ghost-button" type="button" @click="showExplorerModal = false">Cancel</button>
+        <button class="primary" type="button" :disabled="!explorerFilePath" @click="handleExplorerOpen">
+          Open in Explorer
+        </button>
+      </template>
+    </BaseModal>
+    <BaseModal v-if="showRunEditorModal" title="Open Run Editor" @close="showRunEditorModal = false">
+      <template #body>
+        <p>Select a Run file to edit activities and PlateEvents.</p>
+        <div class="modal-form">
+          <label>
+            Run path
+            <input v-model="runEditorFilePath" type="text" placeholder="08_RUNS/RUN-0001.md" />
+          </label>
+        </div>
+      </template>
+      <template #footer>
+        <button class="ghost-button" type="button" @click="showRunEditorModal = false">Cancel</button>
+        <button class="primary" type="button" :disabled="!runEditorFilePath" @click="handleRunEditorOpen">
+          Open Run Editor
         </button>
       </template>
     </BaseModal>
@@ -1193,5 +1991,40 @@ code {
   background: #fefce8;
   color: #713f12;
   font-size: 0.9rem;
+}
+
+.explorer-form {
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.explorer-form__actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.labware-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.labware-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.labware-row .tiny {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
 }
 </style>

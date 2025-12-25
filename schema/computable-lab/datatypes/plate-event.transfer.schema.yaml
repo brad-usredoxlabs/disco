@@ -64,6 +64,25 @@ properties:
           additionalProperties: false
     additionalProperties: false
 
+  mapping:
+    type: array
+    description: "Optional explicit source->target mapping when different from target.wells keys."
+    items:
+      type: object
+      required:
+        - source_well
+        - target_well
+      additionalProperties: false
+      properties:
+        source_well:
+          type: string
+        target_well:
+          type: string
+        role:
+          type: string
+        volume:
+          type: string
+
   volume:
     type: string
     description: "Volume to transfer, e.g. '5 uL'."

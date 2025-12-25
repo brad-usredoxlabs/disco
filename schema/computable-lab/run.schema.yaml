@@ -419,4 +419,10 @@ definitions:
         items:
           $ref: "#/definitions/file_ref"
 
+      # Canonical events emitted by this operation (for replay/lineage)
+      plate_events:
+        type: array
+        items:
+          $ref: "#/definitions/plate_event"
+
     additionalProperties: false

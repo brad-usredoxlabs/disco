@@ -1,0 +1,59 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.harvest.schema.yaml"
+
+title: PlateEventHarvestDetails
+type: object
+description: "Harvest/sample operation edge: captures inputs (wells) and produced sample refs."
+
+required:
+  - type
+  - inputs
+  - outputs
+
+properties:
+  type:
+    type: string
+    const: "harvest"
+
+  inputs:
+    type: object
+    description: "Source of the harvest (labware + wells)."
+    required: ["labware"]
+    properties:
+      labware:
+        $ref: "./labware-ref.schema.yaml"
+      wells:
+        type: array
+        description: "Optional subset of wells; omit for all."
+        items:
+          type: string
+    additionalProperties: false
+
+  outputs:
+    type: array
+    minItems: 1
+    description: "Produced samples (lineage edges)."
+    items:
+      type: object
+      required: ["@id"]
+      additionalProperties: false
+      properties:
+        "@id":
+          type: string
+          description: "Sample identifier (record or local ref)."
+        label:
+          type: string
+        record_ref:
+          type: string
+          description: "Optional reference to a Sample record."
+        material:
+          $ref: "./material-ref.schema.yaml"
+        volume:
+          type: string
+        notes:
+          type: string
+
+  notes:
+    type: string
+
+additionalProperties: false

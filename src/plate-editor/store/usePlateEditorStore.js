@@ -147,7 +147,7 @@ export function usePlateEditorStore() {
 
   function applyMaterialUse(payload = {}) {
     if (!state.record) return
-    const { material, role, amount, wells, label, controlIntents } = payload
+    const { material, role, amount, wells, label, controlIntents, labware } = payload
     const targets = Array.isArray(wells) && wells.length ? wells : [...state.selection.wells]
     if (!targets.length || !material || !role) return
     const eventPayload = buildTransferEvent({
@@ -156,6 +156,7 @@ export function usePlateEditorStore() {
       amount,
       wells: targets,
       label,
+      labwareRef: labware,
       controlIntents
     })
     if (eventPayload) {
@@ -165,13 +166,14 @@ export function usePlateEditorStore() {
 
   function removeMaterialUse(payload = {}) {
     if (!state.record) return
-    const { material, role, wells } = payload
+    const { material, role, wells, labware } = payload
     const targets = Array.isArray(wells) && wells.length ? wells : [...state.selection.wells]
     if (!targets.length || !material) return
     const eventPayload = buildWashEvent({
       material,
       role,
-      wells: targets
+      wells: targets,
+      labwareRef: labware
     })
     if (eventPayload) {
       appendEvent(eventPayload)
@@ -244,7 +246,7 @@ export function usePlateEditorStore() {
 
   function buildTransferEvent(options = {}) {
     if (!state.record) return null
-    const labwareRef = resolvePrimaryLabwareRef(state.record)
+    const labwareRef = options.labwareRef || resolvePrimaryLabwareRef(state.record)
     const materialId = options.material
     const role = options.role
     const selectedWells = Array.isArray(options.wells) ? options.wells : []
@@ -301,7 +303,7 @@ export function usePlateEditorStore() {
 
   function buildWashEvent(options = {}) {
     if (!state.record) return null
-    const labwareRef = resolvePrimaryLabwareRef(state.record)
+    const labwareRef = options.labwareRef || resolvePrimaryLabwareRef(state.record)
     return {
       event_type: 'wash',
       timestamp: new Date().toISOString(),

@@ -6,6 +6,10 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  selectedId: {
+    type: String,
+    default: ''
+  },
   role: {
     type: String,
     default: ''
@@ -305,6 +309,7 @@ function buildCreationTags() {
         v-for="material in filteredMaterials"
         :key="material.id"
         class="result-row"
+        :class="{ 'is-selected': material.id === selectedId }"
         role="option"
         @click="handleSelect(material)"
       >
@@ -403,6 +408,12 @@ input {
 
 .result-row:hover {
   border-color: #2563eb;
+}
+
+.result-row.is-selected {
+  background: #e0f2fe;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .result-main {

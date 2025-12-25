@@ -1,0 +1,64 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "library-layout.schema.yaml"
+title: LibraryLayout
+type: object
+description: "Optional library layout describing stock composition per well (not inventory)."
+
+required:
+  - kind
+  - layout
+  - wells
+
+properties:
+  kind:
+    type: string
+    const: "library_layout"
+    description: "Record discriminator for library layouts."
+
+  label:
+    type: string
+    description: "Human-readable label."
+
+  layout:
+    type: object
+    description: "Labware layout definition."
+    required: ["plate_type"]
+    properties:
+      plate_type:
+        type: string
+        description: "Plate type/kind (resolves via layoutResolver)."
+      well_keying:
+        type: string
+        description: "Well keying scheme (e.g., A01, R1C1, T01)."
+      dimensions:
+        type: object
+        properties:
+          rows:
+            type: integer
+            minimum: 1
+          columns:
+            type: integer
+            minimum: 1
+        additionalProperties: false
+    additionalProperties: false
+
+  wells:
+    type: object
+    description: "Map of well id -> material + stock_concentration (derived only, not inventory)."
+    additionalProperties:
+      type: object
+      required: ["material"]
+      additionalProperties: false
+      properties:
+        material:
+          $ref: "./material-ref.schema.yaml"
+        stock_concentration:
+          type: string
+          description: "Optional stock concentration (e.g., '10 mM')."
+        volume:
+          type: string
+          description: "Optional volume context (non-inventory, for simulation)."
+        notes:
+          type: string
+
+additionalProperties: false

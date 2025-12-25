@@ -14,6 +14,8 @@ recordSchemas:
   - datatypes/plate-event.read.schema.yaml
   - datatypes/plate-event.wash.schema.yaml
   - datatypes/plate-event.other.schema.yaml
+  - datatypes/plate-event.harvest.schema.yaml
+  - datatypes/plate-event.sample-operation.schema.yaml
   - datatypes/protocol-event.schema.yaml
   - datatypes/protocol-event.transfer.schema.yaml
   - datatypes/protocol-event.incubate.schema.yaml
@@ -22,6 +24,7 @@ recordSchemas:
   - datatypes/protocol-event.other.schema.yaml
   - recipe.schema.yaml
   - protocol.schema.yaml
+  - library-layout.schema.yaml
   - project.schema.yaml
   - experiment.schema.yaml
   - run.schema.yaml

@@ -9,7 +9,6 @@ required:
   - type
   - source_role
   - target_role
-  - mapping
   - volume
 
 properties:
@@ -46,6 +45,26 @@ properties:
           type: string
           description: "Optional description of how this mapping was generated."
 
+  mapping_spec:
+    type: object
+    description: >
+      Declarative mapping spec (identity/fill/broadcast) used when explicit mapping
+      is not provided. Editors can resolve this into a concrete mapping.
+    properties:
+      mode:
+        type: string
+        enum: ["fill", "identity", "broadcast"]
+        description: "fill = source[i] -> target[i]; identity = source[i] -> target[i] with equal counts; broadcast = source[0] -> all targets."
+      source_wells:
+        type: array
+        items:
+          type: string
+      target_wells:
+        type: array
+        items:
+          type: string
+    additionalProperties: false
+
   volume:
     type: string
     description: "Literal or parameterized volume (e.g., '100 uL' or '${seed_volume}')."
@@ -70,5 +89,10 @@ properties:
 
   notes:
     type: string
+
+allOf:
+  - oneOf:
+      - required: ["mapping"]
+      - required: ["mapping_spec"]
 
 additionalProperties: false

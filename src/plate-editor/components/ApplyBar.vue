@@ -219,6 +219,7 @@ function buildControlIntents() {
       <label>Material</label>
       <MaterialPicker
         :materials="materials"
+        :selected-id="selectedMaterial?.id"
         :role="selectedRole"
         :recent-ids="recentIds"
         :favorite-ids="favoriteIds"
