@@ -59,6 +59,10 @@ export function resolveLayoutFromRole(role = {}, options = {}) {
 }
 
 function normalizeLayout(layout = {}, fallbackKind = 'plate96') {
+  const hasExplicitDimensions = layout && typeof layout === 'object' && layout.dimensions
+  if (hasExplicitDimensions) {
+    return normalizeLayoutShape(layout, fallbackKind)
+  }
   const fromLibrary = resolveLabwareLayout(layout)
   if (fromLibrary) {
     return normalizeLayoutShape(fromLibrary, fallbackKind)
@@ -73,17 +77,29 @@ function normalizeLayout(layout = {}, fallbackKind = 'plate96') {
 
 function normalizeLayoutShape(layout = {}, fallbackKind = 'plate96') {
   const kind = layout.kind || fallbackKind
-  const wellKeying = layout.wellKeying || presetForPlateType(kind)?.wellKeying || 'A01'
+  const presetKeying = presetForPlateType(kind)?.wellKeying
+  let wellKeying = layout.wellKeying || presetKeying || 'A01'
+
+  let rows = Number(layout.dimensions?.rows)
+  let columns = Number(layout.dimensions?.columns)
+
+  if (kind.includes('reservoir')) {
+    // Force reservoirs to render vertically
+    if (!wellKeying || wellKeying === 'A01') {
+      wellKeying = 'R1C1'
+    }
+    if (Number.isFinite(rows) && Number.isFinite(columns) && rows === 1 && columns > 1) {
+      rows = columns
+      columns = 1
+    }
+  }
+
   const normalized = {
     kind,
     wellKeying
   }
-  if (layout.dimensions && typeof layout.dimensions === 'object') {
-    const rows = Number(layout.dimensions.rows)
-    const columns = Number(layout.dimensions.columns)
-    if (Number.isFinite(rows) && rows > 0 && Number.isFinite(columns) && columns > 0) {
-      normalized.dimensions = { rows, columns }
-    }
+  if (Number.isFinite(rows) && rows > 0 && Number.isFinite(columns) && columns > 0) {
+    normalized.dimensions = { rows, columns }
   }
   return normalized
 }

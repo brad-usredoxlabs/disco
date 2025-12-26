@@ -56,46 +56,24 @@
           <div>
             <p class="grid-title">Labware</p>
             <p class="grid-subtitle">Select wells to apply events; timeline cursor filters state.</p>
-            <p v-if="Object.keys(labwareBindings).length" class="grid-subtitle bindings-row">
-              <span class="binding-chip" v-for="(val, role) in labwareBindings" :key="role">{{ role }} → {{ val }}</span>
-            </p>
           </div>
           <div class="grid-actions">
             <button type="button" @click="resetSelection">Clear selection</button>
-            <label v-if="labwareOptions.length" class="labware-picker">
-              Active labware
-              <select v-model="activeLabwareIdLocal">
-                <option v-for="id in labwareOptions" :key="id" :value="id">{{ id }}</option>
-              </select>
-            </label>
           </div>
         </div>
         <div v-if="layoutIndex" class="grid-panel__body">
-          <div class="labware-bindings">
-            <p class="bindings-label">Labware bindings (role → @id)</p>
-            <div class="binding-row" v-for="(val, role) in labwareBindings" :key="role">
-              <input :value="role" type="text" disabled />
-              <input
-                v-model="bindingValueEdits[role]"
-                type="text"
-                @change="updateBinding(role, bindingValueEdits[role])"
-              />
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  :checked="depletionMap[role] ?? guessDepletionDefault(val)"
-                  @change="updateDepletion(val, $event.target.checked)"
-                />
-                <span>Depleting</span>
-              </label>
-              <button class="ghost-button tiny" type="button" @click="removeBinding(role)">Remove</button>
-            </div>
-            <div class="binding-row">
-              <input v-model="newBindingRole" type="text" placeholder="role" />
-              <input v-model="newBindingId" type="text" placeholder="labware:@id" />
-              <button class="ghost-button tiny" type="button" @click="addBinding()">Add</button>
-            </div>
-          </div>
+          <SourceLabwarePalette
+            :sources="sourcePalette"
+            :active-source-id="sourceLabwareId"
+            :destination="store.state.destinationPlate"
+            :selected-destination-id="selectedDestinationId"
+            :statuses="store.runDerivedStatus"
+            @select="setActiveSource"
+            @remove="archivePaletteEntryById"
+            @open-template="templateForm.open = true"
+            @open-run="runSourceForm.open = true"
+            @change-destination-type="handleDestinationTypeChange"
+          />
 
           <!-- Timeline Scrubber (nested below bindings) -->
           <div class="scrubber-row-nested">
@@ -115,20 +93,24 @@
           </div>
 
           <div class="dual-grids">
+            <div v-if="!activeSourceEntry" class="source-placeholder">
+              <p class="source-placeholder__text">Add source labware using the buttons above</p>
+            </div>
             <LabwareGrid
-              :layout-index="layoutIndex"
+              v-else
+              :layout-index="sourceLayoutIndex"
               :wells="sourceDerivedWells"
               :selection="sourceSelection.selection"
-              title="Source selection"
-              :subtitle="`Use shift/cmd to multi-select · ${sourceSelection.selection.length} selected`"
+              :title="sourceGridTitle"
+              :subtitle="sourceGridSubtitle"
               @well-click="handleSourceGridInteraction"
             />
             <LabwareGrid
-              :layout-index="layoutIndex"
+              :layout-index="destinationLayoutIndex"
               :wells="targetDerivedWells"
               :selection="targetSelection.selection"
-              title="Target selection"
-              :subtitle="`Use shift/cmd to multi-select · ${targetSelection.selection.length} selected`"
+              :title="destinationGridTitle"
+              :subtitle="destinationGridSubtitle"
               @well-click="handleTargetGridInteraction"
             />
           </div>
@@ -170,13 +152,13 @@
           <ul class="event-list">
             <li
               v-for="evt in activeEvents"
-              :key="evt.id || evt.timestamp"
-              :class="{ 'is-active': evt.timestamp === cursor }"
+              :key="evt.id || getEventTimestamp(evt)"
+              :class="{ 'is-active': getEventTimestamp(evt) === cursor }"
             >
-              <button type="button" class="event-row" @click="setCursor(evt.timestamp)">
+              <button type="button" class="event-row" @click="setCursor(getEventTimestamp(evt))">
                 <span class="event-type">{{ evt.event_type || 'event' }}</span>
-                <span class="event-ts">{{ formatTs(evt.timestamp) }}</span>
-                <span class="event-label" v-if="evt.details?.material?.label">{{ evt.details.material.label }}</span>
+                <span class="event-ts">{{ formatTs(getEventTimestamp(evt), evt.t_offset) }}</span>
+                <span class="event-label" v-if="evt.details?.material_id">{{ evt.details.material_id }}</span>
               </button>
             </li>
           </ul>
@@ -184,23 +166,11 @@
       </div>
 
       <!-- Tools Section -->
-      <div class="run-editor-shell__actions run-editor-shell__panel">
-        <div class="apply-panel">
-          <div class="labware-selectors" v-if="bindingRoles.length">
-            <label>
-              Source labware role
-              <select v-model="sourceLabwareRole">
-                <option value="reservoir">reservoir</option>
-                <option v-for="role in bindingRoles" :key="`src-${role}`" :value="role">{{ role }}</option>
-              </select>
-            </label>
-            <label>
-              Target labware role
-              <select v-model="targetLabwareRole">
-                <option v-for="role in bindingRoles" :key="`tgt-${role}`" :value="role">{{ role }}</option>
-              </select>
-            </label>
-          </div>
+      <div class="run-editor-shell__actions">
+        <div class="apply-panel run-editor-shell__panel">
+          <p class="selection-hint" :class="{ 'is-warning': sourceSelectionEmpty }">
+            {{ sourceSelectionEmpty ? 'No source wells selected — mapping will broadcast from first source well.' : 'Source wells selected.' }}
+          </p>
           <ApplyBar
             :roles="roleOptions"
             :materials="availableMaterials"
@@ -208,49 +178,76 @@
             :recent-ids="[]"
             :favorite-ids="[]"
             :features="[]"
+            :prefill-selection="applyBarPrefill"
+            ontology-vocab="materials.lab"
             @apply="handleApply"
             @remove="handleRemove"
+            @request-import="handleMaterialImportRequest"
           />
         </div>
-        <TransferStepSidecar
-          mode="run"
-          :focus-side="transferFocusSide"
-          :source-selection="sourceSelection.selection"
-          :target-selection="targetSelection.selection"
-          :source-role="sourceLabwareRole || bindingRoles[0] || 'reservoir'"
-          :target-role="targetLabwareRole || bindingRoles[0] || 'plate'"
-          :source-role-options="bindingRoles"
-          :target-role-options="bindingRoles"
-          @update:focus-side="(side) => (transferFocusSide = side)"
-          @update:source-selection="(wells) => sourceSelection.setSelection(wells)"
-          @update:target-selection="(wells) => targetSelection.setSelection(wells)"
-          @update:source-role="(role) => (sourceLabwareRole = role)"
-          @update:target-role="(role) => (targetLabwareRole = role)"
-          @create-step="handleCreateTransferStep"
-        />
+        <div class="transfer-panel">
+          <TransferStepSidecar
+            mode="run"
+            :focus-side="transferFocusSide"
+            :source-selection="sourceSelection.selection"
+            :target-selection="targetSelection.selection"
+            source-role="source"
+            target-role="destination"
+            :source-role-options="['source']"
+            :target-role-options="['destination']"
+            @update:focus-side="(side) => (transferFocusSide = side)"
+            @update:source-selection="(wells) => sourceSelection.setSelection(wells)"
+            @update:target-selection="(wells) => targetSelection.setSelection(wells)"
+            @create-step="handleCreateTransferStep"
+          />
+        </div>
       </div>
     </section>
-    <WellDetailsDrawer
-      :open="drawerState.open"
-      :well-id="drawerState.wellId"
-      :labware-id="drawerState.labwareId"
-      :well-state="drawerState.wellState"
-      :lineage="drawerState.lineage"
-      @close="closeWellDrawer"
-    />
-  </div>
+<WellDetailsDrawer
+  :open="drawerState.open"
+  :well-id="drawerState.wellId"
+  :labware-id="drawerState.labwareId"
+  :well-state="drawerState.wellState"
+  :lineage="drawerState.lineage"
+  @close="closeWellDrawer"
+/>
+<AddTemplateLabwareModal :open="templateForm.open" @confirm="handleAddTemplate" @cancel="templateForm.open = false" />
+<AddRunDerivedLabwareModal
+  :open="runSourceForm.open"
+  :runs="runsList"
+  @confirm="handleAddRunSource"
+  @cancel="runSourceForm.open = false"
+/>
+<AddMaterialToVocabModal
+  :open="materialImportModal.open"
+  :term="materialImportModal.term"
+  :saving="materialImportModal.saving"
+  :error="materialImportModal.error"
+  @cancel="closeMaterialImportModal"
+  @save="handleMaterialImportSave"
+/>
+</div>
 </template>
 
 <script setup>
 import { computed, watch, ref, reactive } from 'vue'
+import YAML from 'yaml'
 import TimelineScrubber from '../explorer/TimelineScrubber.vue'
 import ApplyBar from '../plate-editor/components/ApplyBar.vue'
 import LabwareGrid from '../plate-editor/components/LabwareGrid.vue'
 import TransferStepSidecar from '../plate-editor/components/TransferStepSidecar.vue'
 import WellDetailsDrawer from '../explorer/WellDetailsDrawer.vue'
+import SourceLabwarePalette from './components/SourceLabwarePalette.vue'
+import AddTemplateLabwareModal from './components/AddTemplateLabwareModal.vue'
+import AddRunDerivedLabwareModal from './components/AddRunDerivedLabwareModal.vue'
+import AddMaterialToVocabModal from './components/AddMaterialToVocabModal.vue'
 import { useGridSelection } from '../plate-editor/composables/useGridSelection'
 import { useRunEditorStore } from './useRunEditorStore'
 import { replayPlateEvents, buildLineageGraph } from '../event-graph/replay'
+import { resolveLayoutIndex } from '../plate-editor/utils/layoutResolver'
+import { templateLayoutForKind } from './labwareTemplates'
+import { useRepoConnection } from '../fs/repoConnection'
+import { ensureMaterialId } from '../plate-editor/utils/materialId'
 
 const props = defineProps({
   run: {
@@ -265,6 +262,14 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  loadRunById: {
+    type: Function,
+    default: null
+  },
+  runs: {
+    type: Array,
+    default: () => []
+  },
   validateRecord: {
     type: Function,
     default: null
@@ -272,13 +277,17 @@ const props = defineProps({
 })
 
 const store = useRunEditorStore()
-const sourceLabwareRole = ref('')
-const targetLabwareRole = ref('')
+const repo = useRepoConnection()
+const materialLibraryLocal = ref([])
+const applyBarPrefill = ref(null)
+const materialImportModal = reactive({
+  open: false,
+  term: null,
+  saving: false,
+  error: ''
+})
 const newActivityLabel = ref('')
 const newActivityKind = ref('protocol_segment')
-const newBindingRole = ref('')
-const newBindingId = ref('')
-const bindingValueEdits = ref({})
 const eventsExpanded = ref(false)
 const drawerState = reactive({
   open: false,
@@ -287,16 +296,40 @@ const drawerState = reactive({
   wellState: null,
   lineage: { nodes: [], edges: [] }
 })
+const templateForm = reactive({
+  open: false,
+  label: '',
+  kind: 'reservoir-1'
+})
+const runSourceForm = reactive({
+  open: false,
+  runId: '',
+  labwareId: '',
+  label: ''
+})
 
 function toggleEventsExpanded() {
   eventsExpanded.value = !eventsExpanded.value
+}
+function eventTimeMs(evt = {}) {
+  const ts = evt.timestamp_actual || evt.timestamp
+  const parsed = Date.parse(ts || '')
+  if (Number.isFinite(parsed)) return parsed
+  const offset = (evt.t_offset || '').match(/^P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i)
+  if (offset) {
+    const hours = Number(offset[1] || 0)
+    const minutes = Number(offset[2] || 0)
+    const seconds = Number(offset[3] || 0)
+    return (hours * 3600 + minutes * 60 + seconds) * 1000
+  }
+  return 0
 }
 function sortEventsByTimestamp(events = []) {
   return (events || [])
     .map((evt, index) => ({ evt, index }))
     .sort((a, b) => {
-      const tsA = Date.parse(a.evt?.timestamp || '')
-      const tsB = Date.parse(b.evt?.timestamp || '')
+      const tsA = eventTimeMs(a.evt)
+      const tsB = eventTimeMs(b.evt)
       const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
       if (diff !== 0) return diff
       return a.index - b.index
@@ -305,13 +338,19 @@ function sortEventsByTimestamp(events = []) {
 }
 
 watch(
-  () => ({
-    run: props.run,
-    layout: props.layout,
-    materialLibrary: props.materialLibrary
-  }),
-  (payload) => {
-    store.initialize(payload)
+  () => [props.run, props.layout, props.materialLibrary, props.loadRunById],
+  ([run, layout, materialLibrary, loadRunById]) => {
+    store.initialize({ run, layout, materialLibrary, loadRunById })
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.materialLibrary,
+  (list = []) => {
+    const normalized = normalizeMaterialList(list)
+    materialLibraryLocal.value = normalized
+    store.setMaterialLibrary(normalized)
   },
   { immediate: true, deep: true }
 )
@@ -344,18 +383,10 @@ const cursor = computed(() => store.state.cursor)
 
 const layoutIndex = computed(() => store.state.layoutIndex)
 const sourceLabwareId = computed(() => {
-  const roleId = store.resolveLabwareIdForRole(sourceLabwareRole.value)
-  if (roleId) return roleId
-  // Fallback: resolve the same way events do
-  const ref = store.resolveLabwareRef(sourceLabwareRole.value || 'plate')
-  return ref?.['@id'] || ''
+  return store.state.activeSourceId || ''
 })
 const targetLabwareId = computed(() => {
-  const roleId = store.resolveLabwareIdForRole(targetLabwareRole.value)
-  if (roleId) return roleId
-  // Fallback: resolve the same way events do
-  const ref = store.resolveLabwareRef(targetLabwareRole.value || 'plate')
-  return ref?.['@id'] || ''
+  return store.state.destinationPlate?.id || ''
 })
 const sourceDerivedWells = computed(() => {
   // Keep source at Now; hook for future cursor sync via state flag
@@ -363,57 +394,29 @@ const sourceDerivedWells = computed(() => {
   return store.getDerivedWellsAtNow(sourceLabwareId.value)
 })
 const targetDerivedWells = computed(() => store.getDerivedWells(targetLabwareId.value))
-const activeLabwareId = computed(() => store.state.activeLabwareId || '')
+const activeLabwareId = computed(() => store.state.destinationPlate?.id || '')
 const activeSelection = computed(() =>
   transferFocusSide.value === 'source' ? sourceSelection.selection.value : targetSelection.selection.value
 )
 const selectionCount = computed(() => activeSelection.value.length)
+const sourceSelectionEmpty = computed(() => !sourceSelection.selection.value.length)
 const canUndo = computed(() => store.state.history.length > 0)
 const canRedo = computed(() => store.state.future.length > 0)
-const labwareBindings = computed(() => store.state.run?.data?.labware_bindings || {})
-const depletionMap = computed(() => store.state.run?.data?.labware_depletion || {})
-const bindingRoles = computed(() => Object.keys(labwareBindings.value || {}))
-const availableMaterials = computed(() => props.materialLibrary || [])
-const roleOptions = computed(() => {
-  const roles = bindingRoles.value.map((role) => ({ role, label: role }))
-  if (!roles.length) {
-    roles.push({ role: 'treatment', label: 'treatment' })
-  }
-  return roles
-})
-const sourceSelection = useGridSelection(layoutIndex)
-const targetSelection = useGridSelection(layoutIndex)
+const availableMaterials = computed(() => materialLibraryLocal.value || [])
+const roleOptions = ['component', 'buffer', 'control', 'other']
+const sourcePalette = computed(() => (store.state.sourcePalette || []).filter((entry) => !entry.archived))
+const activeSourceEntry = computed(() => store.getActiveSourceEntry())
+const sourceLayoutIndex = computed(() => activeSourceEntry.value?.layoutIndex || layoutIndex.value)
+const destinationLayoutIndex = computed(() => store.state.destinationPlate?.layoutIndex || layoutIndex.value)
+const sourceSelection = useGridSelection(sourceLayoutIndex)
+const targetSelection = useGridSelection(destinationLayoutIndex)
 const transferFocusSide = ref('target')
-const labwareOptions = computed(() =>
-  store.availableLabwareIds(activeEvents.value).length
-    ? store.availableLabwareIds(activeEvents.value)
-    : [activeLabwareId.value].filter(Boolean)
-)
 const singleSelectedWell = computed(() => (targetSelection.selection.value.length === 1 ? targetSelection.selection.value[0] : ''))
-const activeLabwareIdLocal = computed({
-  get() {
-    return activeLabwareId.value
-  },
-  set(value) {
-    store.setActiveLabwareId(value)
-  }
-})
 const isInspecting = computed(() => store.isInspecting())
-
-watch(
-  () => targetLabwareRole.value,
-  (role) => {
-    const bound = store.resolveLabwareIdForRole(role)
-    if (bound) {
-      store.setActiveLabwareId(bound)
-    }
-  },
-  { immediate: true }
-)
 
 const mappingPreview = computed(() => {
   const latest =
-    activeEvents.value.find((evt) => evt && evt.timestamp === cursor.value) ||
+    activeEvents.value.find((evt) => evt && getEventTimestamp(evt) === cursor.value) ||
     activeEvents.value[activeEvents.value.length - 1]
   if (!latest?.details?.mapping?.length) return []
   return latest.details.mapping.slice(0, 10)
@@ -424,7 +427,7 @@ const activitySummaries = computed(() =>
     id: act.id,
     label: act.label || act.id,
     count: Array.isArray(act.plate_events) ? act.plate_events.length : 0,
-    latestTs: act.plate_events?.[act.plate_events.length - 1]?.timestamp || ''
+    latestTs: getEventTimestamp(act.plate_events?.[act.plate_events.length - 1]) || ''
   }))
 )
 
@@ -442,6 +445,158 @@ const validationIssues = computed(() => {
   return result?.issues || []
 })
 
+const sourceGridTitle = computed(() => activeSourceEntry.value?.label || 'Source labware')
+const sourceGridSubtitle = computed(() => {
+  if (!activeSourceEntry.value) return 'Select a source to view wells.'
+  const kind = activeSourceEntry.value.kind || activeSourceEntry.value.type || 'labware'
+  const id = activeSourceEntry.value.labwareId || activeSourceEntry.value['@id'] || ''
+  const suffix = sourceSelection.selection.value.length ? '' : ' · no source wells selected (broadcast)'
+  return [kind, id].filter(Boolean).join(' · ') + suffix
+})
+const destinationGridTitle = computed(() => store.state.destinationPlate?.label || 'Destination plate')
+const destinationGridSubtitle = computed(() => store.state.destinationPlate?.id || '')
+const runsList = computed(() => props.runs || [])
+const selectedDestinationId = computed(() => store.state.selectedDestinationId || store.state.destinationPlate?.id || '')
+
+function normalizeVolumeInput(volume, defaultUnit = 'uL') {
+  if (!volume) return null
+  if (typeof volume === 'object' && volume.value !== undefined && volume.unit) {
+    return { value: Number(volume.value), unit: volume.unit }
+  }
+  if (typeof volume === 'string') {
+    const match = volume.trim().match(/^([\d.]+)\s*([a-zA-Z]+)$/)
+    if (match) return { value: Number(match[1]), unit: match[2] }
+  }
+  if (typeof volume === 'number') return { value: volume, unit: defaultUnit }
+  return null
+}
+
+function buildMapping(sourceWells = [], targetWells = [], volume = '') {
+  if (!Array.isArray(sourceWells)) sourceWells = []
+  if (!Array.isArray(targetWells)) targetWells = []
+  if (!targetWells.length) return []
+  // If no source wells selected, let store fallback to virtual/material behavior
+  if (!sourceWells.length) return []
+  const normalizedVolume = normalizeVolumeInput(volume)
+  const mapping = []
+  if (sourceWells.length === 1) {
+    const src = sourceWells[0]
+    targetWells.forEach((tgt) => {
+      mapping.push({ source_well: src, target_well: tgt, volume: normalizedVolume })
+    })
+    return mapping
+  }
+  const n = Math.min(sourceWells.length, targetWells.length)
+  for (let i = 0; i < n; i += 1) {
+    mapping.push({ source_well: sourceWells[i], target_well: targetWells[i], volume: normalizedVolume })
+  }
+  return mapping
+}
+
+function handleAddTemplate(payload = {}) {
+  const kind = payload.kind || templateForm.kind || 'plate96'
+  const label = (payload.label || templateForm.label || kind).trim()
+  const layoutIndex = templateLayoutForKind(kind)
+  const entry = store.addTemplatePaletteEntry({
+    kind,
+    label,
+    layoutIndex
+  })
+  if (entry?.labwareId) {
+    store.setActiveSourceId(entry.labwareId)
+  }
+  templateForm.label = ''
+  templateForm.open = false
+}
+
+async function handleAddRunSource(payload = {}) {
+  const runId = payload.runId || runSourceForm.runId
+  if (!runId) return
+  let labwareId = payload.labwareId || runSourceForm.labwareId
+  const label = payload.label || runSourceForm.label
+  let layoutIndex = resolveLayoutIndex({}, { fallbackKind: 'plate96' })
+  if (!labwareId && typeof props.loadRunById === 'function') {
+    try {
+      const runRecord = await props.loadRunById(runId)
+      const firstInstance = runRecord?.data?.labware_instances?.[0]
+      if (firstInstance) {
+        labwareId = firstInstance['@id'] || labwareId
+        layoutIndex = resolveLayoutIndex(firstInstance.layout || { kind: firstInstance.kind || 'plate96' }, { fallbackKind: firstInstance.kind || 'plate96' })
+      }
+      const fallbackId = runRecord?.metadata?.id || runRecord?.metadata?.recordId
+      if (!labwareId) labwareId = fallbackId ? `plate/${fallbackId}` : `plate/${runId}`
+    } catch (err) {
+      labwareId = labwareId || `plate/${runId}`
+    }
+  }
+  if (!labwareId) return
+  store.addRunDerivedPaletteEntry({
+    runId,
+    labwareId,
+    label: label || labwareId,
+    layoutIndex
+  })
+  runSourceForm.open = false
+  runSourceForm.runId = ''
+  runSourceForm.labwareId = ''
+  runSourceForm.label = ''
+}
+
+function handleMaterialImportRequest(payload = {}) {
+  const term = payload.normalized || payload.term || {}
+  if (!term) return
+  materialImportModal.term = {
+    ...term,
+    label: term.label || term.prefLabel || term.id || '',
+    id: term.id || term.identifier || ''
+  }
+  materialImportModal.error = ''
+  materialImportModal.open = true
+}
+
+function closeMaterialImportModal() {
+  materialImportModal.open = false
+  materialImportModal.term = null
+  materialImportModal.error = ''
+  materialImportModal.saving = false
+}
+
+async function handleMaterialImportSave(entry = {}) {
+  if (!entry?.id || !entry?.label) {
+    materialImportModal.error = 'ID and label are required.'
+    return
+  }
+  materialImportModal.saving = true
+  materialImportModal.error = ''
+  try {
+    await writeMaterialToVocab(entry)
+    upsertLocalMaterial(entry)
+    closeMaterialImportModal()
+  } catch (err) {
+    materialImportModal.error = err?.message || 'Failed to save material.'
+  } finally {
+    materialImportModal.saving = false
+  }
+}
+
+function setActiveSource(labwareId) {
+  store.setActiveSourceId(labwareId)
+}
+
+function archivePaletteEntryById(labwareId) {
+  store.archivePaletteEntry(labwareId)
+}
+
+function handleDestinationChange(labwareId) {
+  if (!labwareId) return
+  store.setDestination(labwareId)
+}
+
+function handleDestinationTypeChange(plateType) {
+  if (!plateType) return
+  store.setDestinationType(plateType)
+}
+
 function resetSelection() {
   sourceSelection.reset()
   targetSelection.reset()
@@ -452,10 +607,15 @@ function setCursor(ts) {
   store.setCursor(ts)
 }
 
-function formatTs(ts = '') {
+function getEventTimestamp(evt = {}) {
+  return evt.timestamp_actual || evt.timestamp || ''
+}
+
+function formatTs(ts = '', offset = '') {
+  if (!ts && offset) return offset
   if (!ts) return 'latest'
   const date = new Date(ts)
-  if (Number.isNaN(date.getTime())) return ts
+  if (Number.isNaN(date.getTime())) return offset || ts
   return date.toLocaleString()
 }
 
@@ -505,93 +665,112 @@ function handleTargetGridInteraction(payload = {}) {
 function handleCreateTransferStep(step = {}) {
   if (!step?.details?.mapping?.length) return
   const mapping = step.details.mapping
-  const volume = step.details.volume || ''
-  const sourceRef = store.resolveLabwareRef(sourceLabwareRole.value || step.details.source_role || 'reservoir')
-  const targetRef = store.resolveLabwareRef(targetLabwareRole.value || step.details.target_role || 'plate')
-  const timestamp = new Date().toISOString()
-  const sourceWells = {}
-  const targetWells = {}
-  mapping.forEach((entry) => {
-    if (entry.source_well) {
-      sourceWells[entry.source_well] = {
-        well: entry.source_well,
-        volume: entry.volume || volume
-      }
-    }
-    if (entry.target_well) {
-      targetWells[entry.target_well] = {
-        well: entry.target_well,
-        volume: entry.volume || volume
-      }
-    }
-  })
+  const volume = normalizeVolumeInput(step.details.volume || '')
+  const sourceRef = store.resolveSourceLabwareRef()
+  const targetRef = store.resolveDestinationLabwareRef()
+  const normalizedMapping = mapping.map((entry) => ({
+    ...entry,
+    volume: normalizeVolumeInput(entry.volume || volume)
+  }))
+  const volumes = normalizedMapping.map((m) => m.volume).filter(Boolean)
+  let uniformVolume = null
+  if (volumes.length) {
+    const first = volumes[0]
+    const allSame = volumes.every((v) => Number(v.value) === Number(first.value) && String(v.unit).toLowerCase() === String(first.unit).toLowerCase())
+    if (allSame) uniformVolume = first
+  } else if (volume) {
+    uniformVolume = volume
+  }
+  const finalMapping =
+    uniformVolume && volumes.length
+      ? normalizedMapping.map((m) => {
+          const copy = { ...m }
+          if (copy.volume && Number(copy.volume.value) === Number(uniformVolume.value) && String(copy.volume.unit).toLowerCase() === String(uniformVolume.unit).toLowerCase()) {
+            delete copy.volume
+          }
+          return copy
+        })
+      : normalizedMapping
+  const mappingSpec = step.details.mapping_spec
+    ? { ...step.details.mapping_spec, target_wells: finalMapping.map((m) => m.target_well).filter(Boolean) }
+    : null
   store.appendEvent({
     event_type: 'transfer',
-    timestamp,
-    run: store.resolveRunRef(),
-    labware: [sourceRef, targetRef],
     details: {
       type: 'transfer',
       label: step.label,
       notes: step.notes,
-      source_role: sourceLabwareRole.value,
-      target_role: targetLabwareRole.value,
-      source: {
-        labware: sourceRef,
-        wells: sourceWells
-      },
-      target: {
-        labware: targetRef,
-        wells: targetWells
-      },
-      mapping,
-      mapping_spec: step.details.mapping_spec,
-      volume,
-      material: step.details.material || null
+      source_labware: sourceRef?.['@id'] || sourceRef,
+      target_labware: targetRef?.['@id'] || targetRef,
+      mapping: finalMapping,
+      ...(mappingSpec ? { mapping_spec: mappingSpec } : {}),
+      volume: uniformVolume,
+      material_id: step.details.material_id || step.details.material?.id || null
     }
   })
 }
 
-watch(
-  bindingRoles,
-  (roles) => {
-    if (!sourceLabwareRole.value) sourceLabwareRole.value = roles[0] || 'reservoir'
-    if (!targetLabwareRole.value) targetLabwareRole.value = roles[0] || ''
-  },
-  { immediate: true }
-)
-
 function handleApply(payload = {}) {
   if (!payload?.materialId || !payload?.role) return
-  const wells = activeSelection.value
-  if (!wells.length) return
-  const targetLabwareRef =
-    transferFocusSide.value === 'source'
-      ? store.resolveLabwareRef(sourceLabwareRole.value || 'plate')
-      : store.resolveLabwareRef(targetLabwareRole.value || 'plate')
-  store.applyMaterialUse({
-    wells,
-    material: payload.materialId,
-    role: payload.role,
-    amount: payload.amount,
-    label: payload.materialLabel,
-    controlIntents: payload.controlIntents,
-    sourceLabware: sourceLabwareRole.value || 'reservoir',
-    targetLabware: targetLabwareRef
-  })
-  if (targetLabwareRef?.['@id']) {
-    store.setActiveLabwareId(targetLabwareRef['@id'])
+  const applyingToSource = transferFocusSide.value === 'source'
+  const targetWells = applyingToSource
+    ? sourceSelection.selection.value
+    : targetSelection.selection.value.length
+      ? targetSelection.selection.value
+      : activeSelection.value
+  if (!targetWells.length) return
+  if (applyingToSource) {
+    const sourceLabwareRef = store.resolveSourceLabwareRef()
+    store.appendEvent({
+      event_type: 'add_material',
+      details: {
+        type: 'add_material',
+        target_labware: sourceLabwareRef?.['@id'] || sourceLabwareRef,
+        wells: targetWells,
+        material_id: payload.materialId,
+        stock_concentration: payload.concentration || null,
+        volume: normalizeVolumeInput(payload.volume),
+        role: payload.role || 'component',
+        control_intents: payload.controlIntents || []
+      }
+    })
+  } else {
+    const sourceWells = sourceSelection.selection.value
+    const sourceLabwareRef = {
+      '@id': `virtual/${store.state.activeSourceId || 'source'}`,
+      kind: 'virtual',
+      label: 'virtual source'
+    }
+    const targetLabwareRef = store.resolveDestinationLabwareRef()
+    const mapping = buildMapping(sourceWells, targetWells, payload.volume)
+    store.applyMaterialUse({
+      wells: targetWells,
+      mapping,
+      material: payload.materialId,
+      role: payload.role,
+      volume: payload.volume,
+      concentration: payload.concentration,
+      label: payload.materialLabel,
+      controlIntents: payload.controlIntents,
+      sourceLabware: sourceLabwareRef,
+      targetLabware: targetLabwareRef
+    })
+    if (targetLabwareRef?.['@id']) {
+      store.setActiveLabwareId(targetLabwareRef['@id'])
+    }
   }
 }
 
 function handleRemove(payload = {}) {
   if (!payload?.materialId) return
-  const wells = activeSelection.value
+  const removingFromSource = transferFocusSide.value === 'source'
+  const wells = removingFromSource
+    ? sourceSelection.selection.value
+    : targetSelection.selection.value.length
+      ? targetSelection.selection.value
+      : activeSelection.value
   if (!wells.length) return
-  const targetLabwareRef =
-    transferFocusSide.value === 'source'
-      ? store.resolveLabwareRef(sourceLabwareRole.value || 'plate')
-      : store.resolveLabwareRef(targetLabwareRole.value || 'plate')
+  const targetLabwareRef = removingFromSource ? store.resolveSourceLabwareRef() : store.resolveDestinationLabwareRef()
   store.removeMaterialUse({
     wells,
     material: payload.materialId,
@@ -603,13 +782,158 @@ function handleRemove(payload = {}) {
   }
 }
 
+async function writeMaterialToVocab(entry = {}) {
+  if (!repo?.writeFile) {
+    throw new Error('Connect a repository to save materials.')
+  }
+  const path = '/vocab/materials.lab.yaml'
+  let doc
+  try {
+    const raw = await repo.readFile(path)
+    doc = raw ? YAML.parseDocument(raw) : new YAML.Document([])
+  } catch (err) {
+    doc = new YAML.Document([])
+  }
+  ensureSequence(doc)
+  const seq = doc.contents
+  const node = doc.createNode(entry)
+  node.spaceBefore = true
+  const existingIndex = findNodeIndex(seq, entry.id)
+  if (existingIndex >= 0) {
+    const existing = seq.items[existingIndex]
+    node.commentBefore = existing?.commentBefore
+    seq.items.splice(existingIndex, 1, node)
+  } else {
+    seq.items.push(node)
+  }
+  const output = doc.toString({ lineWidth: 0 })
+  await repo.writeFile(path, output)
+}
+
+function upsertLocalMaterial(entry = {}) {
+  const normalized = normalizeMaterialEntry(entry)
+  if (!normalized) throw new Error('Material entry missing label or id.')
+  const index = materialLibraryLocal.value.findIndex((item) => item.id === normalized.id)
+  if (index >= 0) {
+    materialLibraryLocal.value.splice(index, 1, normalized)
+  } else {
+    materialLibraryLocal.value.push(normalized)
+  }
+  materialLibraryLocal.value = [...materialLibraryLocal.value]
+  store.setMaterialLibrary(materialLibraryLocal.value)
+  applyBarPrefill.value = { id: normalized.id }
+}
+
+function normalizeMaterialList(list = []) {
+  if (!Array.isArray(list)) return []
+  return list.map((entry) => normalizeMaterialEntry(entry)).filter(Boolean)
+}
+
+function normalizeMaterialEntry(entry = {}) {
+  const label = (entry.label || entry.id || '').trim()
+  if (!label) return null
+  const id = ensureMaterialId(entry.id || label)
+  const tags = dedupeStrings(entry.tags || [])
+  const intents = dedupeStrings(entry.intents || [], { preserveCase: true })
+  const synonyms = dedupeStrings(entry.synonyms || [], { preserveCase: true })
+  const xrefTokens = buildXrefTokens(entry.xref)
+  const defaults = normalizeDefaults(entry.defaults)
+  const normalized = {
+    ...entry,
+    id,
+    label,
+    category: entry.category || 'other',
+    intents,
+    tags,
+    synonyms,
+    defaults
+  }
+  normalized.searchTokens = buildSearchTokens({ id, label, tags, synonyms, intents, xrefTokens })
+  return normalized
+}
+
+function normalizeDefaults(defaults = {}) {
+  if (!defaults || typeof defaults !== 'object') return {}
+  const normalized = {}
+  if (defaults.role) normalized.role = defaults.role
+  const addVolume = normalizeAmount(defaults.add_volume || defaults.amount)
+  if (addVolume) normalized.add_volume = addVolume
+  const working = normalizeAmount(defaults.working_concentration || defaults.concentration)
+  if (working) normalized.working_concentration = working
+  const stock = normalizeAmount(defaults.stock_concentration)
+  if (stock) normalized.stock_concentration = stock
+  return normalized
+}
+
+function normalizeAmount(amount = {}) {
+  if (amount === null || amount === undefined) return null
+  if (typeof amount === 'number') return null
+  const value = Number(amount.value)
+  const unit = typeof amount.unit === 'string' ? amount.unit.trim() : ''
+  if (!Number.isFinite(value) || !unit) return null
+  return { value, unit }
+}
+
+function buildXrefTokens(xref = {}) {
+  if (!xref || typeof xref !== 'object') return []
+  return Object.values(xref)
+    .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+    .filter(Boolean)
+}
+
+function buildSearchTokens({ id, label, tags = [], synonyms = [], intents = [], xrefTokens = [] }) {
+  const bucket = new Set()
+  ;[id, label, ...tags, ...synonyms, ...intents, ...xrefTokens]
+    .map((token) => (typeof token === 'string' ? token.trim().toLowerCase() : ''))
+    .filter(Boolean)
+    .forEach((token) => bucket.add(token))
+  return Array.from(bucket)
+}
+
+function dedupeStrings(list = [], options = {}) {
+  if (!Array.isArray(list)) return []
+  const preserveCase = Boolean(options.preserveCase)
+  const seen = new Set()
+  const bucket = []
+  list.forEach((value) => {
+    if (typeof value !== 'string') return
+    const trimmed = value.trim()
+    if (!trimmed) return
+    const token = trimmed.toLowerCase()
+    if (seen.has(token)) return
+    seen.add(token)
+    bucket.push(preserveCase ? trimmed : trimmed.toLowerCase())
+  })
+  return bucket
+}
+
+function ensureSequence(doc) {
+  if (doc.contents && doc.contents.type === 'SEQ') return
+  const seq = doc.createNode([])
+  seq.flow = false
+  doc.contents = seq
+}
+
+function findNodeIndex(seq, id) {
+  if (!seq?.items?.length) return -1
+  return seq.items.findIndex((node) => readScalar(node, 'id') === id)
+}
+
+function readScalar(node, key) {
+  if (!node?.items) return undefined
+  const pair = node.items.find((item) => item?.key?.value === key)
+  if (!pair) return undefined
+  return pair.value?.value
+}
+
 function jumpToActivity(activityId) {
   if (!activityId) return
   activeActivityId.value = activityId
   const activity = activities.value.find((a) => a.id === activityId)
   const sorted = sortEventsByTimestamp(activity?.plate_events || [])
   const latest = sorted[sorted.length - 1]
-  if (latest?.timestamp) setCursor(latest.timestamp)
+  const ts = getEventTimestamp(latest)
+  if (ts) setCursor(ts)
 }
 
 function openWellDrawer() {
@@ -634,46 +958,6 @@ function closeWellDrawer() {
   drawerState.open = false
 }
 
-function syncBindingEditors() {
-  const entries = labwareBindings.value || {}
-  const valueEdits = {}
-  Object.entries(entries).forEach(([role, id]) => {
-    valueEdits[role] = id
-  })
-  bindingValueEdits.value = valueEdits
-}
-
-function addBinding() {
-  if (!newBindingRole.value || !newBindingId.value) return
-  store.state.run.data ||= {}
-  store.state.run.data.labware_bindings ||= {}
-  store.state.run.data.labware_bindings[newBindingRole.value] = newBindingId.value
-  syncBindingEditors()
-  newBindingRole.value = ''
-  newBindingId.value = ''
-}
-
-function updateBinding(role, value) {
-  if (!role || !store.state.run?.data?.labware_bindings) return
-  store.state.run.data.labware_bindings[role] = value || ''
-  syncBindingEditors()
-}
-
-function updateDepletion(labwareId, checked) {
-  store.setLabwareDepletion(labwareId, checked)
-}
-
-function guessDepletionDefault(labwareId = '') {
-  const kind = labwareId.toLowerCase().includes('res') ? 'reservoir' : labwareId.toLowerCase().includes('tube') ? 'tube_rack' : 'plate'
-  return kind === 'plate'
-}
-
-function removeBinding(role) {
-  if (!role || !store.state.run?.data?.labware_bindings) return
-  delete store.state.run.data.labware_bindings[role]
-  syncBindingEditors()
-}
-
 function buildRunValidationPayload(run = {}) {
   const meta = run.metadata || {}
   const data = run.data || {}
@@ -684,18 +968,14 @@ function buildRunValidationPayload(run = {}) {
     project: meta.project || data.project || '',
     experiment: meta.experiment || data.experiment || '',
     labware_bindings: data.labware_bindings || {},
+    labware_instances: data.labware_instances || [],
+    source_palette: Array.isArray(data.source_palette) && data.source_palette.length
+      ? data.source_palette
+      : store.derivePaletteData(),
     parameters: data.parameters || {},
     activities: data.activities || []
   }
 }
-
-watch(
-  () => labwareBindings.value,
-  () => {
-    syncBindingEditors()
-  },
-  { immediate: true, deep: true }
-)
 
 defineExpose({
   store
@@ -895,6 +1175,103 @@ defineExpose({
   flex-direction: column;
   gap: 12px;
 }
+.palette-row {
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 12px;
+  align-items: start;
+}
+.palette-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.palette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.palette-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 13px;
+}
+.palette-actions {
+  display: flex;
+  gap: 6px;
+}
+.palette-form {
+  display: grid;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px;
+}
+.palette-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.palette-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+}
+.palette-item__label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+}
+.palette-item__text {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 2px;
+}
+.palette-item__meta {
+  color: #64748b;
+  font-size: 12px;
+}
+.palette-item__meta .error {
+  color: #b91c1c;
+}
+.palette-empty {
+  font-size: 13px;
+  color: #64748b;
+}
+.destination-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+}
+.palette-destination__label {
+  margin: 0;
+  font-weight: 600;
+}
+.palette-destination__meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
 
 .dual-grids {
   display: grid;
@@ -926,6 +1303,15 @@ defineExpose({
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+}
+
+.selection-hint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #475569;
+}
+.selection-hint.is-warning {
+  color: #b45309;
 }
 
 .run-editor-shell__controls {
@@ -1115,5 +1501,22 @@ defineExpose({
   margin: 0;
   padding-left: 16px;
   font-size: 12px;
+}
+
+.source-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.source-placeholder__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
 }
 </style>

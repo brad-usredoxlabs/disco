@@ -1,0 +1,65 @@
+name: materials.lab
+description: "Controlled vocabulary for run-editor materials (lab-local)"
+
+bioportal_ontologies:
+  - acronym: chebi      # chemicals, roles
+  - acronym: ncit       # mechanisms/targets and general clinical terms
+  - acronym: ncbitaxon  # species for cell lines
+  - acronym: go         # processes/features
+  - acronym: uberon     # tissues
+  - acronym: cl         # cell types
+
+search_settings:
+  require_exact_match: false
+  include_obsolete: false
+  include_properties: true
+  include_definitions: true
+
+validation:
+  required_fields:
+    - id
+    - label
+    - category
+    - intents
+  allowed_categories:
+    - compound
+    - dye
+    - cell_line
+    - media
+    - solvent
+    - buffer
+    - other
+  allowed_intents:
+    - sample
+    - treatment
+    - assay_material
+    - positive_control
+    - negative_control
+    - vehicle_control
+    - other
+  shape:
+    id: string
+    label: string
+    category: enum:allowed_categories
+    intents: list:allowed_intents
+    tags: list:string
+    xref: map:string
+    classified_as: list:
+      - id: string
+        label: string
+        domain: enum:[taxon, cell_line, tissue, role, mechanism, compound]
+        source: enum:[NCBITaxon, CL, UBERON, NCIT, CHEBI]
+    measures: list:string
+    mechanism:
+      type: string
+      targets: list:
+        - id: string
+          label: string
+    affected_process:
+      id: string
+      label: string
+
+display:
+  label_format: "{label} ({id})"
+  show_definitions: true
+  group_by: category

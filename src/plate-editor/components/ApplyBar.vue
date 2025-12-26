@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import MaterialPicker from './MaterialPicker.vue'
+import OntologyFieldInput from '../../tiptap/nodes/OntologyFieldInput.vue'
 
 const props = defineProps({
   roles: {
@@ -30,10 +31,25 @@ const props = defineProps({
   features: {
     type: Array,
     default: () => []
+  },
+  ontologyVocab: {
+    type: String,
+    default: ''
+  },
+  ontologySearchOptions: {
+    type: Object,
+    default: () => ({})
   }
 })
 
-const emit = defineEmits(['apply', 'remove', 'favorite-toggle', 'request-create', 'request-edit'])
+const emit = defineEmits([
+  'apply',
+  'remove',
+  'favorite-toggle',
+  'request-create',
+  'request-edit',
+  'request-import'
+])
 
 const CONTROL_KIND_OPTIONS = [
   { value: 'positive_control', label: 'Positive control' },
@@ -52,12 +68,15 @@ const EXPECTED_EFFECT_OPTIONS = [
 
 const selectedRole = ref('')
 const selectedMaterial = ref(null)
-const amountValue = ref('')
-const amountUnit = ref('')
+const volumeValue = ref('')
+const volumeUnit = ref('uL')
+const concentrationValue = ref('')
+const concentrationUnit = ref('uM')
 const controlIntentRows = ref([])
 let controlIntentCounter = 0
 
 const featureOptions = computed(() => props.features || [])
+const useOntologySearch = computed(() => Boolean(props.ontologyVocab))
 
 watch(
   () => props.roles,
@@ -74,10 +93,8 @@ watch(
   () => props.prefillSelection,
   (payload) => {
     if (!payload || !payload.id) return
-    const entry = props.materials.find((item) => item.id === payload.id)
-    if (entry) {
-      selectMaterial(entry, { forceRole: true })
-    }
+    const entry = props.materials.find((item) => item.id === payload.id) || payload
+    selectMaterial(entry, { forceRole: true })
   },
   { deep: true }
 )
@@ -85,6 +102,7 @@ watch(
 watch(
   () => props.materials,
   (list = []) => {
+    if (useOntologySearch.value) return
     if (!selectedMaterial.value?.id) return
     const next = list.find((entry) => entry.id === selectedMaterial.value.id)
     selectedMaterial.value = next || null
@@ -104,7 +122,11 @@ const canApply = computed(() => {
   return Boolean(
     props.selectionCount &&
       selectedRole.value &&
-      selectedMaterial.value?.id
+      selectedMaterial.value?.id &&
+      volumeValue.value &&
+      volumeUnit.value &&
+      concentrationValue.value &&
+      concentrationUnit.value
   )
 })
 
@@ -116,13 +138,34 @@ function handleMaterialSelect(entry) {
   selectMaterial(entry)
 }
 
+function handleOntologySelect(term) {
+  if (!term) {
+    selectMaterial(null)
+    return
+  }
+  const normalized = {
+    id: term.id || term.identifier || '',
+    label: term.label || term.prefLabel || term.id || '',
+    source: term.source || term.ontology || '',
+    provenance: term.provenance || ''
+  }
+  const localEntry = props.materials.find((item) => item.id === normalized.id)
+  if (localEntry) {
+    selectMaterial(localEntry)
+    return
+  }
+  emit('request-import', { term, normalized })
+  selectMaterial(null)
+}
+
 function handleApply() {
   if (!canApply.value) return
   emit('apply', {
     role: selectedRole.value,
     materialId: selectedMaterial.value.id,
     materialLabel: selectedMaterial.value.label,
-    amount: normalizeAmount(),
+    volume: normalizeVolumePayload(),
+    concentration: normalizeConcentrationPayload(),
     controlIntents: buildControlIntents()
   })
 }
@@ -148,22 +191,42 @@ function handleRequestEdit(entry) {
 }
 
 function normalizeAmount() {
-  if (!amountValue.value || !amountUnit.value) return null
-  const value = Number(amountValue.value)
+  // legacy helper retained for compatibility
+  return normalizeVolumePayload()
+}
+
+function normalizeVolumePayload() {
+  if (!volumeValue.value || !volumeUnit.value) return null
+  const value = Number(volumeValue.value)
   if (!Number.isFinite(value)) return null
-  return { value, unit: amountUnit.value }
+  return { value, unit: volumeUnit.value }
+}
+
+function normalizeConcentrationPayload() {
+  if (!concentrationValue.value || !concentrationUnit.value) return null
+  const value = Number(concentrationValue.value)
+  if (!Number.isFinite(value)) return null
+  return { value, unit: concentrationUnit.value }
 }
 
 function selectMaterial(entry, options = {}) {
   selectedMaterial.value = entry || null
   if (!entry) return
   const shouldApplyRole = options.forceRole || !selectedRole.value
-  if (entry?.defaults?.role && shouldApplyRole) {
-    selectedRole.value = entry.defaults.role
+  const defaults = entry?.defaults || {}
+  if (defaults.role && shouldApplyRole) {
+    selectedRole.value = defaults.role
   }
-  if (entry?.defaults?.amount) {
-    amountValue.value = entry.defaults.amount.value ?? ''
-    amountUnit.value = entry.defaults.amount.unit ?? ''
+  const volumeDefaults = defaults.add_volume || defaults.amount
+  if (volumeDefaults) {
+    volumeValue.value = volumeDefaults.value ?? ''
+    volumeUnit.value = volumeDefaults.unit ?? 'uL'
+  }
+  const concentrationDefaults =
+    defaults.concentration || defaults.working_concentration || defaults.stock_concentration
+  if (concentrationDefaults) {
+    concentrationValue.value = concentrationDefaults.value ?? ''
+    concentrationUnit.value = concentrationDefaults.unit ?? 'uM'
   }
 }
 
@@ -217,7 +280,17 @@ function buildControlIntents() {
 
     <div class="picker-group">
       <label>Material</label>
+      <OntologyFieldInput
+        v-if="useOntologySearch"
+        class="ontology-picker"
+        :value="selectedMaterial"
+        :vocab="ontologyVocab"
+        :search-options="ontologySearchOptions"
+        placeholder="Search materials…"
+        @update:value="handleOntologySelect"
+      />
       <MaterialPicker
+        v-else
         :materials="materials"
         :selected-id="selectedMaterial?.id"
         :role="selectedRole"
@@ -232,10 +305,13 @@ function buildControlIntents() {
 
     <div class="amount-row">
       <div class="field-group">
-        <label>Amount</label>
+        <label>Volume</label>
         <div class="amount-inputs">
-          <input v-model="amountValue" type="number" min="0" step="any" placeholder="Value" />
-          <input v-model="amountUnit" type="text" placeholder="Unit" />
+          <input v-model="volumeValue" type="number" min="0" step="any" placeholder="Value" />
+          <select v-model="volumeUnit">
+            <option value="uL">µL</option>
+            <option value="mL">mL</option>
+          </select>
         </div>
       </div>
       <div class="actions">
@@ -245,6 +321,24 @@ function buildControlIntents() {
         <button class="danger" type="button" :disabled="!canRemove" @click="handleRemove">
           Remove material
         </button>
+      </div>
+    </div>
+
+    <div class="amount-row stack">
+      <div class="field-group">
+        <label>Concentration</label>
+        <div class="amount-inputs">
+          <input v-model="concentrationValue" type="number" min="0" step="any" placeholder="Value" />
+          <select v-model="concentrationUnit">
+            <option value="mM">mM</option>
+            <option value="uM">µM</option>
+            <option value="nM">nM</option>
+            <option value="pM">pM</option>
+            <option value="mg/mL">mg/mL</option>
+            <option value="X">X (fold)</option>
+            <option value="each">each / units</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -316,19 +410,29 @@ input {
   gap: 0.35rem;
 }
 
+.ontology-picker {
+  width: 100%;
+}
+
 .amount-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: end;
 }
 
 .amount-inputs {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 120px;
   gap: 0.35rem;
 }
 
 .amount-inputs input {
   flex: 1;
+}
+
+.amount-row.stack {
+  grid-template-columns: 1fr;
 }
 
 .actions {

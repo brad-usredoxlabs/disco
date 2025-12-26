@@ -54,8 +54,19 @@ const inspectorTarget = ref(readInspectorTargetFromUrl())
 const tiptapStatus = ref('')
 const inspectorStatus = ref('')
 const explorerTarget = ref(readExplorerTargetFromUrl())
+const explorerSelectedRun = ref(null)
+const explorerSelectedLabware = ref('')
+const pendingPaletteAdd = ref(null)
 const runEditorTarget = ref(readRunEditorTargetFromUrl())
+const settingsTarget = ref(readSettingsTargetFromUrl())
 const runEditorRef = ref(null)
+const showSettingsModal = ref(false)
+const settingsSaving = ref(false)
+const settingsError = ref('')
+const settingsForm = reactive({
+  cacheDuration: 30,
+  localNamespace: ''
+})
 const runEditorState = reactive({
   run: null,
   body: '',
@@ -87,6 +98,21 @@ const isStandaloneRunEditor = computed(() => !!runEditorTarget.value)
 const isOnline = computed(() => offlineStatus.isOnline.value)
 const fallbackLayout = computed(() => resolveLayoutIndex({}, { fallbackKind: 'plate96' }))
 const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
+const runOptions = computed(() => {
+  const nodes = recordGraph.graph?.value?.nodesByType?.run || []
+  return nodes.map((node) => ({
+    id: node.id || node.frontMatter?.metadata?.id || '',
+    label: node.title || node.id || '',
+    path: node.path || '',
+    labwareIds: Array.isArray(node.frontMatter?.data?.labware_instances)
+      ? node.frontMatter.data.labware_instances.map((inst) => inst?.['@id']).filter(Boolean)
+      : [],
+    labwareId:
+      (Array.isArray(node.frontMatter?.data?.labware_instances) &&
+        node.frontMatter.data.labware_instances.find((inst) => inst?.['@id'])?.['@id']) ||
+      ''
+  }))
+})
 const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
 const tiptapSchema = computed(() =>
   tiptapTarget.value ? schemaBundle.value?.recordSchemas?.[tiptapTarget.value.recordType] || null : null
@@ -120,6 +146,7 @@ const runEditorBundleMismatch = computed(() => {
   if (!runEditorTarget.value?.bundle) return false
   return selectedBundleName.value !== runEditorTarget.value.bundle
 })
+const isStandaloneSettings = computed(() => !!settingsTarget.value)
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
 )
@@ -205,15 +232,11 @@ watch(
 )
 
 watch(
-  [
-    () => repo.directoryHandle.value,
-    () => schemaLoader.schemaBundle?.value,
-    () => systemConfig.bioportalConfig.value
-  ],
-  ([handle, bundle, bioportal]) => {
+  [() => repo.directoryHandle.value, () => schemaLoader.schemaBundle?.value, () => systemConfig.ontologyConfig.value],
+  ([handle, bundle, ontologyCfg]) => {
     configureOntologyService({
       repoConnection: handle ? repo : null,
-      systemConfig: bioportal,
+      systemConfig: ontologyCfg,
       vocabSchemas: bundle?.vocabSchemas || {}
     })
   },
@@ -254,6 +277,14 @@ watch(
     if (!list.includes(selectedRootRecordType.value)) {
       selectedRootRecordType.value = list[0]
     }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => systemConfig.config.value,
+  () => {
+    syncSettingsForm()
   },
   { immediate: true }
 )
@@ -320,6 +351,13 @@ function readRunEditorTargetFromUrl() {
   }
 }
 
+function readSettingsTargetFromUrl() {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('settings') !== 'true') return null
+  return { mode: 'settings' }
+}
+
 function clearTiptapTarget() {
   tiptapTarget.value = null
   if (typeof window !== 'undefined') {
@@ -372,6 +410,15 @@ function clearRunEditorTarget() {
   }
 }
 
+function clearSettingsTarget() {
+  settingsTarget.value = null
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('settings')
+    window.history.replaceState({}, '', url.toString())
+  }
+}
+
 async function loadExplorerData() {
   if (!explorerTarget.value || !repo.directoryHandle.value || repo.isRestoring.value) return
   if (!explorerTarget.value.path) return
@@ -390,6 +437,8 @@ async function loadExplorerData() {
       resolveLabwareFromEvents(events) ||
       resolveLabwareFromActivities(explorerState.activities) ||
       'plate/UNKNOWN'
+    explorerSelectedRun.value = data?.metadata?.recordId || data?.metadata?.id || ''
+    explorerSelectedLabware.value = explorerState.labwareId
     explorerState.layoutIndex = fallbackLayout.value
     explorerState.status = events.length ? '' : 'No PlateEvents found in run.'
   } catch (err) {
@@ -414,6 +463,17 @@ async function loadRunEditorData() {
       ? materialLibrary.entries.value
       : []
     runEditorState.status = ''
+    // Apply pending palette addition if present
+    if (pendingPaletteAdd.value && runEditorRef.value?.store) {
+      const { runId, labwareId, label } = pendingPaletteAdd.value
+      runEditorRef.value.store.addRunDerivedPaletteEntry({
+        runId,
+        labwareId,
+        label: label || labwareId,
+        layoutIndex: resolveLayoutIndex({}, { fallbackKind: 'plate96' })
+      })
+      pendingPaletteAdd.value = null
+    }
   } catch (error) {
     runEditorState.error = error?.message || 'Failed to load run.'
     runEditorState.status = ''
@@ -428,8 +488,20 @@ async function handleRunEditorSave() {
   runEditorState.status = 'Saving…'
   runEditorState.error = ''
   try {
-    const updated = runEditorRef.value.store.state.run
-    const validation = recordValidator.validate('run', updated)
+    const store = runEditorRef.value.store
+    const updated = store.state.run
+    if (typeof store.derivePaletteData === 'function') {
+      store.derivePaletteData()
+    }
+    if (typeof store.sanitizeTransfers === 'function') {
+      store.sanitizeTransfers()
+    }
+    const validationPayload = store.buildValidationPayload
+      ? store.buildValidationPayload()
+      : (typeof runEditorRef.value?.buildRunValidationPayload === 'function'
+          ? runEditorRef.value.buildRunValidationPayload(updated)
+          : null) || updated
+    const validation = recordValidator.validate('run', validationPayload)
     if (!validation.ok) {
       runEditorState.error = `Run validation failed: ${validation.issues.map((i) => i.message).join('; ')}`
       runEditorState.status = ''
@@ -444,6 +516,23 @@ async function handleRunEditorSave() {
     console.error('Run editor save error', error)
   } finally {
     runEditorSaving.value = false
+  }
+}
+
+async function loadRunById(runId = '') {
+  if (!runId || !repo?.readFile) return null
+  const node =
+    recordGraph.graph?.value?.nodesById?.[runId] ||
+    recordGraph.graph?.value?.nodesById?.[runId.replace(/^run\//, '')] ||
+    null
+  if (!node?.path) return null
+  try {
+    const raw = await repo.readFile(node.path)
+    const { data } = parseFrontMatter(raw)
+    return data || null
+  } catch (err) {
+    console.warn('Failed to load run by id', runId, err)
+    return null
   }
 }
 
@@ -496,6 +585,23 @@ function resolveLabwareFromActivities(activities = []) {
   return ''
 }
 
+function resolveLabwareFromNode(node) {
+  if (!node) return ''
+  const data =
+    node.frontMatter?.data ||
+    node.data ||
+    node.frontMatter ||
+    node.metadata ||
+    node.run ||
+    {}
+  const instances = data.labware_instances || []
+  if (Array.isArray(instances) && instances.length) {
+    const entry = instances.find((l) => l?.id || l?.['@id']) || instances[0]
+    return entry?.id || entry?.['@id'] || ''
+  }
+  return ''
+}
+
 watch(
   () => repo.directoryHandle.value,
   (handle) => {
@@ -542,6 +648,59 @@ function reopenPrompt() {
 
 function closePrompt() {
   showPrompt.value = false
+}
+
+function openSettings() {
+  settingsError.value = ''
+  settingsSaving.value = false
+  syncSettingsForm()
+  if (typeof window !== 'undefined') {
+    const url = new URL(window.location.href)
+    url.searchParams.set('settings', 'true')
+    window.location.href = url.toString()
+    return
+  }
+  showSettingsModal.value = true
+}
+
+function closeSettings() {
+  if (isStandaloneSettings.value) {
+    clearSettingsTarget()
+  }
+  showSettingsModal.value = false
+}
+
+async function saveSettings() {
+  if (!isReady.value) {
+    settingsError.value = 'Connect a repository to save settings.'
+    return
+  }
+  settingsSaving.value = true
+  settingsError.value = ''
+  try {
+    await systemConfig.save({
+      ontology: {
+        cache_duration: Number(settingsForm.cacheDuration) || 30
+      },
+      provenance: {
+        local_namespace: settingsForm.localNamespace || ''
+      }
+    })
+    if (isStandaloneSettings.value) {
+      clearSettingsTarget()
+    }
+    showSettingsModal.value = false
+  } catch (err) {
+    settingsError.value = err?.message || 'Failed to save settings.'
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+function syncSettingsForm() {
+  const ontologyCfg = systemConfig.ontologyConfig.value
+  settingsForm.cacheDuration = ontologyCfg.cacheDuration || 30
+  settingsForm.localNamespace = systemConfig.provenanceConfig?.value?.localNamespace || ''
 }
 
 function openCreator(options = null) {
@@ -756,18 +915,23 @@ async function handleExplorerOpen() {
 async function handleRunEditorOpen() {
   if (!runEditorFilePath.value) return
   const bundle = schemaLoader.selectedBundle?.value
+  openRunEditorWith(runEditorFilePath.value, bundle)
+  showRunEditorModal.value = false
+}
+
+function openRunEditorWith(path, bundle) {
+  if (!path) return
   const url = new URL(window.location.href)
   url.searchParams.delete('runEditorPath')
   url.searchParams.delete('runEditorBundle')
-  url.searchParams.set('runEditorPath', runEditorFilePath.value)
+  url.searchParams.set('runEditorPath', path)
   if (bundle) url.searchParams.set('runEditorBundle', bundle)
   runEditorTarget.value = {
-    path: runEditorFilePath.value,
+    path,
     bundle
   }
   window.history.replaceState({}, '', url.toString())
   loadRunEditorData()
-  showRunEditorModal.value = false
 }
 
 watch(
@@ -820,6 +984,7 @@ async function appendExplorerEvent() {
   } catch (err) {
     explorerForm.error = err?.message || 'Failed to append event.'
   }
+  explorerForm.saving = false
 }
 
 function buildQuickTransferEvent(form, fm = {}) {
@@ -859,6 +1024,37 @@ function buildQuickTransferEvent(form, fm = {}) {
       volume: form.volume.trim(),
     material: form.materialId?.trim() ? { id: form.materialId.trim() } : null
     }
+  }
+}
+
+function handleUseRunAsSource(payload = {}) {
+  const runId = payload.runId || explorerSelectedRun.value || ''
+  if (!runId) return
+  const labwareId =
+    payload.labwareId ||
+    explorerSelectedLabware.value ||
+    explorerTarget.value?.labware ||
+    resolveLabwareFromEvents(explorerState.events) ||
+    ''
+  const runNode = runOptions.value.find((node) => node.id === runId)
+  const path = payload.path || runNode?.path || explorerTarget.value?.path || ''
+  const label = payload.label || labwareId || runId
+  pendingPaletteAdd.value = { runId, labwareId, label }
+  // If run editor already loaded, add immediately
+  if (runEditorRef.value?.store) {
+    runEditorRef.value.store.addRunDerivedPaletteEntry({
+      runId,
+      labwareId,
+      label,
+      layoutIndex: resolveLayoutIndex({}, { fallbackKind: 'plate96' })
+    })
+    pendingPaletteAdd.value = null
+    return
+  }
+  // Otherwise open the run editor on the run
+  if (path) {
+    const bundle = payload.bundle || explorerTarget.value?.bundle || schemaLoader.selectedBundle?.value
+    openRunEditorWith(path, bundle)
   }
 }
 
@@ -1121,6 +1317,28 @@ function handleGraphSupportingDoc(payload) {
   openSupportingDocumentFromGraph(payload.node)
 }
 
+function handleGraphUseAsSource(node) {
+  if (!node) return
+  const runId = node.id || node.frontMatter?.metadata?.id || node.frontMatter?.metadata?.recordId || ''
+  const labwareId = resolveLabwareFromNode(node) || 'plate/UNKNOWN'
+  const label = node.title || labwareId || runId
+  const bundle = node.bundle || schemaLoader.selectedBundle?.value
+  pendingPaletteAdd.value = { runId, labwareId, label }
+  if (runEditorRef.value?.store) {
+    runEditorRef.value.store.addRunDerivedPaletteEntry({
+      runId,
+      labwareId,
+      label,
+      layoutIndex: resolveLayoutIndex({}, { fallbackKind: 'plate96' })
+    })
+    pendingPaletteAdd.value = null
+    return
+  }
+  if (node.path) {
+    openRunEditorWith(node.path, bundle)
+  }
+}
+
 function handleCreateSelectedRecord() {
   if (!isReady.value) return
   const recordType = selectedRootRecordType.value || defaultGraphRootType.value || ''
@@ -1162,6 +1380,50 @@ function handleCreateProtocol() {
     <div v-else class="inspector-standalone__message">
       <p>Connect your repository to view this record.</p>
       <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
+    </div>
+  </div>
+  <div v-else-if="isStandaloneSettings" class="settings-standalone">
+    <header class="protocol-editor-standalone__header">
+      <div>
+        <p class="app-kicker">Settings</p>
+        <h1>System configuration</h1>
+        <p class="app-subtitle">Ontology search + provenance</p>
+      </div>
+      <div class="protocol-editor-standalone__actions">
+        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
+          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
+        </button>
+        <button class="secondary" type="button" @click="clearSettingsTarget">Return to workspace</button>
+      </div>
+    </header>
+    <p v-if="!isOnline" class="offline-banner">
+      You are currently offline. Cached schema/search data are in use until connectivity returns.
+    </p>
+    <div class="protocol-editor-standalone__body">
+      <div class="modal-form settings-form">
+        <label>
+          Ontology cache duration (days)
+          <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
+        </label>
+        <label>
+          Local namespace (provenance)
+          <input
+            v-model="settingsForm.localNamespace"
+            type="text"
+            placeholder="urn:local"
+          />
+        </label>
+        <p v-if="settingsError" class="status status-error">{{ settingsError }}</p>
+        <p class="status status-muted">
+          Settings are saved to <code>config/system.yaml</code> in your connected repository.
+        </p>
+        <div class="settings-actions">
+          <button class="ghost-button" type="button" @click="clearSettingsTarget">Cancel</button>
+          <button class="primary" type="button" :class="{ 'is-loading': settingsSaving }" @click="saveSettings">
+            {{ settingsSaving ? 'Saving…' : 'Save settings' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   <div v-else-if="isStandaloneTiptap" class="tiptap-standalone">
@@ -1334,6 +1596,8 @@ function handleCreateProtocol() {
           :run="runEditorState.run"
           :layout="runEditorState.layout"
           :material-library="runEditorState.materialLibrary"
+          :load-run-by-id="loadRunById"
+          :runs="runOptions"
           :validate-record="recordValidator.validate"
         />
         <p v-else class="protocol-editor-standalone__message">Loading run…</p>
@@ -1376,6 +1640,7 @@ function handleCreateProtocol() {
           :events="explorerState.events"
           :layout-index="explorerState.layoutIndex || fallbackLayout"
           :labware-id="explorerState.labwareId"
+          @use-as-source="handleUseRunAsSource"
         />
         <div class="explorer-form">
           <h4>Append PlateEvent</h4>
@@ -1427,17 +1692,22 @@ function handleCreateProtocol() {
           <h1>DIsCo Pages 2.0</h1>
           <p class="app-subtitle">Schema-driven LIS/QMS shell powered by Vue + Vite</p>
         </div>
-        <div class="connection-chip" :class="{ 'is-connected': isReady }">
-          <span class="chip-label">{{ connectionLabel }}</span>
-          <button
-            class="pill-button"
-            type="button"
-            :disabled="!repo.isSupported"
-            :class="{ 'is-loading': repo.isRequesting }"
-            @click="handleConnect"
-          >
-            {{ repo.isRequesting ? 'Awaiting…' : isReady ? 'Reconnect' : 'Connect' }}
+        <div class="header-actions">
+          <button class="ghost-button settings-button" type="button" @click="openSettings">
+            ⚙ Settings
           </button>
+          <div class="connection-chip" :class="{ 'is-connected': isReady }">
+            <span class="chip-label">{{ connectionLabel }}</span>
+            <button
+              class="pill-button"
+              type="button"
+              :disabled="!repo.isSupported"
+              :class="{ 'is-loading': repo.isRequesting }"
+              @click="handleConnect"
+            >
+              {{ repo.isRequesting ? 'Awaiting…' : isReady ? 'Reconnect' : 'Connect' }}
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -1528,10 +1798,11 @@ function handleCreateProtocol() {
             :supporting-document-enabled="supportingDocumentEnabled"
             @select-record="handleSelect"
             @create-child="handleGraphCreate"
-            @open-tiptap="handleGraphOpenTipTap"
-            @open-protocol="handleGraphOpenProtocol"
-            @create-supporting-doc="handleGraphSupportingDoc"
-          />
+          @open-tiptap="handleGraphOpenTipTap"
+          @open-protocol="handleGraphOpenProtocol"
+          @create-supporting-doc="handleGraphSupportingDoc"
+          @use-as-source="handleGraphUseAsSource"
+        />
           <FileTreeBrowser
             v-else
             :nodes="rootNodes"
@@ -1566,6 +1837,34 @@ function handleCreateProtocol() {
           @click="handleConnect"
         >
           {{ repo.isRequesting ? 'Awaiting permission…' : 'Select folder' }}
+        </button>
+      </template>
+    </BaseModal>
+    <BaseModal v-if="showSettingsModal" title="Settings" @close="closeSettings">
+      <template #body>
+        <div class="modal-form">
+          <label>
+            Ontology cache duration (days)
+            <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
+          </label>
+          <label>
+            Local namespace (provenance)
+            <input
+              v-model="settingsForm.localNamespace"
+              type="text"
+              placeholder="urn:local"
+            />
+          </label>
+          <p v-if="settingsError" class="status status-error">{{ settingsError }}</p>
+          <p class="status status-muted">
+            Settings are saved to <code>config/system.yaml</code> in your connected repository.
+          </p>
+        </div>
+      </template>
+      <template #footer>
+        <button class="ghost-button" type="button" @click="closeSettings">Cancel</button>
+        <button class="primary" type="button" :class="{ 'is-loading': settingsSaving }" @click="saveSettings">
+          {{ settingsSaving ? 'Saving…' : 'Save settings' }}
         </button>
       </template>
     </BaseModal>
@@ -1692,6 +1991,24 @@ function handleCreateProtocol() {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.settings-standalone .settings-form {
+  max-width: 520px;
+  display: grid;
+  gap: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .app-kicker {

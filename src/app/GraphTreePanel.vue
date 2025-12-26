@@ -37,7 +37,14 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['select-record', 'create-child', 'open-tiptap', 'create-supporting-doc', 'open-protocol'])
+const emit = defineEmits([
+  'select-record',
+  'create-child',
+  'open-tiptap',
+  'create-supporting-doc',
+  'open-protocol',
+  'use-as-source'
+])
 
 const expandedIds = ref(new Set())
 
@@ -398,6 +405,18 @@ function supportingDocTitle(node) {
                   <path
                     d="M10 4c-4.5 0-8 3.5-8 6s3.5 6 8 6 8-3.5 8-6-3.5-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"
                   />
+                </svg>
+              </button>
+              <button
+                v-if="row.node.recordType === 'run'"
+                class="icon-button"
+                type="button"
+                title="Use as source in Run Editor"
+                :disabled="!row.node.path"
+                @click.stop="emit('use-as-source', row.node)"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M4 10h8.5L10 7.5l1-1 4 3.5-4 3.5-1-1L12.5 11H4z" />
                 </svg>
               </button>
               <button

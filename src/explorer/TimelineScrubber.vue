@@ -14,12 +14,33 @@ const props = defineProps({
 
 const emit = defineEmits(['update:cursor'])
 
+function durationToMs(duration = '') {
+  if (typeof duration !== 'string') return null
+  const match = duration.match(/^P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i)
+  if (!match) return null
+  const hours = Number(match[1] || 0)
+  const minutes = Number(match[2] || 0)
+  const seconds = Number(match[3] || 0)
+  return (hours * 3600 + minutes * 60 + seconds) * 1000
+}
+
+function eventTimeMs(evt = {}, fallbackIndex = 0) {
+  const ts = evt.timestamp_actual || evt.timestamp
+  const parsed = Date.parse(ts || '')
+  if (Number.isFinite(parsed)) return parsed
+  const offsetMs = durationToMs(evt.t_offset || '')
+  if (Number.isFinite(offsetMs)) return offsetMs
+  return fallbackIndex
+}
+
 const sortedEvents = computed(() => {
-  return [...(props.events || [])].sort((a, b) => (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0))
+  return [...(props.events || [])]
+    .map((evt, index) => ({ evt, timeMs: eventTimeMs(evt, index), index }))
+    .sort((a, b) => a.timeMs - b.timeMs || a.index - b.index)
 })
 
-const minTs = computed(() => (sortedEvents.value[0] ? Date.parse(sortedEvents.value[0].timestamp || '') : 0))
-const maxTs = computed(() => (sortedEvents.value[sortedEvents.value.length - 1] ? Date.parse(sortedEvents.value[sortedEvents.value.length - 1].timestamp || '') : 0))
+const minTs = computed(() => (sortedEvents.value[0] ? sortedEvents.value[0].timeMs : 0))
+const maxTs = computed(() => (sortedEvents.value[sortedEvents.value.length - 1] ? sortedEvents.value[sortedEvents.value.length - 1].timeMs : 0))
 
 const cursorValue = computed(() => {
   const ts = Date.parse(props.cursor || '')
@@ -35,6 +56,10 @@ function handleInput(event) {
 
 function jumpTo(timestamp) {
   emit('update:cursor', timestamp)
+}
+
+function displayTs(evt = {}) {
+  return evt.timestamp_actual || evt.timestamp || evt.t_offset || 'unscheduled'
 }
 </script>
 
@@ -53,12 +78,12 @@ function jumpTo(timestamp) {
       />
       <div class="scrubber__ticks">
         <button
-          v-for="evt in sortedEvents"
-          :key="evt.id || evt.timestamp"
+          v-for="entry in sortedEvents"
+          :key="entry.evt?.id || entry.evt?.timestamp || entry.index"
           type="button"
           class="tick"
-          :title="`${evt.event_type || 'event'} @ ${evt.timestamp}`"
-          @click="jumpTo(evt.timestamp)"
+          :title="`${entry.evt?.event_type || 'event'} @ ${displayTs(entry.evt)}`"
+          @click="jumpTo(entry.evt?.timestamp_actual || entry.evt?.timestamp || '')"
         />
       </div>
     </div>

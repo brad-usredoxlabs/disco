@@ -18,6 +18,9 @@ export function replayPlateEvents(events = [], options = {}) {
       case 'transfer':
         applyTransferEvent(state, event, edges, options)
         break
+      case 'add_material':
+        applyAddMaterialEvent(state, event, edges, options)
+        break
       case 'wash':
         applyWashEvent(state, event)
         break
@@ -41,7 +44,7 @@ export function plateStateAtTime(events = [], timestamp, options = {}) {
   const cutoff = timestamp ? Date.parse(timestamp) : null
   const filtered = stableSortEvents(events).filter((evt) => {
     if (!cutoff) return true
-    const ts = Date.parse(evt?.timestamp || '')
+    const ts = eventTimeMs(evt)
     return Number.isFinite(ts) ? ts <= cutoff : true
   })
   return replayPlateEvents(filtered, options).state
@@ -75,19 +78,28 @@ export function buildLineageGraph(edges = []) {
 }
 
 function stableSortEvents(events = []) {
-  return (events || []).map((evt, index) => ({ evt, index })).sort((a, b) => {
-    const tsA = Date.parse(a.evt?.timestamp || '')
-    const tsB = Date.parse(b.evt?.timestamp || '')
-    const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
-    if (diff !== 0) return diff
-    return a.index - b.index
-  }).map((entry) => entry.evt)
+  return (events || [])
+    .map((evt, index) => ({ evt, index }))
+    .sort((a, b) => {
+      const tsA = eventTimeMs(a.evt)
+      const tsB = eventTimeMs(b.evt)
+      const diff = (Number.isFinite(tsA) ? tsA : 0) - (Number.isFinite(tsB) ? tsB : 0)
+      if (diff !== 0) return diff
+      return a.index - b.index
+    })
+    .map((entry) => entry.evt)
 }
 
 function eventTouchesLabware(event = {}, focusLabwareId = '') {
   if (!focusLabwareId) return true
-  const targetId = event.details?.target?.labware?.['@id'] || event.details?.target?.labware
-  const sourceId = event.details?.source?.labware?.['@id'] || event.details?.source?.labware
+  const targetId =
+    event.details?.target_labware ||
+    event.details?.target?.labware?.['@id'] ||
+    event.details?.target?.labware
+  const sourceId =
+    event.details?.source_labware ||
+    event.details?.source?.labware?.['@id'] ||
+    event.details?.source?.labware
   const washId = event.details?.labware?.['@id'] || event.details?.labware
   const sampleLabware = event.details?.inputs?.labware?.['@id'] || event.details?.inputs?.labware
   const listed =
@@ -103,11 +115,14 @@ function eventTouchesLabware(event = {}, focusLabwareId = '') {
 }
 
 function applyTransferEvent(state, event, edges, options) {
-  const sourceLabware = event.details?.source?.labware?.['@id'] || event.details?.source?.labware
-  const targetLabware = event.details?.target?.labware?.['@id'] || event.details?.target?.labware
+  const sourceLabware =
+    event.details?.source_labware || event.details?.source?.labware?.['@id'] || event.details?.source?.labware
+  const targetLabware =
+    event.details?.target_labware || event.details?.target?.labware?.['@id'] || event.details?.target?.labware
   if (!sourceLabware || !targetLabware) return
   const volumeL = normalizeVolume(event.details?.volume, 0)
-  const sourceDepleting = resolveDepletion(options, sourceLabware, event.details?.source?.labware?.kind)
+  const sourceKind = event.details?.source?.labware?.kind
+  const sourceDepleting = resolveDepletion(options, sourceLabware, sourceKind)
   const targetPlate = state[targetLabware] || (state[targetLabware] = {})
   const sourcePlate = state[sourceLabware] || (state[sourceLabware] = {})
 
@@ -142,6 +157,7 @@ function applyTransferEvent(state, event, edges, options) {
           materialId: component.materialId || targetMaterialId,
           moles: transferredMoles,
           volumeL,
+          stockConcentration: component.stockConcentration || materialDetails?.stock_concentration,
           sourceEventId: event.id || event.timestamp,
           sourceLabware: sourceLabware,
           sourceWell: srcWellId
@@ -182,8 +198,38 @@ function applyTransferEvent(state, event, edges, options) {
   })
 }
 
+function applyAddMaterialEvent(state, event) {
+  const targetLabware =
+    event.details?.target_labware || event.details?.target?.labware?.['@id'] || event.details?.target?.labware
+  if (!targetLabware) return
+  const targetWells = event.details?.target?.wells || event.details?.wells || []
+  if (!Array.isArray(targetWells) || !targetWells.length) return
+  const plate = state[targetLabware] || (state[targetLabware] = {})
+  const volumeL = normalizeVolume(event.details?.volume, 0)
+  const material = event.details?.material || {}
+  const materialId = event.details?.material_id || material?.id
+  const stockConcentration = material?.stock_concentration || event.details?.stock_concentration
+  targetWells.forEach((wellId) => {
+    const well = ensureWellState(plate, wellId)
+    const vol = normalizeVolume(event.details?.volume, volumeL)
+    addComponent(well, {
+      materialId,
+      moles: estimateMolesFromVolume(vol, { stock_concentration: stockConcentration }),
+      volumeL: vol,
+      stockConcentration,
+      sourceEventId: event.id || event.timestamp,
+      sourceLabware: targetLabware,
+      sourceWell: wellId
+    })
+    addVolume(well, vol)
+  })
+}
+
 function applyWashEvent(state, event) {
-  const labwareId = event.details?.labware?.['@id'] || event.details?.labware
+  const labwareId =
+    event.details?.target_labware ||
+    event.details?.labware?.['@id'] ||
+    event.details?.labware
   if (!labwareId) return
   const wells = Array.isArray(event.details?.wells) && event.details.wells.length ? event.details.wells : null
   const plate = state[labwareId]
@@ -245,12 +291,30 @@ function resolveMapping(details = {}) {
   })
 }
 
+function eventTimeMs(evt = {}) {
+  const tsActual = evt.timestamp_actual || evt.timestamp
+  const parsedActual = Date.parse(tsActual || '')
+  if (Number.isFinite(parsedActual)) return parsedActual
+  const offset = (evt.t_offset || '').match(/^P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i)
+  if (offset) {
+    const hours = Number(offset[1] || 0)
+    const minutes = Number(offset[2] || 0)
+    const seconds = Number(offset[3] || 0)
+    return (hours * 3600 + minutes * 60 + seconds) * 1000
+  }
+  return null
+}
+
 function resolveDepletion(options, labwareId, kind) {
   const map = options.depletionByLabwareId || {}
   if (labwareId && labwareId in map) return Boolean(map[labwareId])
   const normalizedKind = (kind || '').toLowerCase()
-  if (normalizedKind && DEFAULT_DEPLETION.hasOwnProperty(normalizedKind)) {
-    return DEFAULT_DEPLETION[normalizedKind]
+  if (normalizedKind) {
+    if (DEFAULT_DEPLETION.hasOwnProperty(normalizedKind)) {
+      return DEFAULT_DEPLETION[normalizedKind]
+    }
+    if (normalizedKind.startsWith('reservoir')) return DEFAULT_DEPLETION.reservoir
+    if (normalizedKind.startsWith('plate')) return DEFAULT_DEPLETION.plate
   }
   return true
 }
@@ -278,6 +342,7 @@ function hydrateSourceWell(srcWell, options = {}) {
     materialId,
     moles: estimateMolesFromVolume(volumeL, material),
     volumeL,
+    stockConcentration: material?.stock_concentration,
     sourceEventId: event.id || event.timestamp,
     sourceLabware,
     sourceWell: srcWellId

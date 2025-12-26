@@ -244,13 +244,15 @@ function emitSelection(result) {
   const label = result.label || result.prefLabel || result.id || ''
   const identifier = result.id || result.identifier || ''
   const ontology = result.ontology || result.source || ''
+  const provenance = result.provenance || ''
 
   if (valueShape.value === 'reference') {
     const payload = {
       id: identifier || label,
       label,
       source: ontology || '',
-      ontologyEnum: result.ontologyEnum || ''
+      ontologyEnum: result.ontologyEnum || '',
+      provenance
     }
     emit('update:value', payload)
     saveOntologySelection(props.vocab, payload)
@@ -264,13 +266,15 @@ function emitSelection(result) {
     definition: result.definition || '',
     synonyms: normalizeSuggestionList(result.synonyms || result.synonym),
     xrefs: normalizeSuggestionList(result.xrefs),
-    ontologyEnum: result.ontologyEnum || ''
+    ontologyEnum: result.ontologyEnum || '',
+    provenance
   }
   emit('update:value', recordPayload)
   const cachePayload = {
     ...recordPayload,
     id: recordPayload.identifier || label,
-    source: recordPayload.ontology
+    source: recordPayload.ontology,
+    provenance
   }
   saveOntologySelection(props.vocab, cachePayload)
 }

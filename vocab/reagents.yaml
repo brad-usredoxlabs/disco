@@ -90,16 +90,11 @@ cached_terms:
     source: ontology
     definition: ""
     cached_at: 2025-11-28T21:20:07.808Z
-  - identifier: LAB:DMEM_SUPPLEMENT
+  - id: LAB:DMEM_SUPPLEMENT
     label: DMEM + 10% FBS
-    ontology: local
-    definition: Dulbecco's Modified Eagle Medium supplemented with 10% fetal bovine serum
-    synonyms:
-      - DMEM 10% FBS
-    xrefs: []
-    id: LAB:DMEM_SUPPLEMENT
     source: local
-    cached_at: 2025-11-28T23:03:55.487Z
+    ontologyEnum: local
+    cached_at: 2025-12-25T18:47:01.053Z
   - identifier: http://purl.obolibrary.org/obo/CHEBI_71464
     label: palmitoyl ethanolamide
     ontology: ontology

@@ -6,9 +6,11 @@ const FALLBACK_CONFIG_PATH = '/config/system.example.yaml'
 
 function defaultConfig() {
   return {
-    bioportal: {
-      api_key: '',
+    ontology: {
       cache_duration: 30
+    },
+    provenance: {
+      local_namespace: ''
     },
     features: {
       graphTree: true,
@@ -56,13 +58,17 @@ export function useSystemConfig(repoConnection) {
     return {
       ...base,
       ...userConfig,
-      bioportal: {
-        ...base.bioportal,
-        ...(userConfig.bioportal || {})
+      ontology: {
+        ...base.ontology,
+        ...(userConfig.ontology || {})
       },
       features: {
         ...base.features,
         ...(userConfig.features || {})
+      },
+      provenance: {
+        ...base.provenance,
+        ...(userConfig.provenance || {})
       }
     }
   }
@@ -74,13 +80,42 @@ export function useSystemConfig(repoConnection) {
     lastLoadedAt.value = null
   }
 
-  const bioportalConfig = computed(() => {
-    const source = config.value?.bioportal || {}
+  const ontologyConfig = computed(() => {
+    const source = config.value?.ontology || {}
     return {
-      apiKey: source.api_key || source.apiKey || '',
       cacheDuration: Number(source.cache_duration ?? source.cacheDuration ?? 30) || 30
     }
   })
+
+  const provenanceConfig = computed(() => {
+    const source = config.value?.provenance || {}
+    return {
+      localNamespace: source.local_namespace || source.localNamespace || ''
+    }
+  })
+
+  async function saveConfig(partial = {}) {
+    if (!repoConnection?.directoryHandle?.value) {
+      throw new Error('Connect a repository before saving settings.')
+    }
+    const merged = mergeConfig({
+      ...config.value,
+      ...partial,
+      ontology: {
+        ...(config.value?.ontology || {}),
+        ...(partial.ontology || {})
+      },
+      provenance: {
+        ...(config.value?.provenance || {}),
+        ...(partial.provenance || {})
+      }
+    })
+    const yamlText = YAML.stringify(merged)
+    await repoConnection.writeFile(PRIMARY_CONFIG_PATH, yamlText)
+    config.value = mergeConfig(merged)
+    lastLoadedAt.value = new Date()
+    status.value = 'ready'
+  }
 
   watch(
     () => repoConnection?.directoryHandle?.value,
@@ -99,7 +134,9 @@ export function useSystemConfig(repoConnection) {
     status,
     error,
     lastLoadedAt,
-    bioportalConfig,
-    reload: loadConfig
+    ontologyConfig,
+    provenanceConfig,
+    reload: loadConfig,
+    save: saveConfig
   }
 }

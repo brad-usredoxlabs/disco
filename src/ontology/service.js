@@ -1,39 +1,32 @@
 import { createVocabStore } from './vocabStore'
-import { createBioPortalClient } from './bioportalClient'
+import { createOlsClient } from './olsClient'
 
 let repoConnectionRef = null
 let vocabStore = null
 let vocabSchemas = {}
-let bioportalClient = null
-let bioportalSettings = { apiKey: '', cacheDuration: 30 }
+let olsClient = null
+let cacheSettings = { cacheDuration: 30 }
 
 export function configureOntologyService({ repoConnection, systemConfig, vocabSchemas: schemas } = {}) {
   repoConnectionRef = repoConnection || null
   vocabStore = repoConnection ? createVocabStore(repoConnection) : null
   vocabSchemas = schemas || {}
-  bioportalSettings = {
-    apiKey: systemConfig?.apiKey || systemConfig?.api_key || '',
+  cacheSettings = {
     cacheDuration: Number(systemConfig?.cacheDuration ?? systemConfig?.cache_duration ?? 30) || 30
   }
-  if (repoConnectionRef && bioportalSettings.apiKey) {
-    bioportalClient = createBioPortalClient({
-      apiKey: bioportalSettings.apiKey,
-      cacheDuration: bioportalSettings.cacheDuration,
-      repoConnection: repoConnectionRef
-    })
-  } else if (repoConnectionRef) {
-    bioportalClient = createBioPortalClient({
-      apiKey: '',
-      cacheDuration: bioportalSettings.cacheDuration,
-      repoConnection: repoConnectionRef
-    })
-  } else {
-    bioportalClient = null
-  }
+  olsClient = createOlsClient()
 }
 
 function getVocabSchema(name) {
-  return vocabSchemas?.[name] || null
+  if (!name) return null
+  const exact = vocabSchemas?.[name]
+  if (exact) return exact
+  // Graceful fallback: strip common suffixes like ".lab"
+  const stripped = name.replace(/\.lab$/i, '')
+  if (stripped && vocabSchemas?.[stripped]) {
+    return vocabSchemas[stripped]
+  }
+  return null
 }
 
 async function readVocab(name) {
@@ -78,11 +71,12 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
   })
   
   const trimmed = query.trim()
+  const skipLocal = options?.skipLocal === true
   if (!vocabName) return []
   if (!vocabStore || !repoConnectionRef) {
     throw new Error('Connect a repository and load a schema bundle to enable ontology searches.')
   }
-  const schema = getVocabSchema(vocabName)
+  const schema = getVocabSchema(vocabName) || buildFallbackSchema(vocabName)
   const normalizedOptions = normalizeSearchOptions(options)
   const resultsMap = new Map()
 
@@ -94,7 +88,7 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
     throw new Error(`Missing vocabulary file at /vocab/${vocabName}.yaml in the selected repository.`)
   }
 
-  if (vocab) {
+  if (vocab && !skipLocal) {
     ;[...(vocab.local_extensions || []), ...(vocab.cached_terms || [])].forEach((entry) => {
       const normalized = annotateOntology(normalizeTerm(entry, entry.source || 'local'), schema)
       if (!normalized?.id) return
@@ -104,30 +98,37 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
     })
   }
 
-  if (schema && bioportalClient && trimmed.length) {
+  if (schema && trimmed.length) {
+    if (skipLocal && !olsClient) {
+      throw new Error('Ontology search unavailable (OLS client missing).')
+    }
     const ontologyList = selectOntologyList(schema, normalizedOptions)
     if (ontologyList) {
+      const baseParams = {
+        ontologies: ontologyList,
+        rows: schema.search_settings?.rows || 20,
+        exact: schema.search_settings?.require_exact_match ?? false
+      }
       try {
-        const payload = await bioportalClient.searchTerms({
-          q: trimmed,
-          ontologies: ontologyList,
-          require_exact_match: schema.search_settings?.require_exact_match ?? false,
-          include_obsolete: schema.search_settings?.include_obsolete ?? false,
-          also_search_properties: schema.search_settings?.include_properties ?? true,
-          include_definitions: schema.search_settings?.include_definitions ?? true,
-          suggest: true
+        const response = await olsClient.searchTerms({
+          ...baseParams,
+          q: trimmed
         })
-        const collection = payload?.collection || []
+        const collection = response?.collection || []
+
         collection.forEach((item) => {
           const normalized = annotateOntology(normalizeTerm(item, item.ontology || 'ontology'), schema)
           if (!normalized?.id) return
           if (!matchesContext(normalized, normalizedOptions)) return
           if (!resultsMap.has(normalized.id)) {
-            resultsMap.set(normalized.id, { ...normalized, provenance: 'bioportal' })
+            resultsMap.set(normalized.id, { ...normalized, provenance: 'ols' })
           }
         })
       } catch (err) {
-        console.warn('[TapTab] BioPortal search failed', err)
+        console.warn('[TapTab] OLS search failed', err)
+        if (skipLocal) {
+          throw err
+        }
       }
     }
   }
@@ -173,7 +174,10 @@ function selectOntologyList(schema, options = {}) {
   if (!entries.length) return ''
   const filtered = entries.filter((entry) => ontologyEntryMatchesFilters(entry, options))
   const target = filtered.length ? filtered : entries
-  return target.map((entry) => entry.acronym).filter(Boolean).join(',')
+  return target
+    .map((entry) => normalizeOntologyAcronym(entry.acronym))
+    .filter(Boolean)
+    .join(',')
 }
 
 function ontologyEntryMatchesFilters(entry, options = {}) {
@@ -198,11 +202,11 @@ function annotateOntology(term, schema) {
 
 function resolveOntologyEnum(schema, value) {
   if (!value) return ''
-  const normalized = value.toString().toLowerCase()
+  const normalized = normalizeOntologyAcronym(value)
   if (!normalized) return ''
   const entries = schema?.bioportal_ontologies || []
   for (const entry of entries) {
-    const acronym = entry.acronym ? entry.acronym.toLowerCase() : ''
+    const acronym = normalizeOntologyAcronym(entry.acronym)
     const enumValue = entry.matches?.ontology_enum ? entry.matches.ontology_enum.toLowerCase() : ''
     if (enumValue) {
       if (normalized === enumValue || normalized === acronym) {
@@ -215,10 +219,38 @@ function resolveOntologyEnum(schema, value) {
   return normalized
 }
 
+function normalizeOntologyAcronym(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+}
+
+function buildFallbackSchema(name) {
+  if (!name) return null
+  // Minimal schema so OLS search still works even if bundle is missing the vocab schema
+  return {
+    name,
+    bioportal_ontologies: [
+      { acronym: 'chebi' },
+      { acronym: 'ncit' },
+      { acronym: 'ncbitaxon' },
+      { acronym: 'go' },
+      { acronym: 'uberon' },
+      { acronym: 'cl' }
+    ],
+    search_settings: {
+      require_exact_match: false,
+      include_obsolete: false,
+      include_properties: true,
+      include_definitions: true
+    }
+  }
+}
+
 export async function saveOntologySelection(vocabName, term) {
   if (!vocabStore || !vocabName || !term?.id) return
   try {
-    await vocabStore.upsertCachedTerm(vocabName, term, { maxAgeDays: bioportalSettings.cacheDuration })
+    await vocabStore.upsertCachedTerm(vocabName, term, { maxAgeDays: cacheSettings.cacheDuration })
   } catch (err) {
     console.warn('[TapTab] Failed to cache ontology term', err)
   }

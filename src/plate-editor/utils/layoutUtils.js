@@ -130,7 +130,8 @@ export function computeRangeSelection(anchorId, targetId, layoutIndex) {
 
 export function formatWellId(rowLabel, columnNumber, keying = 'A01', rowIndex = 0) {
   if (keying === 'R1C1') {
-    return `R${rowIndex + 1}C${columnNumber}`
+    // Reservoirs use portrait orientation but retain standard A01, A02... naming
+    return `A${String(rowIndex + columnNumber).padStart(2, '0')}`
   }
   if (keying === 'T01') {
     return `T${String(columnNumber).padStart(2, '0')}`

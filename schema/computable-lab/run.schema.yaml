@@ -43,12 +43,24 @@ properties:
   notes:
     type: string
 
+  labware_instances:
+    type: array
+    description: "Labware instances referenced in this run (ids-only; labels/kinds resolved here)."
+    items:
+      $ref: "#/definitions/labware_instance"
+
+  source_palette:
+    type: array
+    description: "Dynamic source palette entries used by the run editor."
+    items:
+      $ref: "#/definitions/palette_entry"
+
   # Optional: bindings that apply across the whole run (can be overridden per segment)
   labware_bindings:
     type: object
     description: >
-      Optional run-level bindings from labware roles to labware record @ids.
-      Protocol segments may override or extend these bindings.
+      Deprecated: legacy run-level bindings from labware roles to labware record @ids.
+      Prefer labware_instances + source_palette. Protocol segments may override or extend if present.
     additionalProperties:
       type: string
 
@@ -107,6 +119,63 @@ definitions:
   labware_ref:
     description: "Reference to labware. Use your repo's canonical LabwareRef datatype."
     $ref: "../datatypes/labware-ref.schema.yaml"
+
+  labware_instance:
+    type: object
+    description: "Labware instance available to this run."
+    required: ["@id", "kind"]
+    properties:
+      "@id":
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      depletion_mode:
+        type: string
+        description: "How depletion should be handled for this instance (none/volume/count)."
+      notes:
+        type: string
+      layoutRef:
+        type: string
+        description: "Optional layout/template reference."
+      layout_ref:
+        type: string
+        description: "Deprecated snake_case layout reference."
+    additionalProperties: false
+
+  palette_entry:
+    type: object
+    description: "Entry in the source palette."
+    required: ["labwareId"]
+    properties:
+      labwareId:
+        type: string
+      label:
+        type: string
+      archived:
+        type: boolean
+      layoutRef:
+        type: string
+        description: "Optional reference to layout/template."
+      roleHint:
+        type: string
+      notes:
+        type: string
+      # Back-compat: allow legacy snake_case fields, but they are deprecated
+      id:
+        type: string
+        description: "Deprecated duplicate of labwareId."
+      labware_id:
+        type: string
+        description: "Deprecated snake_case labware id."
+      layout_ref:
+        type: string
+        description: "Deprecated snake_case layout ref."
+      role_hint:
+        type: string
+        description: "Deprecated snake_case role hint."
+    additionalProperties: false
 
   plate_event:
     description: "PlateEvent generated during execution."

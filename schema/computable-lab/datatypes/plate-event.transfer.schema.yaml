@@ -7,8 +7,8 @@ description: "Details for a transfer (aspirate + dispense) event."
 
 required:
   - type
-  - source
-  - target
+  - source_labware
+  - target_labware
   - volume
 
 properties:
@@ -16,57 +16,18 @@ properties:
     type: string
     const: "transfer"
 
-  source:
-    type: object
-    description: "Source labware and wells for the transfer."
-    required: ["labware", "wells"]
-    properties:
-      labware:
-        $ref: "./labware-ref.schema.yaml"
-      wells:
-        type: object
-        description: "Map of source well name to optional material description."
-        additionalProperties:
-          $ref: "./material-in-well.schema.yaml"
-    additionalProperties: false
+  source_labware:
+    type: string
+    description: "Source labware id."
 
-  target:
-    type: object
-    description: "Target labware and well mapping for the transfer."
-    required: ["labware", "wells"]
-    properties:
-      labware:
-        $ref: "./labware-ref.schema.yaml"
-      wells:
-        type: object
-        description: "Map of target well name to optional metadata."
-        additionalProperties:
-          type: object
-          properties:
-            well:
-              type: string
-              description: "Target well name (explicit override)."
-            mix_after:
-              type: boolean
-              description: "Optional hint to mix after dispense."
-            material_id:
-              type: string
-              description: "Optional reference to a local material identifier."
-            role:
-              type: string
-              description: "Role of the material in this well."
-            notes:
-              type: string
-              description: "Optional free-form notes for this placement."
-            volume:
-              type: string
-              description: "Optional per-well volume override."
-          additionalProperties: false
-    additionalProperties: false
+  target_labware:
+    type: string
+    description: "Target labware id."
 
   mapping:
     type: array
-    description: "Optional explicit source->target mapping when different from target.wells keys."
+    description: "Canonical source -> target mapping used for replay."
+    minItems: 1
     items:
       type: object
       required:
@@ -81,15 +42,37 @@ properties:
         role:
           type: string
         volume:
-          type: string
+          type: object
+          required: [value, unit]
+          properties:
+            value:
+              type: number
+            unit:
+              type: string
+          additionalProperties: false
+
+  mapping_spec:
+    type: object
+    description: >
+      Optional authoring hint used to regenerate mapping. If both are present, mapping is canonical.
+    additionalProperties: true
 
   volume:
-    type: string
-    description: "Volume to transfer, e.g. '5 uL'."
+    type: object
+    description: "Volume to transfer (structured)."
+    required:
+      - value
+      - unit
+    properties:
+      value:
+        type: number
+      unit:
+        type: string
+    additionalProperties: false
 
-  material:
-    $ref: "./material-ref.schema.yaml"
-    description: "Optional explicit material reference, if not obvious from the source wells."
+  material_id:
+    type: string
+    description: "Optional explicit material identifier if not derived from source."
 
   pipetting_hint:
     type: object

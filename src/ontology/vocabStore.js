@@ -55,13 +55,18 @@ export function createVocabStore(repoConnection) {
   }
 
   function hydrateVocab(name, data = {}) {
+    const arrayEntries = Array.isArray(data) ? data : []
     const base = defaultVocab(name)
     const hydrated = {
       ...base,
-      ...data,
-      name: data.name || name,
+      ...(Array.isArray(data) ? {} : data),
+      name: (Array.isArray(data) ? '' : data.name) || name,
       cached_terms: Array.isArray(data.cached_terms) ? data.cached_terms : [],
-      local_extensions: Array.isArray(data.local_extensions) ? data.local_extensions : []
+      local_extensions: Array.isArray(data.local_extensions)
+        ? data.local_extensions
+        : arrayEntries.length
+        ? arrayEntries
+        : []
     }
     Object.defineProperty(hydrated, '__missing', {
       value: false,

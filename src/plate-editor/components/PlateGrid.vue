@@ -29,6 +29,24 @@ const isReservoir = computed(() => {
   return props.layoutIndex?.kind?.includes('reservoir')
 })
 
+const is384Well = computed(() => {
+  const rows = props.layoutIndex?.rowLabels?.length || 0
+  const cols = props.layoutIndex?.columnLabels?.length || 0
+  return rows >= 16 && cols >= 24
+})
+
+const is12WellReservoir = computed(() => {
+  const rows = props.layoutIndex?.rowLabels?.length || 0
+  const cols = props.layoutIndex?.columnLabels?.length || 0
+  return isReservoir.value && rows * cols === 12
+})
+
+const isSingleWellReservoir = computed(() => {
+  const rows = props.layoutIndex?.rowLabels?.length || 0
+  const cols = props.layoutIndex?.columnLabels?.length || 0
+  return isReservoir.value && rows * cols === 1
+})
+
 const idLookup = computed(() => {
   const lookup = new Map()
   if (!props.layoutIndex) return lookup
@@ -75,8 +93,12 @@ function tooltipText(cell = {}) {
       input?.amount && input.amount.value !== undefined && input.amount.unit
         ? ` · ${input.amount.value} ${input.amount.unit}`
         : ''
+    const concentration =
+      input?.material?.stock_concentration && input.material.stock_concentration.value !== undefined
+        ? ` · ${input.material.stock_concentration.value} ${input.material.stock_concentration.unit || ''}`
+        : ''
     const notes = input?.notes ? ` — ${input.notes}` : ''
-    return `${idx + 1}. ${label}${role}${amount}${notes}`
+    return `${idx + 1}. ${label}${role}${amount}${concentration}${notes}`
   })
   return `${cell.wellId}: ${lines.join('\n')}`
 }
@@ -98,7 +120,12 @@ function overlayStyle(wellId) {
 </script>
 
 <template>
-  <div class="plate-grid" :class="{ 'is-reservoir': isReservoir }">
+  <div class="plate-grid" :class="{ 
+    'is-reservoir': isReservoir, 
+    'is-384': is384Well,
+    'is-12-well-reservoir': is12WellReservoir,
+    'is-single-well-reservoir': isSingleWellReservoir
+  }">
     <table>
       <thead>
         <tr>
@@ -144,7 +171,7 @@ function overlayStyle(wellId) {
   max-height: 600px;
 }
 
-.plate-grid.is-reservoir table {
+.plate-grid.is-reservoir:not(.is-12-well-reservoir):not(.is-single-well-reservoir) table {
   width: auto;
   min-width: unset;
   max-width: 200px;
@@ -212,5 +239,83 @@ th {
   background: rgba(255, 255, 255, 0.8);
   padding: 0.1rem 0.3rem;
   border-radius: 6px;
+}
+
+/* Responsive scaling for 384-well plates */
+.plate-grid.is-384 table {
+  min-width: 500px;
+}
+
+.plate-grid.is-384 th,
+.plate-grid.is-384 td {
+  padding: 0.05rem;
+}
+
+.plate-grid.is-384 th {
+  font-size: 0.65rem;
+}
+
+.plate-grid.is-384 .well-button {
+  height: 1.5rem;
+  font-size: 0.6rem;
+  gap: 0.1rem;
+  border-radius: 3px;
+}
+
+.plate-grid.is-384 .well-id {
+  font-size: 0.55rem;
+}
+
+.plate-grid.is-384 .well-meta {
+  font-size: 0.5rem;
+}
+
+.plate-grid.is-384 .well-overlay-label {
+  font-size: 0.5rem;
+  padding: 0.05rem 0.2rem;
+  border-radius: 3px;
+}
+
+/* Compact styling for 12-well reservoirs (portrait) */
+.plate-grid.is-12-well-reservoir table {
+  width: auto;
+  min-width: unset;
+  max-width: 200px;
+}
+
+.plate-grid.is-12-well-reservoir .well-button {
+  height: 2.75rem;
+  min-width: 36px;
+}
+
+.plate-grid.is-12-well-reservoir th,
+.plate-grid.is-12-well-reservoir td {
+  padding: 0.08rem;
+}
+
+/* Single-well reservoir - compact portrait */
+.plate-grid.is-single-well-reservoir table {
+  width: auto;
+  min-width: unset;
+  max-width: 220px;
+}
+
+.plate-grid.is-single-well-reservoir td {
+  border-left: none;
+  border-right: none;
+}
+
+.plate-grid.is-single-well-reservoir .well-button {
+  height: 3.5rem;
+  min-width: 180px;
+  border-radius: 8px;
+}
+
+.plate-grid.is-single-well-reservoir th:first-child {
+  border-right: 1px solid #e2e8f0;
+}
+
+.plate-grid.is-single-well-reservoir thead th:not(:first-child) {
+  display: none;
 }
 </style>

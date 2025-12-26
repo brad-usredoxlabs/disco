@@ -1,0 +1,74 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "plate-event.add-material.schema.yaml"
+
+title: PlateEventAddMaterialDetails
+type: object
+description: "Details for adding a material into a labware."
+
+required:
+  - type
+  - target_labware
+  - wells
+  - material_id
+  - volume
+
+properties:
+  type:
+    type: string
+    const: "add_material"
+
+  target_labware:
+    type: string
+    description: "Labware id receiving the material."
+
+  wells:
+    type: array
+    minItems: 1
+    items:
+      type: string
+    description: "Target wells for the material."
+
+  material_id:
+    type: string
+    description: "Material identifier from the material library."
+
+  stock_concentration:
+    type: object
+    description: "Optional override of stock concentration."
+    required:
+      - value
+      - unit
+    properties:
+      value:
+        type: number
+      unit:
+        type: string
+    additionalProperties: false
+
+  volume:
+    type: object
+    description: "Volume to add (structured)."
+    required:
+      - value
+      - unit
+    properties:
+      value:
+        type: number
+      unit:
+        type: string
+    additionalProperties: false
+
+  role:
+    type: string
+    description: "Optional role for this material in the context of the wells."
+
+  control_intents:
+    type: array
+    description: "Optional control intents for this material placement."
+    items:
+      type: string
+
+  notes:
+    type: string
+
+additionalProperties: false

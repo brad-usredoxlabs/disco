@@ -28,6 +28,9 @@ export function addComponent(well, component) {
   if (existing) {
     existing.moles += component.moles
     existing.volumeL = (existing.volumeL || 0) + (component.volumeL || 0)
+    if (!existing.stockConcentration && component.stockConcentration) {
+      existing.stockConcentration = component.stockConcentration
+    }
   } else {
     well.components.push({ ...component })
   }

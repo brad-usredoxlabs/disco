@@ -2,13 +2,13 @@ name: reagents
 description: "Controlled vocabulary for lab reagents"
 
 bioportal_ontologies:
-  - acronym: CHEBI
+  - acronym: chebi
     priority: 1
     description: "Chemical Entities of Biological Interest"
-  - acronym: CCONT
+  - acronym: ccont
     priority: 2
     description: "Cell Culture Ontology"
-  - acronym: NCIT
+  - acronym: ncit
     priority: 3
     description: "National Cancer Institute Thesaurus"
 

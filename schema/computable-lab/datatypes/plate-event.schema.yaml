@@ -10,9 +10,6 @@ description: >
 required:
   - id
   - event_type
-  - timestamp
-  - run
-  - labware
   - details
 
 properties:
@@ -24,6 +21,7 @@ properties:
     type: string
     enum:
       - transfer
+      - add_material
       - incubate
       - read
       - wash
@@ -31,31 +29,44 @@ properties:
       - sample_operation
       - other
 
+  # Planned time offset (required for planned events; use timestamp_actual for executed time)
+  t_offset:
+    type: string
+    description: "ISO-8601 duration from run start (e.g., 'PT0S', 'PT5M') for planned timeline."
+
+  # Actual timestamp when executed (optional; replaces deprecated timestamp)
   timestamp:
     type: string
     format: date-time
-    description: "When this event occurred (or started)."
+    description: "Deprecated: use timestamp_actual. Historically the actual execution time."
 
-  run:
+  timestamp_actual:
     type: string
-    description: "Run @id where this event occurred."
+    format: date-time
+    description: "Actual execution timestamp (if available)."
 
   labware:
     type: array
-    description: "Labware this event touches."
+    description: "Labware ids this event touches."
     minItems: 1
     items:
-      $ref: "./labware-ref.schema.yaml"
+      type: string
 
   details:
     description: "Event-type-specific payload."
     oneOf:
       - $ref: "./plate-event.transfer.schema.yaml"
+      - $ref: "./plate-event.add-material.schema.yaml"
       - $ref: "./plate-event.incubate.schema.yaml"
       - $ref: "./plate-event.read.schema.yaml"
       - $ref: "./plate-event.wash.schema.yaml"
       - $ref: "./plate-event.harvest.schema.yaml"
       - $ref: "./plate-event.sample-operation.schema.yaml"
       - $ref: "./plate-event.other.schema.yaml"
+
+anyOf:
+  - required: ["timestamp"]
+  - required: ["timestamp_actual"]
+  - required: ["t_offset"]
 
 additionalProperties: false

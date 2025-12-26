@@ -24,6 +24,12 @@ const CONC_FACTORS = {
 }
 
 export function parseVolumeToLiters(value) {
+  if (value && typeof value === 'object' && value.value !== undefined && value.unit) {
+    const factor = VOLUME_FACTORS[String(value.unit).toLowerCase()]
+    if (!factor) return null
+    const numeric = Number(value.value)
+    return Number.isFinite(numeric) ? numeric * factor : null
+  }
   const parsed = parseNumericWithUnit(value)
   if (!parsed) return null
   const factor = VOLUME_FACTORS[parsed.unit.toLowerCase()]
@@ -32,6 +38,11 @@ export function parseVolumeToLiters(value) {
 }
 
 export function parseConcentrationToMolar(value, options = {}) {
+  if (value && typeof value === 'object' && value.value !== undefined && value.unit) {
+    const parsed = { value: Number(value.value), unit: String(value.unit) }
+    if (!Number.isFinite(parsed.value)) return null
+    return parseConcentrationToMolar(`${parsed.value} ${parsed.unit}`, options)
+  }
   const parsed = parseNumericWithUnit(value)
   if (!parsed) return null
   const unit = parsed.unit.toLowerCase()

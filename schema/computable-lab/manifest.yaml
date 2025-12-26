@@ -48,6 +48,7 @@ biologyRequirements:
   requireProjectEntities: true
 vocabSchemas:
   - reagents.yaml
+  - materials.yaml
   - biological-entity.yaml
   - mechanism-targets.yaml
   - mechanism-processes.yaml
