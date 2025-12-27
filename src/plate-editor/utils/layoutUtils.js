@@ -32,17 +32,17 @@ const LAYOUT_PRESETS = {
   reservoir8: {
     rows: 8,
     columns: 1,
-    wellKeying: 'R1C1'
+    wellKeying: 'A01'
   },
   reservoir12: {
     rows: 12,
     columns: 1,
-    wellKeying: 'R1C1'
+    wellKeying: 'A01'
   },
   reservoir: {
     rows: 12,
     columns: 1,
-    wellKeying: 'R1C1'
+    wellKeying: 'A01'
   },
   tubeset6: {
     rows: 1,
@@ -129,10 +129,6 @@ export function computeRangeSelection(anchorId, targetId, layoutIndex) {
 }
 
 export function formatWellId(rowLabel, columnNumber, keying = 'A01', rowIndex = 0) {
-  if (keying === 'R1C1') {
-    // Reservoirs use portrait orientation but retain standard A01, A02... naming
-    return `A${String(rowIndex + columnNumber).padStart(2, '0')}`
-  }
   if (keying === 'T01') {
     return `T${String(columnNumber).padStart(2, '0')}`
   }

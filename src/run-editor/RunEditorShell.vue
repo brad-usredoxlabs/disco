@@ -569,8 +569,8 @@ async function handleMaterialImportSave(entry = {}) {
   materialImportModal.saving = true
   materialImportModal.error = ''
   try {
-    await writeMaterialToVocab(entry)
-    upsertLocalMaterial(entry)
+    const canonical = await writeMaterialToVocab(entry)
+    upsertLocalMaterial(canonical)
     closeMaterialImportModal()
   } catch (err) {
     materialImportModal.error = err?.message || 'Failed to save material.'
@@ -787,27 +787,36 @@ async function writeMaterialToVocab(entry = {}) {
     throw new Error('Connect a repository to save materials.')
   }
   const path = '/vocab/materials.lab.yaml'
-  let doc
+  let parsed = {}
   try {
     const raw = await repo.readFile(path)
-    doc = raw ? YAML.parseDocument(raw) : new YAML.Document([])
-  } catch (err) {
-    doc = new YAML.Document([])
+    parsed = raw ? YAML.parse(raw) || {} : {}
+  } catch {
+    parsed = {}
   }
-  ensureSequence(doc)
-  const seq = doc.contents
-  const node = doc.createNode(entry)
-  node.spaceBefore = true
-  const existingIndex = findNodeIndex(seq, entry.id)
+  if (Array.isArray(parsed)) {
+    parsed = { local_extensions: parsed }
+  }
+  parsed.local_extensions = Array.isArray(parsed.local_extensions) ? parsed.local_extensions : []
+  parsed.cached_terms = Array.isArray(parsed.cached_terms) ? parsed.cached_terms : []
+  parsed.id_aliases = parsed.id_aliases && typeof parsed.id_aliases === 'object' ? parsed.id_aliases : {}
+
+  const { entry: canonical, aliases } = canonicalizeMaterialEntry(entry)
+  Object.entries(aliases).forEach(([from, to]) => {
+    parsed.id_aliases[from] = to
+  })
+
+  const existingIndex = parsed.local_extensions.findIndex((item) => item?.id === canonical.id)
   if (existingIndex >= 0) {
-    const existing = seq.items[existingIndex]
-    node.commentBefore = existing?.commentBefore
-    seq.items.splice(existingIndex, 1, node)
+    parsed.local_extensions.splice(existingIndex, 1, canonical)
   } else {
-    seq.items.push(node)
+    parsed.local_extensions.push(canonical)
   }
+
+  const doc = new YAML.Document(parsed)
   const output = doc.toString({ lineWidth: 0 })
   await repo.writeFile(path, output)
+  return canonical
 }
 
 function upsertLocalMaterial(entry = {}) {
@@ -912,6 +921,77 @@ function ensureSequence(doc) {
   const seq = doc.createNode([])
   seq.flow = false
   doc.contents = seq
+}
+
+function hashString(value = '') {
+  let hash = 0
+  const str = String(value || '')
+  for (let i = 0; i < str.length; i += 1) {
+    hash = (hash << 5) - hash + str.charCodeAt(i)
+    hash |= 0
+  }
+  return (`00000000${(hash >>> 0).toString(16)}`).slice(-8)
+}
+
+function extractCurieFromIri(iri = '') {
+  if (!iri) return ''
+  const input = String(iri)
+  const oboMatch = input.match(/\/obo\/([A-Za-z]+)_([0-9]+)/)
+  if (oboMatch) {
+    return `${oboMatch[1].toUpperCase()}:${oboMatch[2]}`
+  }
+  const ncitMatch = input.match(/Thesaurus\.owl#C(\d+)/i)
+  if (ncitMatch) {
+    return `NCIT:C${ncitMatch[1]}`
+  }
+  return ''
+}
+
+function canonicalizeMaterialEntry(entry = {}) {
+  const next = { ...entry }
+  const aliases = {}
+  const xrefValues = entry.xref && typeof entry.xref === 'object' ? Object.values(entry.xref).filter(Boolean) : []
+  let inferredCurie = ''
+  let inferredIri = ''
+  for (const val of xrefValues) {
+    const curie = extractCurieFromIri(val)
+    if (curie) {
+      inferredCurie = curie
+      inferredIri = inferredIri || val
+      break
+    }
+  }
+  if (!inferredCurie) {
+    inferredCurie = extractCurieFromIri(entry.id)
+  }
+  if (!inferredIri && typeof entry.id === 'string' && entry.id.startsWith('http')) {
+    inferredIri = entry.id
+  }
+
+  let canonicalId = entry.id || ''
+  const shouldCanonicalize = /^material:http/i.test(canonicalId) || /^http/i.test(canonicalId)
+  if (shouldCanonicalize) {
+    if (inferredCurie) {
+      const [prefix, code] = inferredCurie.split(':')
+      canonicalId = `material:${prefix.toLowerCase()}:${code}`
+    } else {
+      canonicalId = `material:ext:${hashString(entry.id || entry.label || 'material')}`
+    }
+    if (entry.id && entry.id !== canonicalId) {
+      aliases[entry.id] = canonicalId
+    }
+  }
+  next.id = canonicalId
+
+  const xrefs = Array.isArray(entry.xrefs) ? [...entry.xrefs] : []
+  if (inferredCurie && !xrefs.some((x) => x.curie === inferredCurie)) {
+    xrefs.push({ curie: inferredCurie })
+  }
+  if (inferredIri && !xrefs.some((x) => x.iri === inferredIri)) {
+    xrefs.push({ iri: inferredIri })
+  }
+  next.xrefs = xrefs
+  return { entry: next, aliases }
 }
 
 function findNodeIndex(seq, id) {

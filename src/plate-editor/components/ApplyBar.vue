@@ -158,6 +158,13 @@ function handleOntologySelect(term) {
   selectMaterial(null)
 }
 
+function handleOntologyAddTerm(label = '') {
+  const text = typeof label === 'string' ? label.trim() : ''
+  if (!text) return
+  const payload = { term: { id: text, label: text }, normalized: { id: text, label: text } }
+  emit('request-import', payload)
+}
+
 function handleApply() {
   if (!canApply.value) return
   emit('apply', {
@@ -286,8 +293,10 @@ function buildControlIntents() {
         :value="selectedMaterial"
         :vocab="ontologyVocab"
         :search-options="ontologySearchOptions"
+        :show-add-button="true"
         placeholder="Search materials…"
         @update:value="handleOntologySelect"
+        @request-add="handleOntologyAddTerm"
       />
       <MaterialPicker
         v-else

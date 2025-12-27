@@ -68,8 +68,9 @@
               :value="classificationDraft.term"
               vocab="materials.lab"
               placeholder="Search ontology term"
-              :search-options="{ domain: classificationDraft.domain, skipLocal: true }"
+              :search-options="{ domain: classificationDraft.domain, skipLocal: true, skipCache: true }"
               :show-selection-badge="false"
+              disable-cache
               @update:value="(val) => (classificationDraft.term = val)"
             />
             <div class="split">
@@ -107,14 +108,15 @@
             <label>
               Target (ontology search)
               <OntologyFieldInput
-                class="ontology-picker"
-                :value="mechanismDraft.term"
-                vocab="materials.lab"
-                placeholder="Search target term"
-                :search-options="{ skipLocal: true }"
-                :show-selection-badge="false"
-                @update:value="(val) => (mechanismDraft.term = val)"
-              />
+              class="ontology-picker"
+              :value="mechanismDraft.term"
+              vocab="materials.lab"
+              placeholder="Search target term"
+              :search-options="{ skipLocal: true, skipCache: true }"
+              :show-selection-badge="false"
+              disable-cache
+              @update:value="(val) => (mechanismDraft.term = val)"
+            />
             </label>
           </div>
           <div class="grid two-col">
@@ -149,8 +151,9 @@
               :value="processDraft.term"
               vocab="materials.lab"
               placeholder="Search GO process"
-              :search-options="{ ontology: 'GO', skipLocal: true }"
+              :search-options="{ ontology: 'GO', skipLocal: true, skipCache: true }"
               :show-selection-badge="false"
+              disable-cache
               @update:value="(val) => (processDraft.term = val)"
             />
             <div class="split">
@@ -375,8 +378,8 @@ function setAffectedProcess() {
   const term = processDraft.term || {}
   const id = term.identifier || term.id || ''
   const label = term.label || term.prefLabel || id
-  if (!id) return
-  form.affected_process = { id, label }
+  if (!id && !label) return
+  form.affected_process = { id: id || label, label: label || id }
   processDraft.term = null
 }
 
@@ -421,12 +424,13 @@ function buildPayload() {
         }))
         .filter((row) => row.id && row.label)
     },
-    affected_process: form.affected_process.id && form.affected_process.label
-      ? {
-          id: form.affected_process.id.trim(),
-          label: form.affected_process.label.trim()
-        }
-      : null
+    affected_process:
+      form.affected_process && (form.affected_process.id || form.affected_process.label)
+        ? {
+            id: (form.affected_process.id || form.affected_process.label || '').trim(),
+            label: (form.affected_process.label || form.affected_process.id || '').trim()
+          }
+        : null
   }
 }
 

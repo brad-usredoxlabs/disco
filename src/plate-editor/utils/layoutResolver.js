@@ -21,11 +21,11 @@ const PLATE_TYPE_PRESETS = {
   plate384: { kind: 'plate384', wellKeying: 'A01' },
   '384': { kind: 'plate384', wellKeying: 'A01' },
   plate_384: { kind: 'plate384', wellKeying: 'A01' },
-  reservoir8: { kind: 'reservoir8', wellKeying: 'R1C1' },
-  reservoir_8: { kind: 'reservoir8', wellKeying: 'R1C1' },
-  reservoir12: { kind: 'reservoir12', wellKeying: 'R1C1' },
-  reservoir_12: { kind: 'reservoir12', wellKeying: 'R1C1' },
-  reservoir: { kind: 'reservoir12', wellKeying: 'R1C1' },
+  reservoir8: { kind: 'reservoir8', wellKeying: 'A01' },
+  reservoir_8: { kind: 'reservoir8', wellKeying: 'A01' },
+  reservoir12: { kind: 'reservoir12', wellKeying: 'A01' },
+  reservoir_12: { kind: 'reservoir12', wellKeying: 'A01' },
+  reservoir: { kind: 'reservoir12', wellKeying: 'A01' },
   tubeset6: { kind: 'tubeset6', wellKeying: 'T01' },
   tubeset_6: { kind: 'tubeset6', wellKeying: 'T01' },
   tubeset8: { kind: 'tubeset8', wellKeying: 'T01' },
@@ -84,9 +84,9 @@ function normalizeLayoutShape(layout = {}, fallbackKind = 'plate96') {
   let columns = Number(layout.dimensions?.columns)
 
   if (kind.includes('reservoir')) {
-    // Force reservoirs to render vertically
-    if (!wellKeying || wellKeying === 'A01') {
-      wellKeying = 'R1C1'
+    // Force reservoirs to render vertically but keep A01/B01 naming down the column
+    if (!wellKeying) {
+      wellKeying = 'A01'
     }
     if (Number.isFinite(rows) && Number.isFinite(columns) && rows === 1 && columns > 1) {
       rows = columns

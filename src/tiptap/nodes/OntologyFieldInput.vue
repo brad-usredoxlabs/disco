@@ -31,6 +31,9 @@
       @keydown.tab="handleTab"
     />
     <div class="ontology-dropdown" v-if="dropdownOpen && !disabled" ref="dropdownRef">
+      <div v-if="showAddButton" class="dropdown-actions">
+        <button type="button" class="add-term-button" @mousedown.prevent="handleRequestAdd">Add term</button>
+      </div>
       <p v-if="isLoading" class="dropdown-hint">Searching…</p>
       <p v-else-if="errorMessage" class="dropdown-error">{{ errorMessage }}</p>
       <ul v-else-if="results.length">
@@ -84,6 +87,10 @@ const props = defineProps({
     default: 'term',
     validator: (input) => ['term', 'reference'].includes(input)
   },
+  disableCache: {
+    type: Boolean,
+    default: false
+  },
   searchOptions: {
     type: Object,
     default: () => ({})
@@ -91,10 +98,14 @@ const props = defineProps({
   autofocusAfterSelect: {
     type: Boolean,
     default: false
+  },
+  showAddButton: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['update:value'])
+const emit = defineEmits(['update:value', 'request-add'])
 
 const query = ref('')
 const results = ref([])
@@ -142,6 +153,8 @@ const currentSource = computed(() => currentValue.value?.ontology || currentValu
 const currentLabel = computed(
   () => currentValue.value?.label || currentValue.value?.identifier || currentValue.value?.id || ''
 )
+
+const skipCache = computed(() => Boolean(props.disableCache || props.searchOptions?.skipCache))
 
 watch(
   () => props.value,
@@ -255,7 +268,9 @@ function emitSelection(result) {
       provenance
     }
     emit('update:value', payload)
-    saveOntologySelection(props.vocab, payload)
+    if (!skipCache.value) {
+      saveOntologySelection(props.vocab, payload)
+    }
     return
   }
 
@@ -276,7 +291,9 @@ function emitSelection(result) {
     source: recordPayload.ontology,
     provenance
   }
-  saveOntologySelection(props.vocab, cachePayload)
+  if (!skipCache.value) {
+    saveOntologySelection(props.vocab, cachePayload)
+  }
 }
 
 function clearSelection() {
@@ -310,6 +327,11 @@ function handleTab() {
     selectResult(results.value[highlightedIndex.value], { refocus: false })
   }
   dropdownOpen.value = false
+}
+
+function handleRequestAdd() {
+  const text = (query.value || currentLabel.value || '').trim()
+  emit('request-add', text)
 }
 
 function scrollHighlightedIntoView() {
@@ -483,5 +505,35 @@ defineExpose({
 
 .dropdown-error {
   color: #b91c1c;
+}
+
+.dropdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.3rem 0.4rem;
+}
+
+.add-term-button {
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.dropdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.3rem 0.4rem;
+}
+
+.add-term-button {
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 </style>

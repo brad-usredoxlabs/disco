@@ -101,7 +101,8 @@ export function useMaterialLibrary(repoConnection, options = {}) {
 function normalizeMaterialEntry(entry = {}, sourcePath = '') {
   const label = (entry.label || entry.id || '').trim()
   if (!label) return null
-  const id = ensureMaterialId(entry.id || label)
+  const rawId = entry.id || label
+  const id = rawId && rawId.includes(':') ? rawId : ensureMaterialId(rawId)
   const tags = Array.isArray(entry.tags)
     ? entry.tags
         .map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : ''))

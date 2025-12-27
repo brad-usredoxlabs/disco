@@ -110,11 +110,20 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
         exact: schema.search_settings?.require_exact_match ?? false
       }
       try {
-        const response = await olsClient.searchTerms({
+        let response = await olsClient.searchTerms({
           ...baseParams,
           q: trimmed
         })
-        const collection = response?.collection || []
+        let collection = response?.collection || []
+        // If no hits, retry with wildcard infix search
+        if (!collection.length && trimmed.length >= 3) {
+          const wildcard = trimmed.includes('*') ? trimmed : `*${trimmed}*`
+          response = await olsClient.searchTerms({
+            ...baseParams,
+            q: wildcard
+          })
+          collection = response?.collection || []
+        }
 
         collection.forEach((item) => {
           const normalized = annotateOntology(normalizeTerm(item, item.ontology || 'ontology'), schema)

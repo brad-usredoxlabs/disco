@@ -1,16 +1,218 @@
-
-- id: material:http_ncicb_nci_nih_gov_xml_owl_evs_thesaurus_owl_c72826
-  label: Pheneturide
-  category: compound
-  intents:
-    - treatment
-  tags: []
-  xref:
-    ontology: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C72826
-  classified_as: []
-  mechanism:
-    type: ""
-    targets: []
-  affected_process:
-    id: GO:0006631
-    label: fatty acid metabolic process
+name: materials.lab
+cached_terms:
+  - identifier: material:http_ncicb_nci_nih_gov_xml_owl_evs_thesaurus_owl_c72826
+    label: Pheneturide
+    ontology: local
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: local
+    provenance: local
+    id: material:http_ncicb_nci_nih_gov_xml_owl_evs_thesaurus_owl_c72826
+    source: local
+    cached_at: 2025-12-26T23:59:10.176Z
+  - identifier: CHEBI:3750
+    label: clofibrate
+    ontology: chebi
+    definition: The ethyl ester of clofibric acid.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:3750
+    source: chebi
+    cached_at: 2025-12-27T00:18:09.084Z
+  - identifier: NCIT:C378
+    label: Clofibrate
+    ontology: ncit
+    definition: An aryloxyisobutyric acid derivate with antihyperlipidemic activity. Although the exact mechanism of action has not been fully characterized, clofibrate may enhance the conversion of very-low-density lipoprotein (VLDL) to low-density lipoprotein (LDL), decreasing the production of hepatic VLDL, inhibiting cholesterol production, and increasing fecal excretion of neutral sterols.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: ncit
+    provenance: ols
+    id: NCIT:C378
+    source: ncit
+    cached_at: 2025-12-27T00:19:31.634Z
+  - identifier: NCIT:C39199
+    label: PPAR Pathway
+    ontology: ncit
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: ncit
+    provenance: ols
+    id: NCIT:C39199
+    source: ncit
+    cached_at: 2025-12-27T00:20:09.017Z
+  - identifier: GO:0034625
+    label: fatty acid elongation, monounsaturated fatty acid
+    ontology: go
+    definition: Elongation of a fatty acid chain into which one C-C double bond has been introduced.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: go
+    provenance: ols
+    id: GO:0034625
+    source: go
+    cached_at: 2025-12-27T00:20:57.845Z
+  - identifier: GO:0034626
+    label: fatty acid elongation, polyunsaturated fatty acid
+    ontology: go
+    definition: Elongation of a fatty acid chain into which two or more C-C double bonds have been introduced.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: go
+    provenance: ols
+    id: GO:0034626
+    source: go
+    cached_at: 2025-12-27T00:21:09.585Z
+  - identifier: CHEBI:31194
+    label: Aluminum clofibrate
+    ontology: chebi
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:31194
+    source: chebi
+    cached_at: 2025-12-27T00:30:32.899Z
+  - identifier: CHEBI:5001
+    label: fenofibrate
+    ontology: chebi
+    definition: A chlorobenzophenone that is (4-chlorophenyl)(phenyl)methanone substituted by a [2-methyl-1-oxo-1-(propan-2-yloxy)propan-2-yl]oxy group at position 1 on the phenyl ring.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:5001
+    source: chebi
+    cached_at: 2025-12-27T00:49:41.648Z
+  - identifier: CHEBI:50122
+    label: rosiglitazone
+    ontology: chebi
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:50122
+    source: chebi
+    cached_at: 2025-12-27T00:54:24.592Z
+  - identifier: CHEBI:50123
+    label: (+)-rosiglitazone
+    ontology: chebi
+    definition: ""
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:50123
+    source: chebi
+    cached_at: 2025-12-27T00:57:47.784Z
+  - identifier: CHEBI:31991
+    label: phenol red
+    ontology: chebi
+    definition: 3 H -2,1-Benzoxathiole 1,1-dioxide in which both of the hydrogens at position 3 have been substituted by 4-hydroxyphenyl groups. A pH indicator changing colour from yellow below pH 6.8 to bright pink above pH 8.2, it is commonly used as an indicator in cell cultures and in home swimming pool test kits. It is also used in the (now infrequently performed) phenolsulfonphthalein (PSP) test for estimation of overall blood flow through the kidney.
+    synonyms: []
+    xrefs: []
+    ontologyEnum: chebi
+    provenance: ols
+    id: CHEBI:31991
+    source: chebi
+    cached_at: 2025-12-27T01:06:35.662Z
+local_extensions:
+  - id: material:http_ncicb_nci_nih_gov_xml_owl_evs_thesaurus_owl_c72826
+    label: Pheneturide
+    category: compound
+    intents:
+      - treatment
+    tags: []
+    xref:
+      ontology: http://ncicb.nci.nih.gov/xml/owl/EVS/Thesaurus.owl#C72826
+    classified_as: []
+    mechanism:
+      type: ""
+      targets: []
+    affected_process:
+      id: GO:0006631
+      label: fatty acid metabolic process
+  - id: material:chebi_3750
+    label: Clofibrate
+    category: compound
+    intents:
+      - treatment
+    tags: []
+    xref:
+      chebi: CHEBI:3750
+    classified_as:
+      - id: NCIT:C378
+        label: Clofibrate
+        domain: compound
+        source: ncit
+    mechanism:
+      type: agonist
+      targets:
+        - id: NCIT:C39199
+          label: PPARa agonist
+    affected_process:
+      id: GO:0034625
+      label: fatty acid elongation, monounsaturated fatty acid
+    xrefs: []
+  - id: material:chebi_5001
+    label: fenofibrate
+    category: compound
+    intents:
+      - treatment
+    tags: []
+    xref:
+      chebi: CHEBI:5001
+    classified_as:
+      - id: NCIT:C29047
+        label: Fenofibrate
+        domain: compound
+        source: ncit
+    mechanism:
+      type: agonist
+      targets:
+        - id: CHEBI:70782
+          label: PPARa agonist
+        - id: NCIT:C39199
+          label: PPAR Pathway
+        - id: NCIT:C91751
+          label: PPARa Agonist
+    affected_process: null
+    xrefs: []
+  - id: material:chebi_50122
+    label: rosiglitazone
+    category: compound
+    intents:
+      - treatment
+    tags: []
+    xref:
+      chebi: CHEBI:50122
+    classified_as: []
+    mechanism:
+      type: ""
+      targets: []
+    affected_process:
+      id: GO:0006631
+      label: fatty acid metabolic process
+    xrefs: []
+  - id: material:chebi_31991
+    label: phenol red
+    category: compound
+    intents:
+      - treatment
+    tags: []
+    xref:
+      chebi: CHEBI:31991
+    classified_as: []
+    mechanism:
+      type: ""
+      targets: []
+    affected_process:
+      id: GO:0034625
+      label: fatty acid elongation, monounsaturated fatty acid
+    xrefs: []
+id_aliases: {}

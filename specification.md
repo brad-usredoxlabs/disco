@@ -74,7 +74,7 @@ Validates:
   - Schema  
   - Workflow state  
   - Validation rules  
-  - **Local vocabularies and ontologies**  
+  - **Local vocabularies and ontologies (OLS-backed search)**  
 - LLM produces patches or structured suggestions  
 - LLM never writes files directly; all changes require user confirmation
 
@@ -113,7 +113,8 @@ Validates:
 - The CLI at `scripts/protocols/run-protocol.mjs` instantiates a protocol segment and **appends** it to an existing run instead of overwriting files. Each invocation binds its own `labware`/`parameters`, so you can layer “seed cells → T=24 imaging → insulin protocol → fluorescent reads → send-outs” into one record.
 - `src/app/RunActivitiesPanel.vue` (rendered inside `FieldInspector.vue` for `recordType: run`) is the primary UI for viewing and editing the timeline. It surfaces run-level bindings/parameters, supports reordering, and provides quick actions to add acquisitions tied back to the latest segment’s PlateEvents. Sample operations expose inline editors for produced samples, splits, and attachments.
 - Migration helpers under `scripts/migrations/backfill-run-activities.mjs` convert legacy run records (`data.operations.events`) into the new activity model so the Plate Editor, adapters, and query tooling all consume a single timeline structure.
-- A dedicated Run Editor (`src/run-editor/RunEditorShell.vue`, launched via `runEditorPath` URL param or the workspace picker/graph) now authors PlateEvents directly into run activities. It reuses dual grids, TransferStepSidecar, material ApplyBar, and Explorer overlays, supports multi-labware replay with depletion toggles, activity creation, inline validation, and save-to-frontmatter. Well details drawer and overlay modes (event/material) aid lineage/composition review.
+- A dedicated Run Editor (`src/run-editor/RunEditorShell.vue`, launched via `runEditorPath` URL param or the workspace picker/graph) now authors PlateEvents directly into run activities. It reuses dual grids, TransferStepSidecar, material ApplyBar, and Explorer overlays, supports multi-labware replay with depletion toggles, activity creation, inline validation, and save-to-frontmatter. Well details drawer and overlay modes (event/material) aid lineage/composition review. The material picker is “local-first”: existing vocab hits apply immediately, and ontology hits open an **Add to local vocab** modal so users can add `classified_as`, `mechanism`, `affected_process`, and defaults before saving to `/vocab/materials.lab.yaml` and applying.
+- The Run Editor has replaced role-based labware bindings with a **dynamic source palette**: `sourcePalette`, `activeSourceId`, and `destinationPlate` live in `useRunEditorStore.js`, seed from legacy `labware_bindings`/`data.source_palette`, and persist both palette metadata and back-compat bindings on save. New modals add template labware (layout from `labwareTemplates`) or run-derived sources (`loadRunById` replay with status badges and auto-suggested labwareId/layout). ApplyBar/TransferStepSidecar build mapping/events using the active source labwareId and the fixed destination plate; palette items support soft-archive and replay-driven wells. A Graph Tree “Use as source” action in the workspace seeds a pending palette entry and opens the Run Editor on the selected run.
 
 ### 4.13 Event Graph Explorer & Promotion
 - The Event Graph Explorer is now wired into the main workspace nav with a picker for runs and plate layouts. It renders an overlay legend, lane-level mapping previews/highlights, and a lineage edge list in the drawer. A standalone Explorer view can be launched from the nav or via query params; the `AppShell` keeps selection and overlays in sync with the File Workbench.
@@ -194,6 +195,11 @@ Regulatory schema bundles may specify:
 * Required ontology fields
 
 All prefilled data is stored in front matter and validated by Zod.
+
+### 6.3 Controlled vocabularies and ontologies
+- Vocab schemas live under `/vocab/schema/` and are loaded per bundle via `schema/<schema-set>/manifest.yaml`. They declare BioPortal ontologies, search flags, and validation rules for each vocab.
+- The lab-local materials vocab uses `vocab/schema/materials.yaml` (name: `materials.lab`) with ontologies CHEBI, NCIT, NCBITaxon, GO, UBERON, and CL. Local entries live in `/vocab/materials.lab.yaml` and are merged with OLS search results at authoring time.
+- Reagents and other vocabularies follow the same pattern (e.g., `vocab/schema/reagents.yaml`). The Run Editor’s “Add to local vocab” modal writes new materials into the lab vocab before applying them to wells.
 
 ---
 
