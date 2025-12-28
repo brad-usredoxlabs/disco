@@ -20,30 +20,6 @@
 
         <div class="grid two-col">
           <label>
-            Category
-            <select v-model="form.category">
-              <option v-for="opt in categoryOptions" :key="opt" :value="opt">{{ opt }}</option>
-            </select>
-          </label>
-        </div>
-
-        <label>
-          Experimental intents
-          <div class="chips">
-            <label v-for="opt in intentOptions" :key="opt" class="chip">
-              <input v-model="form.experimental_intents" type="checkbox" :value="opt" />
-              {{ opt }}
-            </label>
-          </div>
-        </label>
-
-        <label>
-          Tags (comma-separated)
-          <input v-model="form.tagsInput" type="text" placeholder="ppara, agonist, fire" />
-        </label>
-
-        <div class="grid two-col">
-          <label>
             Xref key
             <input v-model="form.xrefKey" type="text" placeholder="CHEBI, NCIT, GO…" readonly disabled />
           </label>
@@ -59,214 +35,325 @@
           </label>
         </div>
 
-        <div v-if="isSample" class="section">
-          <div class="section__header">
-            <h4>Classified as</h4>
-          </div>
-          <div class="grid two-col">
-            <OntologyFieldInput
-              class="ontology-picker"
-              :value="classificationDraft.term"
-              vocab="materials"
-              placeholder="Search ontology term"
-              :search-options="{ domain: classificationDraft.domain, skipLocal: true, skipCache: true }"
-              :show-selection-badge="false"
-              disable-cache
-              @update:value="(val) => (classificationDraft.term = val)"
+        <label>
+          Tags (comma-separated)
+          <input v-model="form.tagsInput" type="text" placeholder="ppara, agonist, fire" />
+        </label>
+
+        <label>
+          Vendor (optional)
+          <select v-model="form.vendor_slug">
+            <option v-for="opt in vendorOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          Catalog numbers (optional)
+          <div class="split">
+            <input
+              v-model="catalogInput"
+              type="text"
+              placeholder="e.g., 12345-10G"
+              @keydown.enter.prevent="handleCatalogAdd"
             />
-            <div class="split">
-              <select v-model="classificationDraft.domain">
-                <option value="">domain…</option>
-                <option v-for="opt in domainOptions" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-              <button class="ghost tiny" type="button" :disabled="!canAddClassification" @click="addClassification">
-                Add
+            <button class="ghost tiny" type="button" @click="handleCatalogAdd">
+              Add
+            </button>
+          </div>
+          <div class="chips">
+            <span v-for="cat in form.catalog_numbers" :key="cat" class="pill-label">
+              {{ cat }}
+              <button class="ghost tiny" type="button" @click="removeCatalogNumber(cat)">×</button>
+            </span>
+          </div>
+        </label>
+
+        <div class="grid two-col">
+          <label>
+            Category
+            <select v-model="form.category">
+              <option v-for="opt in categoryOptions" :key="opt" :value="opt">{{ opt }}</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="intent-section">
+          <div class="section__header">
+            <h4>Experimental intents</h4>
+          </div>
+          <div class="intent-form">
+            <div class="intent-tabs">
+              <button
+                v-for="opt in intentOptions"
+                :key="opt"
+                type="button"
+                class="intent-tab"
+                :class="{ active: intentDraft.kind === opt }"
+                @click="intentDraft.kind = opt"
+              >
+                {{ opt }}
               </button>
             </div>
-          </div>
-          <div v-if="!form.classified_as.length" class="muted">No classifications.</div>
-          <ul v-else class="classification-list">
-            <li v-for="row in form.classified_as" :key="row.key" class="classification-pill">
-              <span class="pill-label">{{ row.label }}</span>
-              <span class="pill-meta">{{ row.source }} · {{ row.domain }}</span>
-              <button class="ghost tiny" type="button" @click="removeClassification(row.key)">×</button>
-            </li>
-          </ul>
-        </div>
 
-        <div v-if="isTreatment" class="section">
-          <div class="section__header">
-            <h4>Mechanism</h4>
-          </div>
-          <div class="grid two-col">
-            <label>
-              Type
-              <select v-model="mechanismDraft.type">
-                <option value="">Select type…</option>
-                <option v-for="opt in mechanismTypeOptions" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-            </label>
-            <label>
-              Target (ontology search)
-              <OntologyFieldInput
-              class="ontology-picker"
-              :value="mechanismDraft.term"
-              vocab="materials"
-              placeholder="Search target term"
-              :search-options="{ skipLocal: true, skipCache: true }"
-              :show-selection-badge="false"
-              disable-cache
-              @update:value="(val) => (mechanismDraft.term = val)"
-            />
-            </label>
-          </div>
-          <div class="grid two-col">
-            <label>
-              Target label (optional override)
-              <input v-model="mechanismDraft.labelOverride" type="text" placeholder="Optional display label" />
-            </label>
-            <label>
-              <span class="muted">Add target</span>
-              <button class="ghost tiny full-width" type="button" :disabled="!canAddTarget" @click="addTarget">
-                Add target
-              </button>
-            </label>
-          </div>
-          <div v-if="!form.mechanism.targets.length" class="muted">No targets.</div>
-          <ul v-else class="classification-list">
-            <li v-for="target in form.mechanism.targets" :key="target.key" class="classification-pill">
-              <span class="pill-label">{{ target.label }}</span>
-              <span class="pill-meta">{{ target.id }}</span>
-              <button class="ghost tiny" type="button" @click="removeTarget(target.key)">×</button>
-            </li>
-          </ul>
-        </div>
-
-        <div v-if="isTreatment" class="section">
-          <div class="section__header">
-            <h4>Affected process</h4>
-          </div>
-          <div class="grid two-col">
-            <OntologyFieldInput
-              class="ontology-picker"
-              :value="processDraft.term"
-              vocab="materials"
-              placeholder="Search GO process"
-              :search-options="{ ontology: 'GO', skipLocal: true, skipCache: true }"
-              :show-selection-badge="false"
-              disable-cache
-              @update:value="(val) => (processDraft.term = val)"
-            />
-            <div class="split">
-              <span class="muted">Select and add</span>
-              <button class="ghost tiny full-width" type="button" :disabled="!canSetProcess" @click="setAffectedProcess">
-                Add process
-              </button>
-            </div>
-          </div>
-          <div v-if="form.affected_process?.id" class="classification-list">
-            <div class="classification-pill">
-              <span class="pill-label">{{ form.affected_process.label }}</span>
-              <span class="pill-meta">{{ form.affected_process.id }}</span>
-              <button class="ghost tiny" type="button" @click="clearAffectedProcess">×</button>
-            </div>
-          </div>
-          <div v-else class="muted">No affected process selected.</div>
-        </div>
-
-        <div v-if="isAssayMaterial" class="section">
-          <div class="section__header">
-            <h4>Assay material features</h4>
-          </div>
-          <div class="grid two-col">
-            <label>
-              <span>Measures (feature IDs)</span>
-              <div class="split">
-                <select @change="addMeasure($event.target.value)">
-                  <option value="">Select feature…</option>
-                  <option v-for="feat in featureOptions" :key="feat.id" :value="feat.id">
-                    {{ feat.label || feat.id }}
-                  </option>
-                </select>
-                <button class="ghost tiny" type="button" @click="form.measures = []">Clear</button>
-              </div>
-              <div class="chips">
-                <span v-for="feat in form.measures" :key="feat" class="pill-label">
-                  {{ feat }}
-                  <button class="ghost tiny" type="button" @click="removeMeasure(feat)">×</button>
-                </span>
-              </div>
-            </label>
-            <label>
-              Detection modality
-              <select v-model="form.detection.modality">
-                <option value="">Select modality…</option>
-                <option v-for="opt in acquisitionModalities" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
-            </label>
-          </div>
-          <div class="grid two-col">
-            <label>
-              Channel hint
-              <input v-model="form.detection.channel_hint" type="text" placeholder="e.g. texas_red" />
-            </label>
-            <label>
-              Excitation (nm)
-              <input v-model="form.detection.excitation_nm" type="number" min="0" step="1" />
-            </label>
-            <label>
-              Emission (nm)
-              <input v-model="form.detection.emission_nm" type="number" min="0" step="1" />
-            </label>
-          </div>
-        </div>
-
-        <div v-if="isControl" class="section">
-          <div class="section__header">
-            <h4>Control</h4>
-          </div>
-          <div class="grid two-col">
-            <label>
-              Control role
-              <select v-model="form.control_role">
-                <option value="">Select role…</option>
-                <option value="positive">positive</option>
-                <option value="negative">negative</option>
-                <option value="vehicle">vehicle</option>
-              </select>
-            </label>
-            <label>
-              Acquisition modalities
-              <div class="chips">
-                <label v-for="opt in acquisitionModalities" :key="opt" class="chip">
-                  <input v-model="form.control_for.acquisition_modalities" type="checkbox" :value="opt" />
-                  {{ opt }}
+            <div v-if="intentDraft.kind === 'treatment'" class="intent-fields">
+              <div class="grid two-col">
+                <label>
+                  Mechanism type
+                  <select v-model="intentDraft.fields.mechanism.type">
+                    <option value="">Select type…</option>
+                    <option v-for="opt in mechanismTypeOptions" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </label>
+                <label>
+                  Target (ontology search)
+                  <OntologyFieldInput
+                    class="ontology-picker"
+                    :value="intentDraft.fields.mechanism.targetTerm"
+                    vocab="materials"
+                    placeholder="Search target term"
+                    :search-options="{ skipLocal: true, skipCache: true }"
+                    :show-selection-badge="false"
+                    disable-cache
+                    @update:value="(val) => (intentDraft.fields.mechanism.targetTerm = val)"
+                  />
                 </label>
               </div>
-            </label>
+              <div class="grid two-col">
+                <label>
+                  Target label (optional override)
+                  <input v-model="intentDraft.fields.mechanism.labelOverride" type="text" placeholder="Optional display label" />
+                </label>
+                <label>
+                  <span class="muted">Add target</span>
+                  <button
+                    class="ghost tiny full-width"
+                    type="button"
+                    :disabled="!canAddIntentTarget"
+                    @click="addIntentTarget"
+                  >
+                    Add target
+                  </button>
+                </label>
+              </div>
+              <div v-if="!intentDraft.fields.mechanism.targets.length" class="muted tiny">No targets.</div>
+              <ul v-else class="classification-list">
+                <li v-for="target in intentDraft.fields.mechanism.targets" :key="target.key" class="classification-pill">
+                  <span class="pill-label">{{ target.label }}</span>
+                  <span class="pill-meta">{{ target.id }}</span>
+                  <button class="ghost tiny" type="button" @click="removeIntentTarget(target.key)">×</button>
+                </li>
+              </ul>
+
+              <div class="grid two-col">
+                <label>
+                  Affected process
+                  <OntologyFieldInput
+                    class="ontology-picker"
+                    :value="intentDraft.fields.affected_process.term"
+                    vocab="materials"
+                    placeholder="Search GO process"
+                    :search-options="{ ontology: 'GO', skipLocal: true, skipCache: true }"
+                    :show-selection-badge="false"
+                    disable-cache
+                    @update:value="(val) => (intentDraft.fields.affected_process.term = val)"
+                  />
+                </label>
+                <label>
+                  <span class="muted">Add process</span>
+                  <button
+                    class="ghost tiny full-width"
+                    type="button"
+                    :disabled="!canAddIntentProcess"
+                    @click="addIntentProcess"
+                  >
+                    Add process
+                  </button>
+                </label>
+              </div>
+              <div v-if="intentDraft.fields.affected_process.id" class="classification-list">
+                <div class="classification-pill">
+                  <span class="pill-label">{{ intentDraft.fields.affected_process.label }}</span>
+                  <span class="pill-meta">{{ intentDraft.fields.affected_process.id }}</span>
+                  <button class="ghost tiny" type="button" @click="clearIntentProcess">×</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="intentDraft.kind === 'assay_material'" class="intent-fields">
+              <div class="grid two-col">
+                <label>
+              <span>Measures (feature IDs)</span>
+              <div class="split">
+                <EnumCombobox
+                  :model-value="measureInput"
+                  :options="featureOptionIds"
+                  placeholder="Select or type feature…"
+                  @update:model-value="handleMeasureSelect"
+                />
+                <div class="combo-actions">
+                  <button class="ghost tiny" type="button" @click="intentDraft.fields.measures = []">Clear</button>
+                  <button class="ghost tiny" type="button" @click="openFeatureModal('measure')">Add feature</button>
+                </div>
+              </div>
+              <div class="chips">
+                <span v-for="feat in intentDraft.fields.measures" :key="feat" class="pill-label">
+                  {{ feat }}
+                  <button class="ghost tiny" type="button" @click="removeIntentMeasure(feat)">×</button>
+                    </span>
+                  </div>
+                </label>
+                <label>
+                  Detection modality
+                  <select v-model="intentDraft.fields.detection.modality">
+                    <option value="">Select modality…</option>
+                    <option v-for="opt in acquisitionModalities" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="grid two-col">
+                <label>
+                  Channel hint
+                  <input v-model="intentDraft.fields.detection.channel_hint" type="text" placeholder="e.g. texas_red" />
+                </label>
+                <label>
+                  Excitation (nm)
+                  <input v-model="intentDraft.fields.detection.excitation_nm" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Emission (nm)
+                  <input v-model="intentDraft.fields.detection.emission_nm" type="number" min="0" step="1" />
+                </label>
+              </div>
+            </div>
+
+            <div v-else-if="intentDraft.kind === 'control'" class="intent-fields">
+              <div class="grid two-col">
+                <label>
+                  Control role
+                  <select v-model="intentDraft.fields.control_role">
+                    <option value="">Select role…</option>
+                    <option value="positive">positive</option>
+                    <option value="negative">negative</option>
+                    <option value="vehicle">vehicle</option>
+                  </select>
+                </label>
+                <label>
+                  Acquisition modalities
+                  <div class="chips">
+                    <label v-for="opt in acquisitionModalities" :key="opt" class="chip">
+                      <input v-model="intentDraft.fields.control_for.acquisition_modalities" type="checkbox" :value="opt" />
+                      {{ opt }}
+                    </label>
+                  </div>
+                </label>
+              </div>
+              <label>
+              Control features (feature IDs)
+              <div class="split">
+                <EnumCombobox
+                  :model-value="controlFeatureInput"
+                  :options="featureOptionIds"
+                  placeholder="Select or type feature…"
+                  @update:model-value="handleControlFeatureSelect"
+                />
+                <div class="combo-actions">
+                  <button class="ghost tiny" type="button" @click="intentDraft.fields.control_for.features = []">Clear</button>
+                  <button class="ghost tiny" type="button" @click="openFeatureModal('control')">Add feature</button>
+                </div>
+              </div>
+              <div class="chips">
+                  <span v-for="feat in intentDraft.fields.control_for.features" :key="feat" class="pill-label">
+                    {{ feat }}
+                    <button class="ghost tiny" type="button" @click="removeIntentControlFeature(feat)">×</button>
+                  </span>
+                </div>
+              </label>
+              <label>
+                Control notes
+                <input v-model="intentDraft.fields.control_for.notes" type="text" placeholder="Optional notes" />
+              </label>
+            </div>
+
+            <div v-else-if="intentDraft.kind === 'sample'" class="intent-fields">
+              <div class="grid two-col">
+                <label>
+                  Classification (ontology search)
+                  <OntologyFieldInput
+                    class="ontology-picker"
+                    :value="classificationDraft.term"
+                    vocab="materials"
+                    placeholder="Search ontology term"
+                    :search-options="{ domain: classificationDraft.domain, skipLocal: true, skipCache: true }"
+                    :show-selection-badge="false"
+                    disable-cache
+                    @update:value="(val) => (classificationDraft.term = val)"
+                  />
+                </label>
+                <label>
+                  Domain
+                  <div class="split">
+                    <select v-model="classificationDraft.domain">
+                      <option value="">Select domain…</option>
+                      <option v-for="opt in domainOptions" :key="opt" :value="opt">{{ opt }}</option>
+                    </select>
+                    <button class="ghost tiny" type="button" :disabled="!canAddClassification" @click="addClassification">
+                      Add
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div v-if="!form.classified_as.length" class="muted">No classifications added yet.</div>
+              <ul v-else class="classification-list">
+                <li v-for="row in form.classified_as" :key="row.key" class="classification-pill">
+                  <span class="pill-label">{{ row.label }}</span>
+                  <span class="pill-meta">{{ row.source }} · {{ row.domain }}</span>
+                  <button class="ghost tiny" type="button" @click="removeClassification(row.key)">×</button>
+                </li>
+              </ul>
+            </div>
+
+            <div v-else-if="intentDraft.kind === 'other'" class="intent-fields">
+              <div class="placeholder-content">
+                <p class="muted">General intent type. Use this for custom or uncategorized experimental intents.</p>
+              </div>
+            </div>
+
+            <div class="intent-actions">
+              <p v-if="intentValidationError" class="error">{{ intentValidationError }}</p>
+              <button class="ghost-button" type="button" @click="resetIntentDraft">Clear</button>
+              <button class="primary" type="button" :disabled="!canAddIntent" @click="addIntentEntry">
+                Add intent
+              </button>
+            </div>
           </div>
-          <label>
-            Control features (feature IDs)
-            <div class="split">
-              <select @change="addControlFeature($event.target.value)">
-                <option value="">Select feature…</option>
-                <option v-for="feat in featureOptions" :key="feat.id" :value="feat.id">
-                  {{ feat.label || feat.id }}
-                </option>
-              </select>
-              <button class="ghost tiny" type="button" @click="form.control_for.features = []">Clear</button>
+
+          <div v-if="intentEntries.length" class="intent-list">
+            <div v-for="entry in intentEntries" :key="entry.id" class="intent-card">
+              <div class="intent-card__header">
+                <strong>{{ entry.kind }}</strong>
+                <div class="intent-card__actions">
+                  <button class="ghost tiny" type="button" @click="editIntent(entry.id)">Edit</button>
+                  <button class="ghost tiny" type="button" @click="removeIntent(entry.id)">Remove</button>
+                </div>
+              </div>
+              <ul class="intent-card__summary">
+                <li v-if="entry.kind === 'treatment' && entry.fields.mechanism.type">
+                  Mechanism: {{ entry.fields.mechanism.type }} ({{ entry.fields.mechanism.targets.length }} targets)
+                </li>
+                <li v-if="entry.kind === 'treatment' && entry.fields.affected_process.id">
+                  Process: {{ entry.fields.affected_process.label || entry.fields.affected_process.id }}
+                </li>
+                <li v-if="entry.kind === 'assay_material' && entry.fields.measures.length">
+                  Measures: {{ entry.fields.measures.join(', ') }}
+                </li>
+                <li v-if="entry.kind === 'control' && entry.fields.control_role">
+                  Control role: {{ entry.fields.control_role }}
+                </li>
+              </ul>
             </div>
-            <div class="chips">
-              <span v-for="feat in form.control_for.features" :key="feat" class="pill-label">
-                {{ feat }}
-                <button class="ghost tiny" type="button" @click="removeControlFeature(feat)">×</button>
-              </span>
-            </div>
-          </label>
-          <label>
-            Control notes
-            <input v-model="form.control_for.notes" type="text" placeholder="Optional notes" />
-          </label>
+          </div>
         </div>
 
         <p v-if="error" class="error">{{ error }}</p>
@@ -280,15 +367,27 @@
       </footer>
     </div>
   </div>
+  <AddFeatureModal
+    :open="featureModal.open"
+    :saving="featureModal.saving"
+    :error="featureModal.error"
+    :preset="featureModal.preset"
+    @cancel="closeFeatureModal"
+    @save="handleFeatureSave"
+  />
 </template>
 
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import OntologyFieldInput from '../../tiptap/nodes/OntologyFieldInput.vue'
-import { ensureMaterialId } from '../../plate-editor/utils/materialId'
+import EnumCombobox from '../../components/fields/EnumCombobox.vue'
+import AddFeatureModal from './AddFeatureModal.vue'
+import { ensureMaterialId, slugifyMaterialId } from '../../plate-editor/utils/materialId'
+import { writeFeatureConcept, writeFeatureRevision, rebuildFeatureIndex } from '../../vocab/featureWriter'
+import { useRepoConnection } from '../../fs/repoConnection'
 
 const CATEGORY_OPTIONS = ['reagent', 'medium', 'solvent', 'buffer', 'additive', 'waste', 'other']
-const INTENT_OPTIONS = ['sample', 'treatment', 'assay_material', 'control', 'other']
+const INTENT_OPTIONS = ['control', 'sample', 'treatment', 'assay_material', 'other']
 const DOMAIN_OPTIONS = ['taxon', 'cell_line', 'tissue']
 const ACQUISITION_MODALITIES = ['fluorescence', 'absorbance', 'luminescence', 'microscopy', 'ms', 'qpcr', 'other']
 const MECHANISM_TYPES = [
@@ -328,43 +427,48 @@ const props = defineProps({
 
 const emit = defineEmits(['cancel', 'save'])
 
+const repo = useRepoConnection()
 const form = reactive(buildEmptyForm())
 const classificationDraft = reactive({
   term: null,
   domain: ''
 })
-const mechanismDraft = reactive({
-  term: null,
-  type: '',
-  labelOverride: ''
-})
-const processDraft = reactive({
-  term: null
-})
+const catalogInput = ref('')
+const intentIdCounter = ref(0)
+const measureInput = ref('')
+const controlFeatureInput = ref('')
 
 const categoryOptions = computed(() => CATEGORY_OPTIONS)
 const intentOptions = computed(() => INTENT_OPTIONS)
+const intentEntries = ref([])
+const intentDraft = reactive(buildEmptyIntentDraft())
 const domainOptions = computed(() => DOMAIN_OPTIONS)
 const mechanismTypeOptions = computed(() => MECHANISM_TYPES)
 const acquisitionModalities = computed(() => ACQUISITION_MODALITIES)
-const featureOptions = computed(() => props.features || [])
+const localFeatures = ref([])
+const featureOptions = computed(() => localFeatures.value)
+const featureOptionIds = computed(() => featureOptions.value.map((f) => f.id).filter(Boolean))
+const featureModal = reactive({
+  open: false,
+  saving: false,
+  error: '',
+  preset: {},
+  returnTo: ''
+})
 const isSample = computed(() => form.experimental_intents.includes('sample'))
-const isTreatment = computed(() => form.experimental_intents.includes('treatment'))
-const isAssayMaterial = computed(() => form.experimental_intents.includes('assay_material'))
-const isControl = computed(() => form.experimental_intents.includes('control'))
+const vendorOptions = computed(() => [
+  { value: '', label: 'Unknown / internal' },
+  { value: 'thermo', label: 'Thermo Fisher' },
+  { value: 'sigmaaldrich', label: 'Sigma-Aldrich' },
+  { value: 'biorad', label: 'Bio-Rad' },
+  { value: 'thomas', label: 'Thomas' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'unknown', label: 'Unknown' }
+])
 const canAddClassification = computed(() => {
   const term = classificationDraft.term
   const domain = classificationDraft.domain?.trim()
   return Boolean(term && (term.id || term.identifier) && domain)
-})
-const canAddTarget = computed(() => {
-  const term = mechanismDraft.term
-  const type = mechanismDraft.type?.trim()
-  return Boolean(term && (term.id || term.identifier) && type)
-})
-const canSetProcess = computed(() => {
-  const term = processDraft.term
-  return Boolean(term && (term.id || term.identifier))
 })
 
 watch(
@@ -385,26 +489,33 @@ watch(
   }
 )
 
+watch(
+  () => props.features,
+  (list = []) => {
+    localFeatures.value = Array.isArray(list) ? [...list] : []
+  },
+  { immediate: true, deep: true }
+)
+
 function resetForm(term) {
   const next = buildEmptyForm()
   classificationDraft.term = null
   classificationDraft.domain = ''
-  mechanismDraft.term = null
-  mechanismDraft.type = ''
-  mechanismDraft.labelOverride = ''
-  processDraft.term = null
+  intentEntries.value = []
+  resetIntentDraft()
   if (term) {
     const label = term.label || term.prefLabel || term.id || ''
-    const ontologyKey = term.ontologyEnum || term.ontology || term.source || ''
     next.label = label
     next.id = ensureMaterialId(label || term.id || '')
     next.category = 'reagent'
     next.experimental_intents = []
     next.tagsInput = ''
-    if (ontologyKey && term.id) {
-      next.xrefKey = ontologyKey
-      next.xrefValue = term.id
+    if (term.id) {
+      next.xrefKey = term.id
+      next.xrefValue = label || term.id
     }
+    next.vendor_slug = ''
+    next.catalog_numbers = []
   }
   Object.assign(form, next)
 }
@@ -418,6 +529,8 @@ function buildEmptyForm() {
     tagsInput: '',
     xrefKey: '',
     xrefValue: '',
+    vendor_slug: '',
+    catalog_numbers: [],
     classified_as: [],
     mechanism: {
       type: '',
@@ -428,13 +541,13 @@ function buildEmptyForm() {
       label: ''
     },
     measures: [],
-    detection: {
-      modality: '',
-      channel_hint: '',
-      excitation_nm: '',
-      emission_nm: ''
-    },
-    control_role: '',
+  detection: {
+    modality: '',
+    channel_hint: '',
+    excitation_nm: '',
+    emission_nm: ''
+  },
+  control_role: '',
     control_for: {
       features: [],
       acquisition_modalities: [],
@@ -466,62 +579,253 @@ function removeClassification(key) {
   form.classified_as = form.classified_as.filter((row) => row.key !== key)
 }
 
-function addTarget() {
-  const term = mechanismDraft.term || {}
+function buildEmptyIntentDraft() {
+  return {
+    kind: 'control',
+    fields: {
+      mechanism: { type: '', targets: [], targetTerm: null, labelOverride: '' },
+      affected_process: { id: '', label: '', term: null },
+      measures: [],
+      detection: { modality: '', channel_hint: '', excitation_nm: '', emission_nm: '' },
+      control_role: '',
+      control_for: {
+        features: [],
+        acquisition_modalities: [],
+        notes: ''
+      }
+    }
+  }
+}
+
+function resetIntentDraft() {
+  Object.assign(intentDraft, buildEmptyIntentDraft())
+}
+
+function addIntentTarget() {
+  const term = intentDraft.fields.mechanism.targetTerm || {}
   const id = term.identifier || term.id || ''
-  const label = mechanismDraft.labelOverride?.trim() || term.label || term.prefLabel || id
-  const type = mechanismDraft.type?.trim()
-  if (!id || !type) return
-  form.mechanism.type = type
-  form.mechanism.targets.push({
-    key: `tgt-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+  const label = intentDraft.fields.mechanism.labelOverride?.trim() || term.label || term.prefLabel || id
+  if (!id || !label) return
+  intentDraft.fields.mechanism.targets.push({
+    key: `itgt-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
     id,
     label
   })
-  mechanismDraft.term = null
-  mechanismDraft.labelOverride = ''
+  intentDraft.fields.mechanism.targetTerm = null
+  intentDraft.fields.mechanism.labelOverride = ''
 }
 
-function removeTarget(key) {
-  form.mechanism.targets = form.mechanism.targets.filter((row) => row.key !== key)
+function removeIntentTarget(key) {
+  intentDraft.fields.mechanism.targets = intentDraft.fields.mechanism.targets.filter((row) => row.key !== key)
 }
 
-function setAffectedProcess() {
-  const term = processDraft.term || {}
+function addIntentProcess() {
+  const term = intentDraft.fields.affected_process.term || {}
   const id = term.identifier || term.id || ''
   const label = term.label || term.prefLabel || id
   if (!id && !label) return
-  form.affected_process = { id: id || label, label: label || id }
-  processDraft.term = null
+  intentDraft.fields.affected_process = { id: id || label, label: label || id, term: null }
 }
 
-function clearAffectedProcess() {
-  form.affected_process = { id: '', label: '' }
-  processDraft.term = null
+function clearIntentProcess() {
+  intentDraft.fields.affected_process = { id: '', label: '', term: null }
 }
 
-function addMeasure(featureId) {
+function addIntentMeasure(featureId) {
   const val = (featureId || '').trim()
   if (!val) return
-  if (!form.measures.includes(val)) {
-    form.measures.push(val)
+  if (!intentDraft.fields.measures.includes(val)) {
+    intentDraft.fields.measures.push(val)
   }
 }
 
-function removeMeasure(featureId) {
-  form.measures = form.measures.filter((id) => id !== featureId)
+function handleMeasureSelect(value) {
+  addIntentMeasure(value)
+  measureInput.value = ''
 }
 
-function addControlFeature(featureId) {
+function removeIntentMeasure(featureId) {
+  intentDraft.fields.measures = intentDraft.fields.measures.filter((id) => id !== featureId)
+}
+
+function addIntentControlFeature(featureId) {
   const val = (featureId || '').trim()
   if (!val) return
-  if (!form.control_for.features.includes(val)) {
-    form.control_for.features.push(val)
+  if (!intentDraft.fields.control_for.features.includes(val)) {
+    intentDraft.fields.control_for.features.push(val)
   }
 }
 
-function removeControlFeature(featureId) {
-  form.control_for.features = form.control_for.features.filter((id) => id !== featureId)
+function handleControlFeatureSelect(value) {
+  addIntentControlFeature(value)
+  controlFeatureInput.value = ''
+}
+
+function removeIntentControlFeature(featureId) {
+  intentDraft.fields.control_for.features = intentDraft.fields.control_for.features.filter((id) => id !== featureId)
+}
+
+function openFeatureModal(context = '', term = null) {
+  const labelDraft =
+    (term && (term.label || term.prefLabel || term.id || term.identifier)) ||
+    (context === 'measure' ? measureInput.value : controlFeatureInput.value) ||
+    ''
+  const generatedId = ensureFeatureId(labelDraft || (term?.id || term?.identifier || ''))
+  featureModal.preset = {
+    label: labelDraft,
+    id: generatedId
+  }
+  featureModal.returnTo = context
+  featureModal.error = ''
+  featureModal.open = true
+}
+
+function closeFeatureModal() {
+  featureModal.open = false
+  featureModal.saving = false
+  featureModal.error = ''
+  featureModal.preset = {}
+  featureModal.returnTo = ''
+}
+
+function ensureFeatureId(raw = '') {
+  const base = String(raw || '')
+    .replace(/^feature:/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '')
+  const slug = base || 'feature'
+  return `feature:${slug}`
+}
+
+async function handleFeatureSave(entry = {}) {
+  if (!entry.label) {
+    featureModal.error = 'Label is required.'
+    return
+  }
+  if (!repo?.writeFile) {
+    featureModal.error = 'Connect a repository to save features.'
+    return
+  }
+  const id = entry.id ? ensureFeatureId(entry.id) : ensureFeatureId(entry.label)
+  featureModal.saving = true
+  featureModal.error = ''
+  try {
+    const timestamp = new Date().toISOString().replace(/[:-]/g, '').replace(/\.\d+Z$/, 'Z')
+    const conceptPayload = {
+      ...entry,
+      id,
+      label: entry.label
+    }
+    await writeFeatureConcept(repo, conceptPayload, { timestamp })
+    await writeFeatureRevision(repo, { ...entry, id, label: entry.label }, { timestamp, createdBy: 'user' })
+    await rebuildFeatureIndex(repo)
+    const option = { id, label: entry.label }
+    localFeatures.value = [...localFeatures.value, option]
+    if (featureModal.returnTo === 'measure') {
+      handleMeasureSelect(id)
+    } else if (featureModal.returnTo === 'control') {
+      handleControlFeatureSelect(id)
+    }
+    closeFeatureModal()
+  } catch (err) {
+    featureModal.error = err?.message || 'Failed to save feature.'
+  } finally {
+    featureModal.saving = false
+  }
+}
+
+function addIntentEntry() {
+  if (!intentDraft.kind) return
+  intentIdCounter.value += 1
+  const id = `intent-${intentIdCounter.value}-${Date.now()}`
+  intentEntries.value.push({
+    id,
+    kind: intentDraft.kind,
+    fields: JSON.parse(JSON.stringify(intentDraft.fields))
+  })
+  // keep legacy flat intents in sync
+  if (!form.experimental_intents.includes(intentDraft.kind)) {
+    form.experimental_intents.push(intentDraft.kind)
+  }
+  resetIntentDraft()
+}
+
+function editIntent(id) {
+  const entry = intentEntries.value.find((it) => it.id === id)
+  if (!entry) return
+  Object.assign(intentDraft, {
+    kind: entry.kind,
+    fields: JSON.parse(JSON.stringify(entry.fields))
+  })
+  removeIntent(id)
+}
+
+function removeIntent(id) {
+  intentEntries.value = intentEntries.value.filter((it) => it.id !== id)
+}
+
+const canAddIntentTarget = computed(() => {
+  const term = intentDraft.fields.mechanism.targetTerm
+  const type = intentDraft.fields.mechanism.type?.trim()
+  return Boolean(term && (term.id || term.identifier) && type)
+})
+
+const canAddIntentProcess = computed(() => {
+  const term = intentDraft.fields.affected_process.term
+  return Boolean(term && (term.id || term.identifier))
+})
+
+const intentValidationError = computed(() => {
+  if (!intentDraft.kind) return ''
+  
+  if (intentDraft.kind === 'control') {
+    if (!intentDraft.fields.control_role) {
+      return 'Control intent requires a control role'
+    }
+    if (!intentDraft.fields.control_for.features.length) {
+      return 'Control intent requires at least one feature ID'
+    }
+  }
+  
+  if (intentDraft.kind === 'treatment') {
+    if (!intentDraft.fields.mechanism.type) {
+      return 'Treatment intent requires a mechanism type'
+    }
+    if (!intentDraft.fields.mechanism.targets.length) {
+      return 'Treatment intent requires at least one target'
+    }
+  }
+  
+  if (intentDraft.kind === 'assay_material') {
+    if (!intentDraft.fields.measures.length) {
+      return 'Assay material intent requires at least one measure (feature ID)'
+    }
+  }
+  
+  return ''
+})
+
+const canAddIntent = computed(() => {
+  return intentDraft.kind && !intentValidationError.value
+})
+
+function addCatalogNumber(val) {
+  const value = (val || '').trim()
+  if (!value) return
+  if (!form.catalog_numbers.includes(value)) {
+    form.catalog_numbers.push(value)
+  }
+}
+
+function removeCatalogNumber(value) {
+  form.catalog_numbers = form.catalog_numbers.filter((entry) => entry !== value)
+}
+
+function handleCatalogAdd() {
+  addCatalogNumber(catalogInput.value)
+  catalogInput.value = ''
 }
 
 function handleSave() {
@@ -542,49 +846,94 @@ function buildPayload() {
     id: form.id ? ensureMaterialId(form.id) : '',
     label: form.label || '',
     category: form.category || 'other',
-    experimental_intents: Array.isArray(form.experimental_intents)
-      ? form.experimental_intents.filter(Boolean)
-      : [],
+    experimental_intents: buildExperimentalIntents(),
     tags,
     xref,
+    vendor_slug: form.vendor_slug || '',
+    catalog_numbers: Array.isArray(form.catalog_numbers)
+      ? form.catalog_numbers.map((val) => val.trim()).filter(Boolean)
+      : [],
     classified_as: form.classified_as.map((row) => ({
       id: row.id,
       label: row.label,
       domain: row.domain,
       source: row.source
     })),
-    mechanism: {
-      type: form.mechanism.type?.trim(),
-      targets: form.mechanism.targets
-        .map((row) => ({
-          id: row.id?.trim(),
-          label: row.label?.trim()
-        }))
-        .filter((row) => row.id && row.label)
-    },
-    affected_process:
-      form.affected_process && (form.affected_process.id || form.affected_process.label)
-        ? {
-            id: (form.affected_process.id || form.affected_process.label || '').trim(),
-            label: (form.affected_process.label || form.affected_process.id || '').trim()
-          }
-        : null,
-    measures: Array.isArray(form.measures) ? form.measures.filter(Boolean) : [],
+    ...buildIntentFieldPayload()
+  }
+}
+
+function buildExperimentalIntents() {
+  const kinds = intentEntries.value.map((entry) => entry.kind).filter(Boolean)
+  const merged = Array.from(new Set([...(form.experimental_intents || []), ...kinds]))
+  return merged
+}
+
+function buildIntentFieldPayload() {
+  const latestByKind = {}
+  intentEntries.value.forEach((entry) => {
+    latestByKind[entry.kind] = entry
+  })
+
+  const payload = {
+    mechanism: { type: '', targets: [] },
+    affected_process: null,
+    measures: [],
     detection: {
-      modality: form.detection.modality || '',
-      channel_hint: form.detection.channel_hint || '',
-      excitation_nm: form.detection.excitation_nm || '',
-      emission_nm: form.detection.emission_nm || ''
+      modality: '',
+      channel_hint: '',
+      excitation_nm: '',
+      emission_nm: ''
     },
-    control_role: form.control_role || '',
+    control_role: '',
     control_for: {
-      features: Array.isArray(form.control_for.features) ? form.control_for.features.filter(Boolean) : [],
-      acquisition_modalities: Array.isArray(form.control_for.acquisition_modalities)
-        ? form.control_for.acquisition_modalities.filter(Boolean)
-        : [],
-      notes: form.control_for.notes || ''
+      features: [],
+      acquisition_modalities: [],
+      notes: ''
     }
   }
+
+  const treatment = latestByKind.treatment
+  if (treatment) {
+    payload.mechanism.type = treatment.fields.mechanism.type || ''
+    payload.mechanism.targets = (treatment.fields.mechanism.targets || []).map((row) => ({
+      id: row.id?.trim(),
+      label: row.label?.trim()
+    })).filter((row) => row.id && row.label)
+    if (treatment.fields.affected_process.id || treatment.fields.affected_process.label) {
+      payload.affected_process = {
+        id: (treatment.fields.affected_process.id || treatment.fields.affected_process.label || '').trim(),
+        label: (treatment.fields.affected_process.label || treatment.fields.affected_process.id || '').trim()
+      }
+    }
+  }
+
+  const assay = latestByKind.assay_material
+  if (assay) {
+    payload.measures = Array.isArray(assay.fields.measures) ? assay.fields.measures.filter(Boolean) : []
+    payload.detection = {
+      modality: assay.fields.detection.modality || '',
+      channel_hint: assay.fields.detection.channel_hint || '',
+      excitation_nm: assay.fields.detection.excitation_nm || '',
+      emission_nm: assay.fields.detection.emission_nm || ''
+    }
+  }
+
+  const control = latestByKind.control
+  if (control) {
+    payload.control_role = control.fields.control_role || ''
+    payload.control_for = {
+      features: Array.isArray(control.fields.control_for.features)
+        ? control.fields.control_for.features.filter(Boolean)
+        : [],
+      acquisition_modalities: Array.isArray(control.fields.control_for.acquisition_modalities)
+        ? control.fields.control_for.acquisition_modalities.filter(Boolean)
+        : [],
+      notes: control.fields.control_for.notes || ''
+    }
+  }
+
+  return payload
 }
 
 </script>
@@ -669,6 +1018,12 @@ select {
   grid-template-columns: 1fr auto;
   gap: 6px;
   align-items: center;
+}
+.combo-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .section {
   border: 1px dashed #cbd5f5;
@@ -755,5 +1110,143 @@ select {
 .full-width {
   width: 100%;
   justify-content: center;
+}
+
+.intent-section {
+  border: 2px solid #8b5cf6;
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f8f8ff 100%);
+}
+
+.intent-section .section__header h4 {
+  margin: 0;
+  color: #6b21a8;
+  font-size: 1.05rem;
+}
+
+.intent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intent-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-bottom: 2px solid #e9d5ff;
+  padding-bottom: 8px;
+}
+
+.intent-tab {
+  padding: 0.5rem 1rem;
+  border: 1px solid #cbd5f5;
+  border-radius: 8px 8px 0 0;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: capitalize;
+}
+
+.intent-tab:hover {
+  background: #e9d5ff;
+  border-color: #a855f7;
+  color: #6b21a8;
+}
+
+.intent-tab.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  border-color: #7c3aed;
+  color: white;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+.intent-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 320px;
+  height: 320px;
+  padding: 12px 0;
+  overflow-y: auto;
+}
+
+.placeholder-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 2rem;
+  text-align: center;
+}
+
+.placeholder-content p {
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.intent-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e9d5ff;
+}
+
+.intent-actions .error {
+  margin: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.intent-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intent-card {
+  border: 1px solid #e9d5ff;
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+}
+
+.intent-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.intent-card__header strong {
+  color: #6b21a8;
+  text-transform: capitalize;
+  font-size: 0.95rem;
+}
+
+.intent-card__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.intent-card__summary {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intent-card__summary li {
+  color: #475569;
+  font-size: 0.85rem;
 }
 </style>

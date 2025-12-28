@@ -126,6 +126,16 @@ properties:
     description: "Optional ontology/vendor cross-references; not used as canonical IDs."
     additionalProperties:
       type: string
+  vendor_slug:
+    type: string
+    description: "Optional vendor slug (thermo, sigmaaldrich, biorad, thomas, internal, unknown)."
+    enum: [thermo, sigmaaldrich, biorad, thomas, internal, unknown]
+  catalog_numbers:
+    type: array
+    description: "Optional vendor catalog numbers (supports multiple pack sizes)."
+    items:
+      type: string
+      minLength: 1
 
   defaults:
     type: object

@@ -16,7 +16,8 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
   const settingsError = ref('')
   const settingsForm = reactive({
     cacheDuration: 30,
-    localNamespace: ''
+    localNamespace: '',
+    vendors: []
   })
 
   // Functions
@@ -59,7 +60,8 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
         },
         provenance: {
           local_namespace: settingsForm.localNamespace || ''
-        }
+        },
+        vendors: normalizeVendors(settingsForm.vendors)
       })
       
       if (isStandaloneSettings.value) {
@@ -77,6 +79,7 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
     const ontologyCfg = systemConfig.ontologyConfig.value
     settingsForm.cacheDuration = ontologyCfg.cacheDuration || 30
     settingsForm.localNamespace = systemConfig.provenanceConfig?.value?.localNamespace || ''
+    settingsForm.vendors = normalizeVendors(systemConfig.vendorConfig?.value || [])
   }
 
   // Watchers
@@ -94,6 +97,7 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
     settingsSaving,
     settingsError,
     settingsForm,
+    normalizeVendors,
 
     // Functions
     openSettings,
@@ -101,4 +105,21 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
     saveSettings,
     syncSettingsForm
   }
+}
+
+function normalizeVendors(list = []) {
+  if (!Array.isArray(list)) return []
+  return list
+    .map((entry) => {
+      const name = (entry.name || '').trim()
+      const slug = (entry.slug || '').trim()
+      if (!name || !slug) return null
+      return {
+        name,
+        slug,
+        product_url_template: entry.product_url_template || '',
+        homepage_url: entry.homepage_url || ''
+      }
+    })
+    .filter(Boolean)
 }

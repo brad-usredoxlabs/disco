@@ -4,6 +4,7 @@ import MaterialPicker from './MaterialPicker.vue'
 import OntologyFieldInput from '../../tiptap/nodes/OntologyFieldInput.vue'
 import RevisionReviewModal from '../../components/RevisionReviewModal.vue'
 import MaterialRevisionViewer from '../../components/MaterialRevisionViewer.vue'
+import { ensureMaterialId } from '../utils/materialId'
 
 const props = defineProps({
   roles: {
@@ -73,6 +74,7 @@ const selectedMaterial = ref(null)
 const pendingMaterial = ref(null)
 const showConfirmModal = ref(false)
 const revisionForm = ref(buildEmptyRevisionForm())
+const selectedIntent = ref('')
 const volumeValue = ref('')
 const volumeUnit = ref('uL')
 const concentrationValue = ref('')
@@ -85,6 +87,17 @@ const useOntologySearch = computed(() => Boolean(props.ontologyVocab))
 const filteredMaterials = computed(() =>
   Array.isArray(props.materials) ? props.materials.filter((m) => m?.category !== 'waste') : []
 )
+const materialIntentOptions = computed(() =>
+  Array.isArray(selectedMaterial.value?.experimental_intents) ? selectedMaterial.value.experimental_intents : []
+)
+const requiresIntentChoice = computed(() => materialIntentOptions.value.length > 1)
+const resolvedIntent = computed(() => {
+  if (!materialIntentOptions.value.length) return ''
+  if (materialIntentOptions.value.length === 1) return materialIntentOptions.value[0]
+  return selectedIntent.value || ''
+})
+const requireConcentration = computed(() => !selectedMaterial.value?.isAdHoc)
+
 const mergedSearchOptions = computed(() => {
   if (!useOntologySearch.value) return props.ontologySearchOptions
   return {
@@ -135,15 +148,17 @@ watch(
 
 const canApply = computed(() => {
   const isWaste = selectedMaterial.value?.category === 'waste'
+  const intentSatisfied = !requiresIntentChoice.value || Boolean(selectedIntent.value)
+  const hasConcentration = requireConcentration.value ? concentrationValue.value && concentrationUnit.value : true
   return Boolean(
     props.selectionCount &&
       selectedRole.value &&
       selectedMaterial.value?.id &&
       !isWaste &&
+      intentSatisfied &&
       volumeValue.value &&
       volumeUnit.value &&
-      concentrationValue.value &&
-      concentrationUnit.value
+      hasConcentration
   )
 })
 
@@ -166,8 +181,24 @@ function handleOntologySelect(term) {
     selectMaterial(null)
     return
   }
+  // allow raw string selections
+  if (typeof term === 'string') {
+    const text = term.trim()
+    if (!text) {
+      selectMaterial(null)
+      return
+    }
+    emit('request-import', { term: { id: text, label: text }, normalized: { id: text, label: text } })
+    selectMaterial(null)
+    return
+  }
+  if (term.useAdHoc) {
+    const adHoc = createAdHocMaterial(term.label || term.id || '')
+    selectMaterial(adHoc)
+    return
+  }
   const normalized = {
-    id: term.id || term.identifier || '',
+    id: term.id || term.identifier || term['@id'] || '',
     label: term.label || term.prefLabel || term.id || '',
     source: term.source || term.ontology || '',
     provenance: term.provenance || ''
@@ -197,10 +228,23 @@ function handleApply() {
     materialId: selectedMaterial.value.id,
     materialRevision: selectedMaterial.value.material_revision || selectedMaterial.value.latest_revision_id || '',
     materialLabel: selectedMaterial.value.label,
+    experimentalIntent: resolvedIntent.value || '',
     volume: normalizeVolumePayload(),
     concentration: normalizeConcentrationPayload(),
     controlIntents: buildControlIntents()
   })
+}
+
+function createAdHocMaterial(label = '') {
+  const id = ensureMaterialId(label || 'material')
+  return {
+    id,
+    label: label || id,
+    category: 'other',
+    experimental_intents: [],
+    material_revision: '',
+    isAdHoc: true
+  }
 }
 
 function handleRemove() {
@@ -322,6 +366,8 @@ function normalizeConcentrationPayload() {
 
 function selectMaterial(entry, options = {}) {
   selectedMaterial.value = entry || null
+  const intents = Array.isArray(entry?.experimental_intents) ? entry.experimental_intents : []
+  selectedIntent.value = intents.length === 1 ? intents[0] : ''
   if (!entry) return
   const shouldApplyRole = options.forceRole || !selectedRole.value
   const defaults = entry?.defaults || {}
@@ -375,20 +421,15 @@ function buildControlIntents() {
     })
     .filter(Boolean)
 }
+
+function handleIntentSelect(intent) {
+  if (!intent) return
+  selectedIntent.value = intent
+}
 </script>
 
 <template>
   <div class="apply-bar">
-    <div class="field-group">
-      <label>Role</label>
-      <select v-model="selectedRole">
-        <option value="" disabled>Select role…</option>
-        <option v-for="role in roles" :key="role.role || role" :value="role.role || role">
-          {{ role.label || role.role || role }}
-        </option>
-      </select>
-    </div>
-
     <div class="picker-group">
       <label>Material</label>
       <OntologyFieldInput
@@ -429,6 +470,34 @@ function buildControlIntents() {
       <p v-else class="muted">No active revision found for this material.</p>
     </RevisionReviewModal>
 
+    <div v-if="materialIntentOptions.length" class="intent-panel">
+      <p class="intent-label">Experimental intent</p>
+      <div class="intent-chips">
+        <button
+          v-for="intent in materialIntentOptions"
+          :key="intent"
+          type="button"
+          class="intent-chip"
+          :class="{ active: selectedIntent === intent }"
+          :disabled="materialIntentOptions.length === 1"
+          @click="handleIntentSelect(intent)"
+        >
+          {{ intent }}
+        </button>
+      </div>
+      <p v-if="requiresIntentChoice && !selectedIntent" class="muted tiny">Select an intent before applying.</p>
+    </div>
+
+    <div class="field-group">
+      <label>Role</label>
+      <select v-model="selectedRole">
+        <option value="" disabled>Select role…</option>
+        <option v-for="role in roles" :key="role.role || role" :value="role.role || role">
+          {{ role.label || role.role || role }}
+        </option>
+      </select>
+    </div>
+
     <div class="amount-row">
       <div class="field-group">
         <label>Volume</label>
@@ -463,6 +532,7 @@ function buildControlIntents() {
             <option value="mg/mL">mg/mL</option>
             <option value="X">X (fold)</option>
             <option value="each">each / units</option>
+            <option value="%">percent</option>
           </select>
         </div>
       </div>
@@ -538,6 +608,37 @@ input {
 
 .ontology-picker {
   width: 100%;
+}
+
+.intent-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.intent-label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.intent-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.intent-chip {
+  border: 1px solid #cbd5f5;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+}
+
+.intent-chip.active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
 }
 
 .amount-row {

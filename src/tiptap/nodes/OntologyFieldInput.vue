@@ -32,6 +32,7 @@
     />
     <div class="ontology-dropdown" v-if="dropdownOpen && !disabled" ref="dropdownRef">
       <div v-if="showAddButton" class="dropdown-actions">
+        <button type="button" class="use-term-button" @mousedown.prevent="handleUseTyped">Use</button>
         <button type="button" class="add-term-button" @mousedown.prevent="handleRequestAdd">Add term</button>
       </div>
       <p v-if="isLoading" class="dropdown-hint">Searching…</p>
@@ -334,6 +335,13 @@ function handleRequestAdd() {
   emit('request-add', text)
 }
 
+function handleUseTyped() {
+  const text = (query.value || currentLabel.value || '').trim()
+  if (!text) return
+  emit('update:value', { id: text, label: text, useAdHoc: true, source: 'ad-hoc' })
+  dropdownOpen.value = false
+}
+
 function scrollHighlightedIntoView() {
   if (!dropdownOpen.value) return
   const container = dropdownRef.value
@@ -511,9 +519,11 @@ defineExpose({
   display: flex;
   justify-content: flex-end;
   padding: 0.3rem 0.4rem;
+  gap: 0.35rem;
 }
 
-.add-term-button {
+.add-term-button,
+.use-term-button {
   border: 1px solid #cbd5f5;
   background: #f8fafc;
   border-radius: 8px;
@@ -522,18 +532,7 @@ defineExpose({
   cursor: pointer;
 }
 
-.dropdown-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0.3rem 0.4rem;
-}
-
-.add-term-button {
-  border: 1px solid #cbd5f5;
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 0.25rem 0.6rem;
-  font-size: 0.85rem;
-  cursor: pointer;
+.use-term-button {
+  background: #e0f2fe;
 }
 </style>

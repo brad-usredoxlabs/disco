@@ -12,6 +12,44 @@ function defaultConfig() {
     provenance: {
       local_namespace: ''
     },
+    vendors: [
+      {
+        name: 'Thermo Fisher',
+        slug: 'thermo',
+        product_url_template: 'https://www.thermofisher.com/search/results?query={catalog_number}',
+        homepage_url: 'https://www.thermofisher.com'
+      },
+      {
+        name: 'Sigma-Aldrich',
+        slug: 'sigmaaldrich',
+        product_url_template: 'https://www.sigmaaldrich.com/US/en/search/{catalog_number}',
+        homepage_url: 'https://www.sigmaaldrich.com'
+      },
+      {
+        name: 'Bio-Rad',
+        slug: 'biorad',
+        product_url_template: 'https://www.bio-rad.com/en-us/search?query={catalog_number}',
+        homepage_url: 'https://www.bio-rad.com'
+      },
+      {
+        name: 'Thomas',
+        slug: 'thomas',
+        product_url_template: '',
+        homepage_url: ''
+      },
+      {
+        name: 'Internal',
+        slug: 'internal',
+        product_url_template: '',
+        homepage_url: ''
+      },
+      {
+        name: 'Unknown',
+        slug: 'unknown',
+        product_url_template: '',
+        homepage_url: ''
+      }
+    ],
     features: {
       graphTree: true,
       graphQueries: false
@@ -69,7 +107,8 @@ export function useSystemConfig(repoConnection) {
       provenance: {
         ...base.provenance,
         ...(userConfig.provenance || {})
-      }
+      },
+      vendors: Array.isArray(userConfig.vendors) ? userConfig.vendors : base.vendors
     }
   }
 
@@ -93,6 +132,7 @@ export function useSystemConfig(repoConnection) {
       localNamespace: source.local_namespace || source.localNamespace || ''
     }
   })
+  const vendorConfig = computed(() => (Array.isArray(config.value?.vendors) ? config.value.vendors : []))
 
   async function saveConfig(partial = {}) {
     if (!repoConnection?.directoryHandle?.value) {
@@ -108,7 +148,8 @@ export function useSystemConfig(repoConnection) {
       provenance: {
         ...(config.value?.provenance || {}),
         ...(partial.provenance || {})
-      }
+      },
+      vendors: Array.isArray(partial.vendors) ? partial.vendors : config.value?.vendors
     })
     const yamlText = YAML.stringify(merged)
     await repoConnection.writeFile(PRIMARY_CONFIG_PATH, yamlText)
@@ -136,6 +177,7 @@ export function useSystemConfig(repoConnection) {
     lastLoadedAt,
     ontologyConfig,
     provenanceConfig,
+    vendorConfig,
     reload: loadConfig,
     save: saveConfig
   }

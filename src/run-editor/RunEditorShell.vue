@@ -467,7 +467,18 @@ const sourceSelectionEmpty = computed(() => !sourceSelection.selection.value.len
 const canUndo = computed(() => store.state.history.length > 0)
 const canRedo = computed(() => store.state.future.length > 0)
 const availableMaterials = computed(() => materialLibraryLocal.value || [])
-const roleOptions = ['component', 'buffer', 'control', 'other']
+const roleOptions = [
+  'sample',
+  'standard',
+  'buffer',
+  'media',
+  'solvent',
+  'treatment',
+  'positive_control',
+  'negative_control',
+  'vehicle_control',
+  'blank'
+]
 const sourcePalette = computed(() => (store.state.sourcePalette || []).filter((entry) => !entry.archived))
 const activeSourceEntry = computed(() => store.getActiveSourceEntry())
 const sourceLayoutIndex = computed(() => activeSourceEntry.value?.layoutIndex || layoutIndex.value)
@@ -608,11 +619,12 @@ async function handleAddRunSource(payload = {}) {
 
 function handleMaterialImportRequest(payload = {}) {
   const term = payload.normalized || payload.term || {}
-  if (!term) return
+  const label = term.label || term.prefLabel || term.id || term.identifier || term['@id'] || ''
+  const id = term.id || term.identifier || term['@id'] || label
   materialImportModal.term = {
     ...term,
-    label: term.label || term.prefLabel || term.id || '',
-    id: term.id || term.identifier || ''
+    label,
+    id
   }
   materialImportModal.error = ''
   materialImportModal.open = true

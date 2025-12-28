@@ -46,6 +46,34 @@ const handleSave = () => emit('save')
             placeholder="urn:local"
           />
         </label>
+        <div class="vendor-section">
+          <div class="vendor-header">
+            <h3>Vendors</h3>
+            <button
+              class="ghost-button"
+              type="button"
+              @click="settingsForm.vendors.push({ name: '', slug: '', product_url_template: '', homepage_url: '' })"
+            >
+              + Add vendor
+            </button>
+          </div>
+          <div v-if="settingsForm.vendors.length" class="vendor-list">
+            <div v-for="(vendor, idx) in settingsForm.vendors" :key="idx" class="vendor-row">
+              <input v-model="vendor.name" type="text" placeholder="Name (Thermo Fisher)" />
+              <input v-model="vendor.slug" type="text" placeholder="Slug (thermo)" />
+              <input
+                v-model="vendor.product_url_template"
+                type="text"
+                placeholder="Product URL template (use {catalog_number})"
+              />
+              <input v-model="vendor.homepage_url" type="text" placeholder="Homepage URL (optional)" />
+              <button class="ghost-button tiny" type="button" @click="settingsForm.vendors.splice(idx, 1)">Remove</button>
+            </div>
+          </div>
+          <p class="status status-muted tiny">
+            Product URL template supports <code>{catalog_number}</code> placeholder. Slug must match material vendor_slug.
+          </p>
+        </div>
         <p v-if="settingsError" class="status status-error">{{ settingsError }}</p>
         <p class="status status-muted">
           Settings are saved to <code>config/system.yaml</code> in your connected repository.
@@ -103,6 +131,37 @@ const handleSave = () => emit('save')
   max-width: 520px;
   display: grid;
   gap: 12px;
+}
+.vendor-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.vendor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.vendor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.vendor-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.35rem;
+  align-items: center;
+}
+.vendor-row input {
+  width: 100%;
+}
+.vendor-row .tiny {
+  justify-self: flex-start;
 }
 
 .settings-actions {

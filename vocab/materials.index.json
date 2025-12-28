@@ -58,6 +58,31 @@
     }
   },
   {
+    "id": "material:ethanol",
+    "label": "ethanol",
+    "category": "reagent",
+    "tags": [],
+    "latest_revision_id": "materialrev:ethanol@20251228T172401Z",
+    "latest_revision_status": "active",
+    "latest_revision": {
+      "id": "materialrev:ethanol@20251228T172401Z",
+      "of_material": "material:ethanol",
+      "revision": 1,
+      "status": "active",
+      "created_at": "20251228T172401Z",
+      "created_by": "user",
+      "changes_summary": "New revision",
+      "label": "ethanol",
+      "category": "reagent",
+      "experimental_intents": [
+        "other"
+      ],
+      "xref": {
+        "CHEBI:16236": "ethanol"
+      }
+    }
+  },
+  {
     "id": "material:example",
     "label": "Example material",
     "category": "reagent",
