@@ -1,18 +1,16 @@
 <script setup>
 import { computed, ref, watch, reactive } from 'vue'
-import AppPanel from '../ui/panels/AppPanel.vue'
-import FileTreeBrowser from '../ui/file-tree/FileTreeBrowser.vue'
-import BaseModal from '../ui/modal/BaseModal.vue'
-import TipTapRecordEditor from '../tiptap/components/TipTapRecordEditor.vue'
-import FieldInspector from './FieldInspector.vue'
-import GraphQueryPanel from './GraphQueryPanel.vue'
-import RecordSearchPanel from './RecordSearchPanel.vue'
-import RecordCreatorModal from './RecordCreatorModal.vue'
-import GraphTreePanel from './GraphTreePanel.vue'
-import PlateEditorShell from '../plate-editor/PlateEditorShell.vue'
-import ProtocolEditorShell from '../protocol-editor/ProtocolEditorShell.vue'
-import ExplorerShell from '../explorer/ExplorerShell.vue'
-import RunEditorShell from '../run-editor/RunEditorShell.vue'
+import TiptapStandalone from './shell/standalone/TiptapStandalone.vue'
+import SettingsStandalone from './shell/standalone/SettingsStandalone.vue'
+import PlateEditorStandalone from './shell/standalone/PlateEditorStandalone.vue'
+import ProtocolEditorStandalone from './shell/standalone/ProtocolEditorStandalone.vue'
+import RunEditorStandalone from './shell/standalone/RunEditorStandalone.vue'
+import ExplorerStandalone from './shell/standalone/ExplorerStandalone.vue'
+import InspectorStandalone from './shell/standalone/InspectorStandalone.vue'
+import ShellLayout from './shell/ShellLayout.vue'
+import ShellNavBar from './shell/ShellNavBar.vue'
+import WorkspaceHost from './shell/WorkspaceHost.vue'
+import ShellOverlays from './shell/ShellOverlays.vue'
 import { resolveLayoutIndex } from '../plate-editor/utils/layoutResolver'
 import { useMaterialLibrary } from '../plate-editor/composables/useMaterialLibrary'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
@@ -59,7 +57,8 @@ const explorerSelectedLabware = ref('')
 const pendingPaletteAdd = ref(null)
 const runEditorTarget = ref(readRunEditorTargetFromUrl())
 const settingsTarget = ref(readSettingsTargetFromUrl())
-const runEditorRef = ref(null)
+const runEditorStandaloneRef = ref(null)
+const runEditorRef = computed(() => runEditorStandaloneRef.value?.runEditorRef?.value || null)
 const showSettingsModal = ref(false)
 const settingsSaving = ref(false)
 const settingsError = ref('')
@@ -1363,904 +1362,216 @@ function handleCreateProtocol() {
 </script>
 
 <template>
-  <div v-if="isStandaloneInspector" class="inspector-standalone">
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <FieldInspector
-      v-if="isReady"
-      :repo="repo"
-      :record-path="inspectorTarget.path"
-      :record-type="''"
-      :schema-loader="schemaLoader"
-      :workflow-loader="workflowLoader"
-      :record-graph="recordGraph"
-      @saved="handleInspectorSaved"
-    />
-    <div v-else class="inspector-standalone__message">
-      <p>Connect your repository to view this record.</p>
-      <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-    </div>
-  </div>
-  <div v-else-if="isStandaloneSettings" class="settings-standalone">
-    <header class="protocol-editor-standalone__header">
-      <div>
-        <p class="app-kicker">Settings</p>
-        <h1>System configuration</h1>
-        <p class="app-subtitle">Ontology search + provenance</p>
-      </div>
-      <div class="protocol-editor-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button class="secondary" type="button" @click="clearSettingsTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="protocol-editor-standalone__body">
-      <div class="modal-form settings-form">
-        <label>
-          Ontology cache duration (days)
-          <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
-        </label>
-        <label>
-          Local namespace (provenance)
-          <input
-            v-model="settingsForm.localNamespace"
-            type="text"
-            placeholder="urn:local"
-          />
-        </label>
-        <p v-if="settingsError" class="status status-error">{{ settingsError }}</p>
-        <p class="status status-muted">
-          Settings are saved to <code>config/system.yaml</code> in your connected repository.
-        </p>
-        <div class="settings-actions">
-          <button class="ghost-button" type="button" @click="clearSettingsTarget">Cancel</button>
-          <button class="primary" type="button" :class="{ 'is-loading': settingsSaving }" @click="saveSettings">
-            {{ settingsSaving ? 'Saving…' : 'Save settings' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <InspectorStandalone
+    v-if="isStandaloneInspector"
+    :is-online="isOnline"
+    :is-ready="isReady"
+    :repo="repo"
+    :inspector-target="inspectorTarget"
+    :schema-loader="schemaLoader"
+    :workflow-loader="workflowLoader"
+    :record-graph="recordGraph"
+    @connect="handleConnect"
+    @saved="handleInspectorSaved"
+  />
+  <SettingsStandalone
+    v-else-if="isStandaloneSettings"
+    :is-online="isOnline"
+    :repo-is-requesting="repo.isRequesting"
+    :settings-form="settingsForm"
+    :settings-saving="settingsSaving"
+    :settings-error="settingsError"
+    @connect="handleConnect"
+    @clear="clearSettingsTarget"
+    @save="saveSettings"
+  />
   <div v-else-if="isStandaloneTiptap" class="tiptap-standalone">
-    <header class="tiptap-standalone__header">
-      <div>
-        <p class="app-kicker">TapTab</p>
-        <h1>{{ tiptapTarget?.recordType || 'Record' }}</h1>
-        <p class="app-subtitle">{{ tiptapTarget?.path }}</p>
-      </div>
-      <div class="tiptap-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button class="secondary" type="button" @click="clearTiptapTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="tiptap-standalone__body">
-      <p v-if="tiptapStatus" class="status status-ok">{{ tiptapStatus }}</p>
-      <div v-if="!isReady" class="tiptap-standalone__message">
-        <p>Connect your repository to edit this record.</p>
-        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-      </div>
-      <div v-else-if="tiptapBundleMismatch" class="tiptap-standalone__message">
-        <p>Loading schema bundle {{ tiptapTarget?.bundle }}…</p>
-      </div>
-      <div v-else-if="!tiptapSupports" class="tiptap-standalone__message">
-        <p>This record type is not TapTab-enabled.</p>
-      </div>
-      <div v-else-if="!tiptapSchema || !tiptapUiConfig" class="tiptap-standalone__message">
-        <p>Schema details are still loading…</p>
-      </div>
-      <div v-else class="tiptap-standalone__editor">
-        <TipTapRecordEditor
-          :repo="repo"
-          :record-path="tiptapTarget.path"
-          :record-type="tiptapTarget.recordType"
-          :schema="tiptapSchema"
-          :ui-config="tiptapUiConfig"
-          :naming-rule="tiptapNamingRule || {}"
-          :read-only="false"
-          :workflow-definition="tiptapWorkflowDefinition"
-          :schema-bundle="schemaLoader.schemaBundle?.value || {}"
-          :validate-record="recordValidator.validate"
-          :project-context-overrides="tiptapContextOverrides.value || {}"
-          @close="clearTiptapTarget"
-          @saved="handleStandaloneSaved"
-        />
-      </div>
-    </div>
-  </div>
-  <div v-else-if="isStandalonePlateEditor" class="plate-editor-standalone">
-    <header class="plate-editor-standalone__header">
-      <div>
-        <p class="app-kicker">Plate Editor</p>
-        <h1>Plate Layout</h1>
-        <p class="app-subtitle">{{ plateEditorTarget?.path }}</p>
-      </div>
-      <div class="plate-editor-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button class="secondary" type="button" @click="clearPlateEditorTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="plate-editor-standalone__body">
-      <div v-if="!isReady" class="plate-editor-standalone__message">
-        <p>Connect your repository to edit this plate layout.</p>
-        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-      </div>
-      <div v-else-if="plateEditorBundleMismatch" class="plate-editor-standalone__message">
-        <p>Loading schema bundle {{ plateEditorTarget?.bundle }}…</p>
-      </div>
-      <div v-else-if="!plateEditorTarget?.path" class="plate-editor-standalone__message">
-        <p>Missing plate layout path.</p>
-      </div>
-      <div v-else class="plate-editor-standalone__editor">
-        <PlateEditorShell
-          :repo="repo"
-          :record-path="plateEditorTarget.path"
-          :schema-loader="schemaLoader"
-        />
-      </div>
-    </div>
-  </div>
-  <div v-else-if="isStandaloneProtocolEditor" class="protocol-editor-standalone">
-    <header class="protocol-editor-standalone__header">
-      <div>
-        <p class="app-kicker">Protocol Editor</p>
-        <h1>Protocol</h1>
-        <p class="app-subtitle">{{ protocolEditorTarget?.path }}</p>
-      </div>
-      <div class="protocol-editor-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button class="secondary" type="button" @click="clearProtocolEditorTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="protocol-editor-standalone__body">
-      <div v-if="!isReady" class="protocol-editor-standalone__message">
-        <p>Connect your repository to edit this protocol.</p>
-        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-      </div>
-      <div v-else-if="protocolEditorBundleMismatch" class="protocol-editor-standalone__message">
-        <p>Loading schema bundle {{ protocolEditorTarget?.bundle }}…</p>
-      </div>
-      <div v-else-if="!protocolEditorTarget?.path" class="protocol-editor-standalone__message">
-        <p>Missing protocol path.</p>
-      </div>
-      <div v-else class="protocol-editor-standalone__editor">
-        <ProtocolEditorShell
-          :repo="repo"
-          :record-path="protocolEditorTarget.path"
-          :schema-loader="schemaLoader"
-        />
-      </div>
-    </div>
-  </div>
-  <div v-else-if="isStandaloneRunEditor" class="protocol-editor-standalone">
-    <header class="protocol-editor-standalone__header">
-      <div>
-        <p class="app-kicker">Run Editor</p>
-        <h1>Run</h1>
-        <p class="app-subtitle">{{ runEditorTarget?.path }}</p>
-      </div>
-      <div class="protocol-editor-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button
-          class="primary"
-          type="button"
-          :disabled="runEditorSaving || !runEditorState.run"
-          @click="handleRunEditorSave"
-        >
-          {{ runEditorSaving ? 'Saving…' : 'Save run' }}
-        </button>
-        <button class="secondary" type="button" @click="clearRunEditorTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="protocol-editor-standalone__body">
-      <div v-if="!isReady" class="protocol-editor-standalone__message">
-        <p>Connect your repository to edit this run.</p>
-        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-      </div>
-      <div v-else-if="runEditorBundleMismatch" class="protocol-editor-standalone__message">
-        <p>Loading schema bundle {{ runEditorTarget?.bundle }}…</p>
-      </div>
-      <div v-else-if="!runEditorTarget?.path" class="protocol-editor-standalone__message">
-        <p>Missing run path.</p>
-      </div>
-      <div v-else class="protocol-editor-standalone__editor">
-        <p v-if="runEditorState.error" class="status status-error">{{ runEditorState.error }}</p>
-        <p v-else-if="runEditorState.status" class="status status-ok">{{ runEditorState.status }}</p>
-        <RunEditorShell
-          v-if="runEditorState.run"
-          ref="runEditorRef"
-          :run="runEditorState.run"
-          :layout="runEditorState.layout"
-          :material-library="runEditorState.materialLibrary"
-          :load-run-by-id="loadRunById"
-          :runs="runOptions"
-          :validate-record="recordValidator.validate"
-        />
-        <p v-else class="protocol-editor-standalone__message">Loading run…</p>
-      </div>
-    </div>
-  </div>
-  <div v-else-if="isStandaloneExplorer" class="explorer-standalone">
-    <header class="protocol-editor-standalone__header">
-      <div>
-        <p class="app-kicker">Lab Event Graph Explorer</p>
-        <h1>Explorer</h1>
-        <p class="app-subtitle">{{ explorerTarget?.path }}</p>
-      </div>
-      <div class="protocol-editor-standalone__actions">
-        <button class="secondary" type="button" :disabled="repo.isRequesting" @click="handleConnect">
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Reconnect repo' }}
-        </button>
-        <button class="secondary" type="button" @click="clearExplorerTarget">Return to workspace</button>
-      </div>
-    </header>
-    <p v-if="!isOnline" class="offline-banner">
-      You are currently offline. Cached schema/search data are in use until connectivity returns.
-    </p>
-    <div class="protocol-editor-standalone__body">
-      <div v-if="!isReady" class="protocol-editor-standalone__message">
-        <p>Connect your repository to open the explorer.</p>
-        <button class="primary" type="button" @click="handleConnect">Select repository folder</button>
-      </div>
-      <div v-else-if="explorerBundleMismatch" class="protocol-editor-standalone__message">
-        <p>Loading schema bundle {{ explorerTarget?.bundle }}…</p>
-      </div>
-      <div v-else-if="!explorerTarget?.path" class="protocol-editor-standalone__message">
-        <p>Missing run path.</p>
-      </div>
-      <div v-else class="protocol-editor-standalone__editor">
-        <p v-if="explorerState.status" class="status status-muted">{{ explorerState.status }}</p>
-        <p v-if="explorerState.error" class="status status-error">{{ explorerState.error }}</p>
-        <ExplorerShell
-          v-if="explorerState.layoutIndex && explorerState.labwareId"
-          :events="explorerState.events"
-          :layout-index="explorerState.layoutIndex || fallbackLayout"
-          :labware-id="explorerState.labwareId"
-          @use-as-source="handleUseRunAsSource"
-        />
-        <div class="explorer-form">
-          <h4>Append PlateEvent</h4>
-          <p class="muted">Quick transfer into the selected run.</p>
-          <div class="modal-form">
-            <label>
-              Activity
-              <select v-model="explorerForm.activityId">
-                <option value="" disabled>Select activity…</option>
-                <option v-for="act in explorerState.activities" :key="act.id" :value="act.id">
-                  {{ act.label || act.id || act.kind }}
-                </option>
-              </select>
-            </label>
-            <label>
-              Source well
-              <input v-model="explorerForm.sourceWell" type="text" placeholder="SRC1 or A01" />
-            </label>
-            <label>
-              Target well
-              <input v-model="explorerForm.targetWell" type="text" placeholder="A01" />
-            </label>
-            <label>
-              Volume
-              <input v-model="explorerForm.volume" type="text" placeholder="50 uL" />
-            </label>
-            <label>
-              Material ID (optional)
-              <input v-model="explorerForm.materialId" type="text" placeholder="material:drug" />
-            </label>
-          </div>
-          <div class="explorer-form__actions">
-            <button class="ghost-button" type="button" @click="resetExplorerForm">Clear</button>
-            <button class="primary" type="button" :disabled="!canAppendExplorerEvent" @click="appendExplorerEvent">
-              Append event
-            </button>
-          </div>
-          <p v-if="explorerForm.status" class="status status-muted">{{ explorerForm.status }}</p>
-          <p v-if="explorerForm.error" class="status status-error">{{ explorerForm.error }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div v-else class="app-shell">
-    <header class="app-header">
-      <div class="header-main">
-        <div>
-          <p class="app-kicker">Phase 2 · File I/O Layer</p>
-          <h1>DIsCo Pages 2.0</h1>
-          <p class="app-subtitle">Schema-driven LIS/QMS shell powered by Vue + Vite</p>
-        </div>
-        <div class="header-actions">
-          <button class="ghost-button settings-button" type="button" @click="openSettings">
-            ⚙ Settings
-          </button>
-          <div class="connection-chip" :class="{ 'is-connected': isReady }">
-            <span class="chip-label">{{ connectionLabel }}</span>
-            <button
-              class="pill-button"
-              type="button"
-              :disabled="!repo.isSupported"
-              :class="{ 'is-loading': repo.isRequesting }"
-              @click="handleConnect"
-            >
-              {{ repo.isRequesting ? 'Awaiting…' : isReady ? 'Reconnect' : 'Connect' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </header>
-    <p v-if="repo.error" class="status status-error header-status">{{ repo.error }}</p>
-    <p v-else-if="repo.isRestoring" class="status status-muted header-status">Restoring previous session…</p>
-    <p v-else-if="!repo.isSupported" class="status status-error header-status">
-      This browser does not expose the File System Access API.
-    </p>
-    <p v-if="!isOnline" class="offline-banner">
-      Offline mode: editing uses cached schemas and search results. Reconnect to sync with the repo.
-    </p>
-
-    <main class="app-main-layout">
-      <section class="graph-stage">
-        <AppPanel>
-          <RecordSearchPanel :search="searchIndex" @open="handleSelect" />
-        </AppPanel>
-        <AppPanel class="graph-panel">
-          <div class="graph-panel__header">
-            <div>
-              <h2>{{ graphTreeEnabled ? 'Record graph' : 'Repository tree' }}</h2>
-              <p v-if="graphTreeEnabled">Config-driven navigation sourced directly from relationships.yaml.</p>
-              <p v-else>Fallback tree built from the repo handle while graph mode is disabled.</p>
-            </div>
-            <div v-if="graphTreeEnabled" class="graph-panel__actions">
-              <label class="graph-panel__actions-label" for="graph-create-select">New</label>
-              <select
-                id="graph-create-select"
-                v-model="selectedRootRecordType"
-                :disabled="!isReady || !topLevelRecordTypes.length"
-              >
-                <option v-for="type in topLevelRecordTypes" :key="type" :value="type">
-                  {{ type }}
-                </option>
-              </select>
-              <button
-                class="ghost-button"
-                type="button"
-                :disabled="!isReady || !selectedRootRecordType"
-                @click="handleCreateSelectedRecord"
-              >
-                + Add record
-              </button>
-              <button
-                v-if="protocolEnabled"
-                class="ghost-button"
-                type="button"
-                :disabled="!isReady"
-                @click="handleCreateProtocol"
-              >
-                + Add protocol
-              </button>
-              <button
-                class="ghost-button"
-                type="button"
-                :disabled="!isReady"
-                @click="openPromotionModal"
-              >
-                Promote to protocol
-              </button>
-              <button
-                class="ghost-button"
-                type="button"
-                :disabled="!isReady"
-                @click="showExplorerModal = true"
-              >
-                Open Explorer
-              </button>
-              <button
-                class="ghost-button"
-                type="button"
-                :disabled="!isReady"
-                @click="showRunEditorModal = true"
-              >
-                Open Run Editor
-              </button>
-            </div>
-          </div>
-          <GraphTreePanel
-            v-if="graphTreeEnabled"
-            :graph-state="recordGraph"
-            :schema-loader="schemaLoader"
-            :workflow-loader="workflowLoader"
-            :default-root-type="defaultGraphRootType"
-            :default-root-label="defaultGraphRootLabel"
-            :active-path="activeRecordPath"
-            :tiptap-record-types="tiptapSupportedTypes"
-            :supporting-document-enabled="supportingDocumentEnabled"
-            @select-record="handleSelect"
-            @create-child="handleGraphCreate"
-          @open-tiptap="handleGraphOpenTipTap"
-          @open-protocol="handleGraphOpenProtocol"
-          @create-supporting-doc="handleGraphSupportingDoc"
-          @use-as-source="handleGraphUseAsSource"
-        />
-          <FileTreeBrowser
-            v-else
-            :nodes="rootNodes"
-            :is-loading="isTreeBootstrapping"
-            title="repo root"
-            @select="handleSelect"
-            @expand="handleExpand"
-          />
-        </AppPanel>
-        <AppPanel v-if="graphQueryEnabled" class="graph-query-panel">
-          <GraphQueryPanel
-            :graph-state="recordGraph"
-            :schema-loader="schemaLoader"
-            :workflow-loader="workflowLoader"
-          />
-        </AppPanel>
-      </section>
-    </main>
-
-    <BaseModal v-if="shouldShowModal" title="Select your repository" @close="closePrompt">
-      <p>
-        Pick the root folder that contains <code>records/</code> and <code>schema/</code>. The browser will request
-        persistent read/write permission and cache the choice in IndexedDB.
-      </p>
-      <template #footer>
-        <button class="secondary" type="button" @click="closePrompt">Not now</button>
-        <button
-          class="primary"
-          type="button"
-          :class="{ 'is-loading': repo.isRequesting }"
-          :disabled="!repo.isSupported"
-          @click="handleConnect"
-        >
-          {{ repo.isRequesting ? 'Awaiting permission…' : 'Select folder' }}
-        </button>
-      </template>
-    </BaseModal>
-    <BaseModal v-if="showSettingsModal" title="Settings" @close="closeSettings">
-      <template #body>
-        <div class="modal-form">
-          <label>
-            Ontology cache duration (days)
-            <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
-          </label>
-          <label>
-            Local namespace (provenance)
-            <input
-              v-model="settingsForm.localNamespace"
-              type="text"
-              placeholder="urn:local"
-            />
-          </label>
-          <p v-if="settingsError" class="status status-error">{{ settingsError }}</p>
-          <p class="status status-muted">
-            Settings are saved to <code>config/system.yaml</code> in your connected repository.
-          </p>
-        </div>
-      </template>
-      <template #footer>
-        <button class="ghost-button" type="button" @click="closeSettings">Cancel</button>
-        <button class="primary" type="button" :class="{ 'is-loading': settingsSaving }" @click="saveSettings">
-          {{ settingsSaving ? 'Saving…' : 'Save settings' }}
-        </button>
-      </template>
-    </BaseModal>
-    <BaseModal v-if="showPromotionModal" title="Promote run to protocol" @close="showPromotionModal = false">
-      <template #body>
-        <p>Convert a run’s PlateEvents into a protocol template.</p>
-        <div class="modal-form">
-          <label>
-            Run path
-            <input v-model="promotionForm.runPath" type="text" placeholder="08_RUNS/RUN-0001.md" />
-          </label>
-          <label>
-            Protocol title
-            <input v-model="promotionForm.title" type="text" placeholder="Promoted protocol" />
-          </label>
-          <label>
-            Family
-            <input v-model="promotionForm.family" type="text" placeholder="protocol family" />
-          </label>
-          <label>
-            Version
-            <input v-model="promotionForm.version" type="text" placeholder="0.1.0" />
-          </label>
-          <label>
-            Volume param (optional)
-            <input v-model="promotionForm.volumeParam" type="text" placeholder="transfer_volume" />
-          </label>
-          <div class="labware-rows">
-            <label>Labware role bindings</label>
-            <div
-              v-for="(row, idx) in promotionForm.labwareRows"
-              :key="idx"
-              class="labware-row"
-            >
-              <input v-model="row.role" type="text" placeholder="source_role" />
-              <input v-model="row.id" type="text" placeholder="labware:@id" />
-              <button class="ghost-button tiny" type="button" @click="promotionForm.labwareRows.splice(idx, 1)">
-                Remove
-              </button>
-            </div>
-            <button class="ghost-button" type="button" @click="promotionForm.labwareRows.push({ role: '', id: '' })">
-              + Add mapping
-            </button>
-          </div>
-        </div>
-      </template>
-      <template #footer>
-        <button class="ghost-button" type="button" @click="showPromotionModal = false">Cancel</button>
-        <button class="primary" type="button" :disabled="!promotionForm.runPath" @click="handlePromoteRun">
-          Promote
-        </button>
-      </template>
-    </BaseModal>
-    <BaseModal v-if="showExplorerModal" title="Open Lab Event Graph Explorer" @close="showExplorerModal = false">
-      <template #body>
-        <p>Select a Run file to explore PlateEvents.</p>
-        <div class="modal-form">
-          <label>
-            Run path
-            <input v-model="explorerFilePath" type="text" placeholder="08_RUNS/RUN-0001.md" />
-          </label>
-          <label>
-            Labware @id (optional)
-            <input v-model="explorerLabwareId" type="text" placeholder="plate/PLT-0001" />
-          </label>
-        </div>
-      </template>
-      <template #footer>
-        <button class="ghost-button" type="button" @click="showExplorerModal = false">Cancel</button>
-        <button class="primary" type="button" :disabled="!explorerFilePath" @click="handleExplorerOpen">
-          Open in Explorer
-        </button>
-      </template>
-    </BaseModal>
-    <BaseModal v-if="showRunEditorModal" title="Open Run Editor" @close="showRunEditorModal = false">
-      <template #body>
-        <p>Select a Run file to edit activities and PlateEvents.</p>
-        <div class="modal-form">
-          <label>
-            Run path
-            <input v-model="runEditorFilePath" type="text" placeholder="08_RUNS/RUN-0001.md" />
-          </label>
-        </div>
-      </template>
-      <template #footer>
-        <button class="ghost-button" type="button" @click="showRunEditorModal = false">Cancel</button>
-        <button class="primary" type="button" :disabled="!runEditorFilePath" @click="handleRunEditorOpen">
-          Open Run Editor
-        </button>
-      </template>
-    </BaseModal>
-    <component
-      v-if="showCreator"
-      :is="RecordCreatorModal"
-      :open="showCreator"
+    <TiptapStandalone
+      :is-online="isOnline"
+      :is-ready="isReady"
       :repo="repo"
+      :tiptap-target="tiptapTarget"
+      :tiptap-status="tiptapStatus"
+      :tiptap-bundle-mismatch="tiptapBundleMismatch"
+      :tiptap-supports="tiptapSupports"
+      :tiptap-schema="tiptapSchema"
+      :tiptap-ui-config="tiptapUiConfig"
+      :tiptap-naming-rule="tiptapNamingRule"
+      :tiptap-workflow-definition="tiptapWorkflowDefinition"
+      :schema-bundle="schemaLoader.schemaBundle?.value || {}"
+      :validate-record="recordValidator.validate"
+      :tiptap-context-overrides="tiptapContextOverrides.value || {}"
+      @connect="handleConnect"
+      @clear="clearTiptapTarget"
+      @saved="handleStandaloneSaved"
+    />
+  </div>
+  <PlateEditorStandalone
+    v-else-if="isStandalonePlateEditor"
+    :is-online="isOnline"
+    :is-ready="isReady"
+    :repo="repo"
+    :schema-loader="schemaLoader"
+    :plate-editor-target="plateEditorTarget"
+    :plate-editor-bundle-mismatch="plateEditorBundleMismatch"
+    @connect="handleConnect"
+    @clear="clearPlateEditorTarget"
+  />
+  <ProtocolEditorStandalone
+    v-else-if="isStandaloneProtocolEditor"
+    :is-online="isOnline"
+    :is-ready="isReady"
+    :repo="repo"
+    :schema-loader="schemaLoader"
+    :protocol-editor-target="protocolEditorTarget"
+    :protocol-editor-bundle-mismatch="protocolEditorBundleMismatch"
+    @connect="handleConnect"
+    @clear="clearProtocolEditorTarget"
+  />
+  <RunEditorStandalone
+    v-else-if="isStandaloneRunEditor"
+    ref="runEditorStandaloneRef"
+    :is-online="isOnline"
+    :is-ready="isReady"
+    :repo-is-requesting="repo.isRequesting"
+    :run-editor-target="runEditorTarget"
+    :run-editor-bundle-mismatch="runEditorBundleMismatch"
+    :run-editor-state="runEditorState"
+    :run-options="runOptions"
+    :validate-record="recordValidator.validate"
+    :load-run-by-id="loadRunById"
+    :run-editor-saving="runEditorSaving"
+    @connect="handleConnect"
+    @clear="clearRunEditorTarget"
+    @save="handleRunEditorSave"
+  />
+  <ExplorerStandalone
+    v-else-if="isStandaloneExplorer"
+    :is-online="isOnline"
+    :is-ready="isReady"
+    :repo-is-requesting="repo.isRequesting"
+    :explorer-target="explorerTarget"
+    :explorer-bundle-mismatch="explorerBundleMismatch"
+    :explorer-state="explorerState"
+    :explorer-form="explorerForm"
+    :can-append-explorer-event="canAppendExplorerEvent"
+    :fallback-layout="fallbackLayout"
+    @connect="handleConnect"
+    @clear="clearExplorerTarget"
+    @use-as-source="handleUseRunAsSource"
+    @reset-form="resetExplorerForm"
+    @append-event="appendExplorerEvent"
+  />
+  <ShellLayout v-else :show-offline="!isOnline">
+    <template #header>
+      <ShellNavBar
+        kicker="Phase 2 · File I/O Layer"
+        title="DIsCo Pages 2.0"
+        subtitle="Schema-driven LIS/QMS shell powered by Vue + Vite"
+        :connection-label="connectionLabel"
+        :is-ready="isReady"
+        :is-requesting="repo.isRequesting"
+        :is-supported="repo.isSupported"
+        @open-settings="openSettings"
+        @connect="handleConnect"
+      />
+    </template>
+    <template #status>
+      <p v-if="repo.error" class="status status-error header-status">{{ repo.error }}</p>
+      <p v-else-if="repo.isRestoring" class="status status-muted header-status">Restoring previous session…</p>
+      <p v-else-if="!repo.isSupported" class="status status-error header-status">
+        This browser does not expose the File System Access API.
+      </p>
+    </template>
+    <template #offline>
+      <p class="offline-banner">
+        Offline mode: editing uses cached schemas and search results. Reconnect to sync with the repo.
+      </p>
+    </template>
+
+    <WorkspaceHost
+      :graph-tree-enabled="graphTreeEnabled"
+      :graph-query-enabled="graphQueryEnabled"
+      :is-ready="isReady"
+      :selected-root-record-type="selectedRootRecordType"
+      :top-level-record-types="topLevelRecordTypes"
+      :protocol-enabled="protocolEnabled"
+      :record-graph="recordGraph"
+      :schema-loader="schemaLoader"
+      :workflow-loader="workflowLoader"
+      :default-graph-root-type="defaultGraphRootType"
+      :default-graph-root-label="defaultGraphRootLabel"
+      :active-record-path="activeRecordPath"
+      :tiptap-supported-types="tiptapSupportedTypes"
+      :supporting-document-enabled="supportingDocumentEnabled"
+      :root-nodes="rootNodes"
+      :is-tree-bootstrapping="isTreeBootstrapping"
+      :search-index="searchIndex"
+      @update:selected-root-record-type="(val) => (selectedRootRecordType.value = val)"
+      @select="handleSelect"
+      @expand="handleExpand"
+      @create-selected-record="handleCreateSelectedRecord"
+      @create-protocol="handleCreateProtocol"
+      @open-promotion="openPromotionModal"
+      @open-explorer="showExplorerModal = true"
+      @open-run-editor="showRunEditorModal = true"
+      @graph-create="handleGraphCreate"
+      @graph-open-tiptap="handleGraphOpenTipTap"
+      @graph-open-protocol="handleGraphOpenProtocol"
+      @graph-create-supporting-doc="handleGraphSupportingDoc"
+      @graph-use-as-source="handleGraphUseAsSource"
+    />
+
+    <ShellOverlays
+      :should-show-modal="shouldShowModal"
+      :repo="repo"
+      :show-settings-modal="showSettingsModal"
+      :settings-form="settingsForm"
+      :settings-error="settingsError"
+      :settings-saving="settingsSaving"
+      :show-promotion-modal="showPromotionModal"
+      :promotion-form="promotionForm"
+      :show-explorer-modal="showExplorerModal"
+      :explorer-file-path="explorerFilePath"
+      :explorer-labware-id="explorerLabwareId"
+      :show-run-editor-modal="showRunEditorModal"
+      :run-editor-file-path="runEditorFilePath"
+      :show-creator="showCreator"
+      :creator-context="creatorContext"
       :schema-loader="schemaLoader"
       :workflow-loader="workflowLoader"
       :record-graph="recordGraph"
-      :on-created="handleRecordCreated"
-      :creation-context="creatorContext"
-      @close="closeCreator"
+      @connect="handleConnect"
+      @close-prompt="closePrompt"
+      @close-settings="closeSettings"
+      @save-settings="saveSettings"
+      @close-promotion="() => (showPromotionModal = false)"
+      @promote-run="handlePromoteRun"
+      @close-explorer="() => (showExplorerModal = false)"
+      @open-explorer="handleExplorerOpen"
+      @update:explorer-file-path="(val) => (explorerFilePath = val)"
+      @update:explorer-labware-id="(val) => (explorerLabwareId = val)"
+      @close-run-editor="() => (showRunEditorModal = false)"
+      @open-run-editor="handleRunEditorOpen"
+      @update:run-editor-file-path="(val) => (runEditorFilePath = val)"
+      @close-creator="closeCreator"
+      @record-created="handleRecordCreated"
     />
-  </div>
+  </ShellLayout>
 </template>
 
 <style scoped>
-.app-shell {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-.app-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 1.5rem;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.settings-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.settings-standalone .settings-form {
-  max-width: 520px;
-  display: grid;
-  gap: 12px;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.app-kicker {
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 0.85rem;
-  color: #64748b;
-  margin-bottom: 0.5rem;
-}
-
-.header-main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 2.5rem;
-}
-
-.app-subtitle {
-  margin: 0.2rem 0 0;
-  color: #475569;
-}
-
-.connection-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: #fff;
-}
-
-.connection-chip.is-connected {
-  border-color: rgba(16, 185, 129, 0.4);
-}
-
-.chip-label {
-  font-size: 0.85rem;
-  color: #0f172a;
-}
-
 .header-status {
   margin-top: -1rem;
 }
 
-.tiptap-standalone {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.tiptap-standalone__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.tiptap-standalone__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.tiptap-standalone__body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.tiptap-standalone__message {
-  border: 1px dashed #cbd5f5;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: center;
-  color: #475569;
-  background: #f8fafc;
-}
-
-.tiptap-standalone__editor {
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 1rem;
-  background: #fff;
-  min-height: 70vh;
-}
-
-.plate-editor-standalone {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.plate-editor-standalone__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.plate-editor-standalone__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.plate-editor-standalone__body {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.plate-editor-standalone__message {
-  border: 1px dashed #cbd5f5;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: center;
-  color: #475569;
-  background: #f8fafc;
-}
-
-.plate-editor-standalone__editor {
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.protocol-editor-standalone {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.protocol-editor-standalone__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.protocol-editor-standalone__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.protocol-editor-standalone__body {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.protocol-editor-standalone__message {
-  border: 1px dashed #cbd5f5;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: center;
-  color: #475569;
-  background: #f8fafc;
-}
-
-.protocol-editor-standalone__editor {
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.inspector-standalone {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.inspector-standalone__message {
-  border: 1px dashed #cbd5f5;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: center;
-  color: #475569;
-  background: #f8fafc;
-}
-
-.app-main-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: 1.5rem;
-}
-
-@media (max-width: 1100px) {
-  .app-main-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.graph-stage,
-.workbench-stage {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.graph-panel__header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.graph-panel__header h2 {
+.offline-banner {
   margin: 0;
-}
-
-.graph-panel__header p {
-  margin: 0.25rem 0 0;
-  color: #64748b;
-}
-
-.graph-panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.graph-panel__actions-label {
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-}
-
-.graph-panel__actions select {
+  padding: 0.55rem 0.9rem;
   border-radius: 10px;
-  border: 1px solid #cbd5f5;
-  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(202, 138, 4, 0.4);
+  background: #fefce8;
+  color: #713f12;
   font-size: 0.9rem;
 }
 
@@ -2283,31 +1594,6 @@ code {
   background: #e2e8f0;
   border-radius: 6px;
   padding: 0.1rem 0.35rem;
-}
-
-.pill-button {
-  border: none;
-  background: #f1f5f9;
-  border-radius: 999px;
-  padding: 0.2rem 0.75rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-  color: #0f172a;
-}
-
-.pill-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.offline-banner {
-  margin: 0;
-  padding: 0.55rem 0.9rem;
-  border-radius: 10px;
-  border: 1px solid rgba(202, 138, 4, 0.4);
-  background: #fefce8;
-  color: #713f12;
-  font-size: 0.9rem;
 }
 
 .explorer-form {
