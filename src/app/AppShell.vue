@@ -27,6 +27,19 @@ import { useOfflineStatus } from '../composables/useOfflineStatus'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { buildZodSchema } from '../records/zodBuilder'
 import { promoteEvents, mappingFromTarget, resolveRole, buildProtocolFrontmatter } from './promotionUtils'
+import { useStandaloneTargets } from './shell/composables/useStandaloneTargets'
+import { useExplorerState } from './shell/composables/useExplorerState'
+import { useRunEditorState } from './shell/composables/useRunEditorState'
+import { usePromotionWorkflow } from './shell/composables/usePromotionWorkflow'
+import { useRecordCreation } from './shell/composables/useRecordCreation'
+import { useSettingsModal } from './shell/composables/useSettingsModal'
+import {
+  openTipTapWindow,
+  openPlateEditorWindow,
+  openProtocolEditorWindow,
+  openRunEditorWindow,
+  openFileInspectorWindow
+} from './shell/utils/windowOpeners'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -36,67 +49,159 @@ const recordGraph = useRecordGraph(repo, schemaLoader)
 const searchIndex = useSearchIndex(recordGraph)
 const systemConfig = useSystemConfig(repo)
 const offlineStatus = useOfflineStatus()
-const showCreator = ref(false)
-const creatorContext = ref(null)
-const rootNodes = tree.rootNodes
-const isTreeBootstrapping = tree.isBootstrapping
 
-const showPrompt = ref(true)
+// Core computed and reactive state (must be defined before composables that use them)
 const schemaBundle = computed(() => schemaLoader.schemaBundle?.value)
 const recordValidator = useRecordValidator(schemaLoader)
 const materialLibrary = useMaterialLibrary(repo)
-const tiptapTarget = ref(readTiptapTargetFromUrl())
-const plateEditorTarget = ref(readPlateEditorTargetFromUrl())
-const protocolEditorTarget = ref(readProtocolEditorTargetFromUrl())
-const inspectorTarget = ref(readInspectorTargetFromUrl())
-const tiptapStatus = ref('')
-const inspectorStatus = ref('')
-const explorerTarget = ref(readExplorerTargetFromUrl())
-const explorerSelectedRun = ref(null)
-const explorerSelectedLabware = ref('')
-const pendingPaletteAdd = ref(null)
-const runEditorTarget = ref(readRunEditorTargetFromUrl())
-const settingsTarget = ref(readSettingsTargetFromUrl())
-const runEditorStandaloneRef = ref(null)
-const runEditorRef = computed(() => runEditorStandaloneRef.value?.runEditorRef?.value || null)
-const showSettingsModal = ref(false)
-const settingsSaving = ref(false)
-const settingsError = ref('')
-const settingsForm = reactive({
-  cacheDuration: 30,
-  localNamespace: ''
-})
-const runEditorState = reactive({
-  run: null,
-  body: '',
-  layout: null,
-  materialLibrary: [],
-  status: '',
-  error: ''
-})
-const runEditorSaving = ref(false)
-const explorerState = reactive({
-  events: [],
-  labwareId: '',
-  layoutIndex: null,
-  status: '',
-  error: '',
-  activities: [],
-  runFrontmatter: null,
-  runBody: ''
-})
-const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
-const connectionLabel = computed(() => repo.statusLabel.value)
 const isReady = computed(() => !!repo.directoryHandle.value)
-const isStandaloneTiptap = computed(() => !!tiptapTarget.value)
-const isStandalonePlateEditor = computed(() => !!plateEditorTarget.value)
-const isStandaloneProtocolEditor = computed(() => !!protocolEditorTarget.value)
-const isStandaloneInspector = computed(() => !!inspectorTarget.value)
-const isStandaloneExplorer = computed(() => !!explorerTarget.value)
-const isStandaloneRunEditor = computed(() => !!runEditorTarget.value)
 const isOnline = computed(() => offlineStatus.isOnline.value)
 const fallbackLayout = computed(() => resolveLayoutIndex({}, { fallbackKind: 'plate96' }))
-const selectedBundleName = computed(() => schemaLoader.selectedBundle.value || '')
+const activeRecordPath = ref('')
+const relationshipsConfig = computed(() => schemaBundle.value?.relationships?.recordTypes || {})
+
+// Standalone targets management
+const standaloneTargets = useStandaloneTargets(schemaLoader)
+const {
+  tiptapTarget,
+  plateEditorTarget,
+  protocolEditorTarget,
+  inspectorTarget,
+  explorerTarget,
+  runEditorTarget,
+  settingsTarget,
+  isStandaloneTiptap,
+  isStandalonePlateEditor,
+  isStandaloneProtocolEditor,
+  isStandaloneInspector,
+  isStandaloneExplorer,
+  isStandaloneRunEditor,
+  isStandaloneSettings,
+  tiptapBundleMismatch,
+  plateEditorBundleMismatch,
+  protocolEditorBundleMismatch,
+  explorerBundleMismatch,
+  runEditorBundleMismatch,
+  selectedBundleName,
+  clearTiptapTarget,
+  clearPlateEditorTarget,
+  clearProtocolEditorTarget,
+  clearExplorerTarget,
+  clearRunEditorTarget,
+  clearSettingsTarget
+} = standaloneTargets
+
+// Explorer state management
+const explorerStateManager = useExplorerState(
+  repo,
+  explorerTarget,
+  schemaLoader,
+  fallbackLayout
+)
+const {
+  explorerState,
+  explorerForm,
+  explorerFilePath,
+  explorerLabwareId,
+  showExplorerModal,
+  explorerSelectedRun,
+  explorerSelectedLabware,
+  canAppendExplorerEvent,
+  loadExplorerData,
+  collectPlateEvents,
+  resetExplorerForm,
+  appendExplorerEvent,
+  handleExplorerOpen
+} = explorerStateManager
+
+// Run editor state management
+const runEditorStateManager = useRunEditorState(
+  repo,
+  runEditorTarget,
+  recordValidator,
+  materialLibrary,
+  recordGraph,
+  schemaLoader
+)
+const {
+  runEditorState,
+  runEditorFilePath,
+  showRunEditorModal,
+  runEditorSaving,
+  runEditorStandaloneRef,
+  pendingPaletteAdd,
+  runEditorRef,
+  loadRunEditorData,
+  handleRunEditorSave,
+  loadRunById,
+  handleRunEditorOpen,
+  openRunEditorWith
+} = runEditorStateManager
+
+// Promotion workflow management
+const promotionWorkflowManager = usePromotionWorkflow(
+  repo,
+  schemaLoader,
+  activeRecordPath,
+  explorerState,
+  collectPlateEvents
+)
+const {
+  showPromotionModal,
+  promotionForm,
+  openPromotionModal,
+  handlePromoteRun,
+  labwareRowsToMap,
+  validateProtocolFrontmatter
+} = promotionWorkflowManager
+
+// Record creation management
+const recordCreationManager = useRecordCreation(
+  repo,
+  recordGraph,
+  searchIndex,
+  relationshipsConfig,
+  openPlateEditorWindow,
+  openProtocolEditorWindow,
+  openFileInspectorWindow,
+  activeRecordPath
+)
+const {
+  showCreator,
+  creatorContext,
+  openCreator,
+  closeCreator,
+  buildPlateLayoutCreationDefaults,
+  buildMetadataPatchFromNode
+} = recordCreationManager
+
+// Settings modal management
+const settingsManager = useSettingsModal(
+  systemConfig,
+  isReady,
+  isStandaloneSettings,
+  clearSettingsTarget
+)
+const {
+  showSettingsModal,
+  settingsSaving,
+  settingsError,
+  settingsForm,
+  openSettings,
+  closeSettings,
+  saveSettings,
+  syncSettingsForm
+} = settingsManager
+
+const rootNodes = tree.rootNodes
+const isTreeBootstrapping = tree.isBootstrapping
+
+// Additional reactive state
+const showPrompt = ref(true)
+const tiptapStatus = ref('')
+const inspectorStatus = ref('')
+const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
+const connectionLabel = computed(() => repo.statusLabel.value)
 const runOptions = computed(() => {
   const nodes = recordGraph.graph?.value?.nodesByType?.run || []
   return nodes.map((node) => ({
@@ -125,27 +230,6 @@ const tiptapNamingRule = computed(() =>
 const tiptapSupports = computed(() =>
   !!tiptapTarget.value && tiptapSupportedTypes.value.includes(tiptapTarget.value.recordType)
 )
-const tiptapBundleMismatch = computed(() => {
-  if (!tiptapTarget.value?.bundle) return false
-  return selectedBundleName.value !== tiptapTarget.value.bundle
-})
-const plateEditorBundleMismatch = computed(() => {
-  if (!plateEditorTarget.value?.bundle) return false
-  return selectedBundleName.value !== plateEditorTarget.value.bundle
-})
-const protocolEditorBundleMismatch = computed(() => {
-  if (!protocolEditorTarget.value?.bundle) return false
-  return selectedBundleName.value !== protocolEditorTarget.value.bundle
-})
-const explorerBundleMismatch = computed(() => {
-  if (!explorerTarget.value?.bundle) return false
-  return selectedBundleName.value !== explorerTarget.value.bundle
-})
-const runEditorBundleMismatch = computed(() => {
-  if (!runEditorTarget.value?.bundle) return false
-  return selectedBundleName.value !== runEditorTarget.value.bundle
-})
-const isStandaloneSettings = computed(() => !!settingsTarget.value)
 const tiptapWorkflowDefinition = computed(() =>
   tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
 )
@@ -167,8 +251,6 @@ const defaultGraphRootLabel = computed(() => {
   if (!defaultGraphRootType.value) return 'Records'
   return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
 })
-const activeRecordPath = ref('')
-const relationshipsConfig = computed(() => schemaBundle.value?.relationships?.recordTypes || {})
 const supportingDocumentEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.['supporting-document'])
 const topLevelRecordTypes = computed(() => {
   const relations = relationshipsConfig.value || {}
@@ -184,51 +266,6 @@ const topLevelRecordTypes = computed(() => {
 })
 const selectedRootRecordType = ref('')
 const protocolEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.protocol)
-
-watch(
-  () => tiptapTarget.value?.bundle,
-  (bundle) => {
-    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
-      schemaLoader.selectBundle(bundle)
-    }
-  }
-)
-
-watch(
-  () => plateEditorTarget.value?.bundle,
-  (bundle) => {
-    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
-      schemaLoader.selectBundle(bundle)
-    }
-  }
-)
-
-watch(
-  () => protocolEditorTarget.value?.bundle,
-  (bundle) => {
-    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
-      schemaLoader.selectBundle(bundle)
-    }
-  }
-)
-
-watch(
-  () => explorerTarget.value?.bundle,
-  (bundle) => {
-    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
-      schemaLoader.selectBundle(bundle)
-    }
-  }
-)
-
-watch(
-  () => runEditorTarget.value?.bundle,
-  (bundle) => {
-    if (bundle && selectedBundleName.value !== bundle && typeof schemaLoader.selectBundle === 'function') {
-      schemaLoader.selectBundle(bundle)
-    }
-  }
-)
 
 watch(
   [() => repo.directoryHandle.value, () => schemaLoader.schemaBundle?.value, () => systemConfig.ontologyConfig.value],
@@ -251,22 +288,6 @@ watch(
 )
 
 watch(
-  [() => runEditorTarget.value?.path, () => repo.directoryHandle.value],
-  () => {
-    loadRunEditorData()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => materialLibrary.entries.value,
-  (entries) => {
-    runEditorState.materialLibrary = Array.isArray(entries) ? entries : []
-  },
-  { immediate: true }
-)
-
-watch(
   () => topLevelRecordTypes.value,
   (list) => {
     if (!list.length) {
@@ -279,289 +300,6 @@ watch(
   },
   { immediate: true }
 )
-
-watch(
-  () => systemConfig.config.value,
-  () => {
-    syncSettingsForm()
-  },
-  { immediate: true }
-)
-
-function readTiptapTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('tiptapPath')) return null
-  return {
-    path: decodeURIComponent(params.get('tiptapPath')),
-    recordType: params.get('tiptapType') || '',
-    bundle: params.get('tiptapBundle') || ''
-  }
-}
-
-function readPlateEditorTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('plateEditorPath')) return null
-  return {
-    path: decodeURIComponent(params.get('plateEditorPath')),
-    bundle: params.get('plateEditorBundle') || ''
-  }
-}
-
-function readProtocolEditorTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('protocolEditorPath')) return null
-  return {
-    path: decodeURIComponent(params.get('protocolEditorPath')),
-    bundle: params.get('protocolEditorBundle') || ''
-  }
-}
-
-function readInspectorTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('inspectorPath')) return null
-  return {
-    path: decodeURIComponent(params.get('inspectorPath')),
-    bundle: params.get('inspectorBundle') || ''
-  }
-}
-
-function readExplorerTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('explorerPath')) return null
-  return {
-    path: decodeURIComponent(params.get('explorerPath')),
-    bundle: params.get('explorerBundle') || '',
-    labware: params.get('explorerLabware') || ''
-  }
-}
-
-function readRunEditorTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (!params.has('runEditorPath')) return null
-  return {
-    path: decodeURIComponent(params.get('runEditorPath')),
-    bundle: params.get('runEditorBundle') || ''
-  }
-}
-
-function readSettingsTargetFromUrl() {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('settings') !== 'true') return null
-  return { mode: 'settings' }
-}
-
-function clearTiptapTarget() {
-  tiptapTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('tiptapPath')
-    url.searchParams.delete('tiptapType')
-    url.searchParams.delete('tiptapBundle')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-function clearPlateEditorTarget() {
-  plateEditorTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('plateEditorPath')
-    url.searchParams.delete('plateEditorBundle')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-function clearProtocolEditorTarget() {
-  protocolEditorTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('protocolEditorPath')
-    url.searchParams.delete('protocolEditorBundle')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-function clearExplorerTarget() {
-  explorerTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('explorerPath')
-    url.searchParams.delete('explorerBundle')
-    url.searchParams.delete('explorerLabware')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-function clearRunEditorTarget() {
-  runEditorTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('runEditorPath')
-    url.searchParams.delete('runEditorBundle')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-function clearSettingsTarget() {
-  settingsTarget.value = null
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.delete('settings')
-    window.history.replaceState({}, '', url.toString())
-  }
-}
-
-async function loadExplorerData() {
-  if (!explorerTarget.value || !repo.directoryHandle.value || repo.isRestoring.value) return
-  if (!explorerTarget.value.path) return
-  explorerState.status = 'Loading…'
-  explorerState.error = ''
-  try {
-    const raw = await repo.readFile(explorerTarget.value.path)
-    const { data, body } = parseFrontMatter(raw)
-    const events = await collectPlateEvents(data)
-    explorerState.events = events
-    explorerState.activities = Array.isArray(data.activities) ? data.activities : data.operations?.activities || []
-    explorerState.runFrontmatter = data
-    explorerState.runBody = body || ''
-    explorerState.labwareId =
-      explorerTarget.value.labware ||
-      resolveLabwareFromEvents(events) ||
-      resolveLabwareFromActivities(explorerState.activities) ||
-      'plate/UNKNOWN'
-    explorerSelectedRun.value = data?.metadata?.recordId || data?.metadata?.id || ''
-    explorerSelectedLabware.value = explorerState.labwareId
-    explorerState.layoutIndex = fallbackLayout.value
-    explorerState.status = events.length ? '' : 'No PlateEvents found in run.'
-  } catch (err) {
-    explorerState.error = err?.message || 'Failed to load run for explorer.'
-    explorerState.events = []
-    explorerState.activities = []
-  }
-}
-
-async function loadRunEditorData() {
-  if (!runEditorTarget.value || !repo.directoryHandle.value || repo.isRestoring.value) return
-  if (!runEditorTarget.value.path) return
-  runEditorState.status = 'Loading…'
-  runEditorState.error = ''
-  try {
-    const raw = await repo.readFile(runEditorTarget.value.path)
-    const { data, body } = parseFrontMatter(raw)
-    runEditorState.run = data || null
-    runEditorState.body = body || ''
-    runEditorState.layout = null
-    runEditorState.materialLibrary = Array.isArray(materialLibrary.entries.value)
-      ? materialLibrary.entries.value
-      : []
-    runEditorState.status = ''
-    // Apply pending palette addition if present
-    if (pendingPaletteAdd.value && runEditorRef.value?.store) {
-      const { runId, labwareId, label } = pendingPaletteAdd.value
-      runEditorRef.value.store.addRunDerivedPaletteEntry({
-        runId,
-        labwareId,
-        label: label || labwareId,
-        layoutIndex: resolveLayoutIndex({}, { fallbackKind: 'plate96' })
-      })
-      pendingPaletteAdd.value = null
-    }
-  } catch (error) {
-    runEditorState.error = error?.message || 'Failed to load run.'
-    runEditorState.status = ''
-    console.error('Error loading run editor data', error)
-  }
-}
-
-async function handleRunEditorSave() {
-  if (!runEditorTarget.value?.path || !repo.directoryHandle.value) return
-  if (!runEditorRef.value?.store?.state?.run) return
-  runEditorSaving.value = true
-  runEditorState.status = 'Saving…'
-  runEditorState.error = ''
-  try {
-    const store = runEditorRef.value.store
-    const updated = store.state.run
-    if (typeof store.derivePaletteData === 'function') {
-      store.derivePaletteData()
-    }
-    if (typeof store.sanitizeTransfers === 'function') {
-      store.sanitizeTransfers()
-    }
-    const validationPayload = store.buildValidationPayload
-      ? store.buildValidationPayload()
-      : (typeof runEditorRef.value?.buildRunValidationPayload === 'function'
-          ? runEditorRef.value.buildRunValidationPayload(updated)
-          : null) || updated
-    const validation = recordValidator.validate('run', validationPayload)
-    if (!validation.ok) {
-      runEditorState.error = `Run validation failed: ${validation.issues.map((i) => i.message).join('; ')}`
-      runEditorState.status = ''
-      return
-    }
-    const text = serializeFrontMatter(updated, runEditorState.body || '')
-    await repo.writeFile(runEditorTarget.value.path, text)
-    runEditorState.status = 'Saved.'
-  } catch (error) {
-    runEditorState.error = error?.message || 'Failed to save run.'
-    runEditorState.status = ''
-    console.error('Run editor save error', error)
-  } finally {
-    runEditorSaving.value = false
-  }
-}
-
-async function loadRunById(runId = '') {
-  if (!runId || !repo?.readFile) return null
-  const node =
-    recordGraph.graph?.value?.nodesById?.[runId] ||
-    recordGraph.graph?.value?.nodesById?.[runId.replace(/^run\//, '')] ||
-    null
-  if (!node?.path) return null
-  try {
-    const raw = await repo.readFile(node.path)
-    const { data } = parseFrontMatter(raw)
-    return data || null
-  } catch (err) {
-    console.warn('Failed to load run by id', runId, err)
-    return null
-  }
-}
-
-async function collectPlateEvents(data = {}) {
-  const events = []
-  const activities = data.activities || data.operations?.activities || []
-  activities.forEach((act) => {
-    if (Array.isArray(act?.plate_events)) {
-      events.push(...act.plate_events)
-    }
-  })
-  if (!events.length && Array.isArray(data.operations?.events)) {
-    events.push(...data.operations.events)
-  }
-  if (!events.length) {
-    const layoutPath = data.operations?.plateLayout || (Array.isArray(data.operations?.plateLayouts) && data.operations.plateLayouts[0])
-    if (layoutPath && repo?.readFile) {
-      try {
-        const rawLayout = await repo.readFile(layoutPath)
-        const { data: layoutData } = parseFrontMatter(rawLayout)
-        const layoutEvents = layoutData?.operations?.events || []
-        events.push(...layoutEvents)
-        explorerState.status = 'Loaded events from plate layout.'
-      } catch (err) {
-        console.warn('Failed to read plate layout for events', err)
-      }
-    }
-  }
-  return events
-}
 
 function resolveLabwareFromEvents(events = []) {
   for (const evt of events) {
@@ -649,104 +387,27 @@ function closePrompt() {
   showPrompt.value = false
 }
 
-function openSettings() {
-  settingsError.value = ''
-  settingsSaving.value = false
-  syncSettingsForm()
-  if (typeof window !== 'undefined') {
-    const url = new URL(window.location.href)
-    url.searchParams.set('settings', 'true')
-    window.location.href = url.toString()
-    return
-  }
-  showSettingsModal.value = true
-}
-
-function closeSettings() {
-  if (isStandaloneSettings.value) {
-    clearSettingsTarget()
-  }
-  showSettingsModal.value = false
-}
-
-async function saveSettings() {
-  if (!isReady.value) {
-    settingsError.value = 'Connect a repository to save settings.'
-    return
-  }
-  settingsSaving.value = true
-  settingsError.value = ''
-  try {
-    await systemConfig.save({
-      ontology: {
-        cache_duration: Number(settingsForm.cacheDuration) || 30
-      },
-      provenance: {
-        local_namespace: settingsForm.localNamespace || ''
-      }
-    })
-    if (isStandaloneSettings.value) {
-      clearSettingsTarget()
-    }
-    showSettingsModal.value = false
-  } catch (err) {
-    settingsError.value = err?.message || 'Failed to save settings.'
-  } finally {
-    settingsSaving.value = false
-  }
-}
-
-function syncSettingsForm() {
-  const ontologyCfg = systemConfig.ontologyConfig.value
-  settingsForm.cacheDuration = ontologyCfg.cacheDuration || 30
-  settingsForm.localNamespace = systemConfig.provenanceConfig?.value?.localNamespace || ''
-}
-
-function openCreator(options = null) {
-  creatorContext.value = options || null
-  showCreator.value = true
-}
-
-function closeCreator() {
-  showCreator.value = false
-  creatorContext.value = null
-}
-
 function handleSelect(nodeOrPath) {
   // Handle both string paths and node objects
   const node = typeof nodeOrPath === 'object' && nodeOrPath !== null ? nodeOrPath : null
   const path = node ? node.path : typeof nodeOrPath === 'string' ? nodeOrPath : ''
+  const bundle = schemaLoader.selectedBundle?.value
   if (node?.recordType === 'plateLayout' && path) {
-    openPlateEditorWindow(path)
+    openPlateEditorWindow(path, bundle)
     return
   }
   if (node?.recordType === 'protocol' && path) {
-    openProtocolEditorWindow(path)
+    openProtocolEditorWindow(path, bundle)
     return
   }
   if (node?.recordType === 'run' && path) {
-    openRunEditorWindow(path)
+    openRunEditorWindow(path, bundle)
     return
   }
   if (path) {
-    openFileInspectorWindow(path)
+    openFileInspectorWindow(path, bundle)
     activeRecordPath.value = path
   }
-}
-
-function openFileInspectorWindow(path) {
-  if (!path) return
-  if (typeof window === 'undefined') return
-  const baseUrl = new URL(window.location.href)
-  baseUrl.searchParams.delete('inspectorPath')
-  const rootUrl = baseUrl.toString().split('?')[0]
-  const targetUrl = new URL(rootUrl, window.location.href)
-  targetUrl.searchParams.set('inspectorPath', path)
-  const bundle = schemaLoader.selectedBundle?.value
-  if (bundle) {
-    targetUrl.searchParams.set('inspectorBundle', bundle)
-  }
-  window.open(targetUrl.toString(), '_blank', 'noopener,noreferrer')
 }
 
 async function handleRecordCreated(payload) {
@@ -754,22 +415,23 @@ async function handleRecordCreated(payload) {
   const { path, recordType, metadata } = normalizeCreationResult(payload)
   showCreator.value = false
   creatorContext.value = null
+  const bundle = schemaLoader.selectedBundle?.value
   let handled = false
   if (recordType === 'plateLayout') {
     if (creationContext?.parentLink?.node?.recordType === 'run') {
       await linkPlateLayoutToRun(creationContext.parentLink.node, metadata, path)
     }
     if (path) {
-      openPlateEditorWindow(path)
+      openPlateEditorWindow(path, bundle)
       handled = true
     }
   }
   if (recordType === 'protocol' && path) {
-    openProtocolEditorWindow(path)
+    openProtocolEditorWindow(path, bundle)
     handled = true
   }
   if (!handled && path) {
-    openFileInspectorWindow(path)
+    openFileInspectorWindow(path, bundle)
     activeRecordPath.value = path
   }
   recordGraph?.rebuild?.()
@@ -853,86 +515,6 @@ function handleInspectorSaved() {
   searchIndex?.rebuild?.()
 }
 
-const explorerFilePath = ref('')
-const explorerLabwareId = ref('')
-const showExplorerModal = ref(false)
-const runEditorFilePath = ref('')
-const showRunEditorModal = ref(false)
-const explorerForm = reactive({
-  activityId: '',
-  sourceWell: '',
-  targetWell: '',
-  volume: '',
-  materialId: '',
-  status: '',
-  error: ''
-})
-const showPromotionModal = ref(false)
-const promotionForm = reactive({
-  runPath: '',
-  family: '',
-  version: '0.1.0',
-  title: 'Promoted protocol',
-  volumeParam: '',
-  labwareRows: [
-    { role: 'source_role', id: 'labware:res1' },
-    { role: 'target_role', id: 'plate/PLT-0001' }
-  ],
-  status: '',
-  error: ''
-})
-const canAppendExplorerEvent = computed(() => {
-  return (
-    explorerForm.activityId &&
-    explorerForm.sourceWell.trim() &&
-    explorerForm.targetWell.trim() &&
-    explorerForm.volume.trim() &&
-    explorerTarget.value?.path
-  )
-})
-
-async function handleExplorerOpen() {
-  if (!explorerFilePath.value) return
-  const bundle = schemaLoader.selectedBundle?.value
-  const url = new URL(window.location.href)
-  url.searchParams.delete('explorerPath')
-  url.searchParams.delete('explorerBundle')
-  url.searchParams.delete('explorerLabware')
-  url.searchParams.set('explorerPath', explorerFilePath.value)
-  if (bundle) url.searchParams.set('explorerBundle', bundle)
-  if (explorerLabwareId.value) url.searchParams.set('explorerLabware', explorerLabwareId.value)
-  explorerTarget.value = {
-    path: explorerFilePath.value,
-    bundle,
-    labware: explorerLabwareId.value
-  }
-  window.history.replaceState({}, '', url.toString())
-  loadExplorerData()
-  showExplorerModal.value = false
-}
-
-async function handleRunEditorOpen() {
-  if (!runEditorFilePath.value) return
-  const bundle = schemaLoader.selectedBundle?.value
-  openRunEditorWith(runEditorFilePath.value, bundle)
-  showRunEditorModal.value = false
-}
-
-function openRunEditorWith(path, bundle) {
-  if (!path) return
-  const url = new URL(window.location.href)
-  url.searchParams.delete('runEditorPath')
-  url.searchParams.delete('runEditorBundle')
-  url.searchParams.set('runEditorPath', path)
-  if (bundle) url.searchParams.set('runEditorBundle', bundle)
-  runEditorTarget.value = {
-    path,
-    bundle
-  }
-  window.history.replaceState({}, '', url.toString())
-  loadRunEditorData()
-}
-
 watch(
   () => showExplorerModal.value,
   (open) => {
@@ -950,81 +532,6 @@ watch(
     }
   }
 )
-
-function resetExplorerForm() {
-  explorerForm.activityId = ''
-  explorerForm.sourceWell = ''
-  explorerForm.targetWell = ''
-  explorerForm.volume = ''
-  explorerForm.materialId = ''
-  explorerForm.status = ''
-  explorerForm.error = ''
-}
-
-async function appendExplorerEvent() {
-  if (!canAppendExplorerEvent.value || !explorerState.runFrontmatter || !explorerTarget.value?.path) return
-  explorerForm.status = 'Saving…'
-  explorerForm.error = ''
-  try {
-    const fm = JSON.parse(JSON.stringify(explorerState.runFrontmatter || {}))
-    const data = fm.data || {}
-    const activities = Array.isArray(data.activities) ? data.activities : data.operations?.activities || []
-    const idx = activities.findIndex((a) => a.id === explorerForm.activityId)
-    if (idx === -1) throw new Error('Activity not found on run.')
-    activities[idx].plate_events ||= []
-    const event = buildQuickTransferEvent(explorerForm, fm)
-    activities[idx].plate_events.push(event)
-    data.activities = activities
-    fm.data = data
-    const serialized = serializeFrontMatter(fm, explorerState.runBody || '')
-    await repo.writeFile(explorerTarget.value.path, serialized)
-    explorerForm.status = 'Event appended.'
-    await loadExplorerData()
-  } catch (err) {
-    explorerForm.error = err?.message || 'Failed to append event.'
-  }
-  explorerForm.saving = false
-}
-
-function buildQuickTransferEvent(form, fm = {}) {
-  const runId = fm.metadata?.id || fm.metadata?.recordId || fm.metadata?.runId || ''
-  const labwareId = explorerState.labwareId || 'plate/UNKNOWN'
-  const timestamp = new Date().toISOString()
-  return {
-    id: `evt-${Date.now()}`,
-    event_type: 'transfer',
-    timestamp,
-    run: runId,
-    labware: [{ '@id': labwareId, kind: 'plate' }],
-    details: {
-      type: 'transfer',
-      source: {
-        labware: { '@id': labwareId, kind: 'plate' },
-        wells: {
-          [form.sourceWell.trim()]: {}
-        }
-      },
-      target: {
-        labware: { '@id': labwareId, kind: 'plate' },
-        wells: {
-          [form.targetWell.trim()]: {
-            well: form.targetWell.trim(),
-            material_id: form.materialId?.trim() || ''
-          }
-        }
-      },
-      mapping: [
-        {
-          source_well: form.sourceWell.trim(),
-          target_well: form.targetWell.trim(),
-          volume: form.volume.trim()
-        }
-      ],
-      volume: form.volume.trim(),
-    material: form.materialId?.trim() ? { id: form.materialId.trim() } : null
-    }
-  }
-}
 
 function handleUseRunAsSource(payload = {}) {
   const runId = payload.runId || explorerSelectedRun.value || ''
@@ -1057,129 +564,6 @@ function handleUseRunAsSource(payload = {}) {
   }
 }
 
-function openPromotionModal() {
-  promotionForm.runPath = activeRecordPath.value || ''
-  promotionForm.status = ''
-  promotionForm.error = ''
-  if (!promotionForm.labwareRows.length) {
-    promotionForm.labwareRows = [{ role: 'source_role', id: '' }]
-  }
-  prefillLabwareRowsFromRun()
-  showPromotionModal.value = true
-}
-
-function prefillLabwareRowsFromRun() {
-  if (!explorerState.activities?.length) return
-  const idToKind = new Map()
-  explorerState.activities.forEach((act) => {
-    ;(act.plate_events || []).forEach((evt) => {
-      if (Array.isArray(evt.labware)) {
-        evt.labware.forEach((lw) => lw?.['@id'] && idToKind.set(lw['@id'], lw.kind || ''))
-      }
-      if (evt.details?.source?.labware?.['@id']) {
-        idToKind.set(evt.details.source.labware['@id'], evt.details.source.labware.kind || '')
-      }
-      if (evt.details?.target?.labware?.['@id']) {
-        idToKind.set(evt.details.target.labware['@id'], evt.details.target.labware.kind || '')
-      }
-    })
-  })
-  const existingIds = new Set(promotionForm.labwareRows.map((row) => row.id))
-  const usedRoles = new Set(promotionForm.labwareRows.map((row) => row.role).filter(Boolean))
-  idToKind.forEach((kind, id) => {
-    if (existingIds.has(id)) return
-    const suggestedRole = suggestRoleForLabware(id, kind, usedRoles)
-    usedRoles.add(suggestedRole)
-    promotionForm.labwareRows.push({ role: suggestedRole, id })
-  })
-}
-
-function suggestRoleForLabware(id, kind = '', usedRoles = new Set()) {
-  const lower = String(id || '').toLowerCase()
-  let base = 'labware'
-  if (kind === 'reservoir' || lower.includes('res')) base = 'reservoir'
-  else if (kind === 'plate' || lower.includes('qpcr')) base = 'qpcr_plate'
-  else if (lower.includes('plate')) base = 'plate'
-  else if (lower.includes('tube')) base = 'tube_rack'
-  let role = base
-  let counter = 1
-  while (usedRoles.has(role)) {
-    role = `${base}_${counter}`
-    counter += 1
-  }
-  return role
-}
-
-async function handlePromoteRun() {
-  if (!promotionForm.runPath) {
-    promotionForm.error = 'Select a run path.'
-    return
-  }
-  promotionForm.status = 'Promoting…'
-  promotionForm.error = ''
-  try {
-    const raw = await repo.readFile(promotionForm.runPath)
-    const { data } = parseFrontMatter(raw)
-    const events = await collectPlateEvents(data)
-    if (!events.length) {
-      throw new Error('No PlateEvents found in run.')
-    }
-    const mapping = labwareRowsToMap(promotionForm.labwareRows)
-    const promotedEvents = promoteEvents(events, mapping, promotionForm.volumeParam)
-    const frontmatter = buildProtocolFrontmatter(
-      data,
-      promotedEvents,
-      promotionForm.family,
-      promotionForm.version,
-      promotionForm.title,
-      mapping
-    )
-    const validation = validateProtocolFrontmatter(frontmatter)
-    if (!validation.ok) {
-      throw new Error(validation.issues.map((i) => `${i.path}: ${i.message}`).join(' | '))
-    }
-    const outPath =
-      promotionForm.runPath.replace(/^08_RUNS\//, '06_PROTOCOLS/').replace(/\.md$/i, '') + '_PROMOTED.md'
-    const serialized = serializeFrontMatter(frontmatter, '# Promoted protocol\n\nGenerated from run promotion.')
-    await repo.writeFile(outPath, serialized)
-    promotionForm.status = `Wrote ${outPath}`
-    showPromotionModal.value = false
-  } catch (err) {
-    promotionForm.error = err?.message || 'Promotion failed.'
-  }
-}
-
-function labwareRowsToMap(rows = []) {
-  return rows
-    .filter((row) => row.role && row.id)
-    .reduce((acc, row) => {
-      acc[row.role.trim()] = row.id.trim()
-      return acc
-    }, {})
-}
-
-function validateProtocolFrontmatter(frontmatter) {
-  const schema = schemaLoader.schemaBundle?.value?.recordSchemas?.protocol
-  if (!schema) return { ok: true, issues: [] }
-  try {
-    const zodSchema = buildZodSchema(schema, { schemas: schemaLoader.schemaBundle.value.recordSchemas })
-    const payload = {
-      ...(frontmatter.metadata || {}),
-      ...(frontmatter.data || {}),
-      ...(frontmatter.data?.operations || {})
-    }
-    const result = zodSchema.safeParse(payload)
-    if (result.success) return { ok: true, issues: [] }
-    const issues = result.error.issues.map((issue) => ({
-      path: issue.path?.length ? issue.path.join('.') : 'root',
-      message: issue.message
-    }))
-    return { ok: false, issues }
-  } catch (err) {
-    return { ok: false, issues: [{ path: 'schema', message: err?.message || 'Schema build failed' }] }
-  }
-}
-
 function handleGraphCreate(payload) {
   if (!payload?.recordType) return
   const metadataPatch = {}
@@ -1202,31 +586,6 @@ function handleGraphCreate(payload) {
   })
 }
 
-function buildPlateLayoutCreationDefaults(parentNode) {
-  const titleSource =
-    parentNode?.title ||
-    parentNode?.frontMatter?.metadata?.title ||
-    parentNode?.frontMatter?.title ||
-    parentNode?.id ||
-    'Run'
-  return {
-    title: `${titleSource} plate layout`.trim()
-  }
-}
-
-function buildMetadataPatchFromNode(node) {
-  if (!node) return {}
-  const patch = {}
-  Object.values(relationshipsConfig.value || {}).forEach((descriptor) => {
-    Object.values(descriptor?.parents || {}).forEach((parentDef) => {
-      if (parentDef?.recordType === node.recordType && parentDef.field) {
-        patch[parentDef.field] = node.id
-      }
-    })
-  })
-  return patch
-}
-
 function openSupportingDocumentFromGraph(targetNode) {
   if (!supportingDocumentEnabled.value) return
   const node = targetNode?.node || targetNode
@@ -1241,74 +600,18 @@ function openSupportingDocumentFromGraph(targetNode) {
   })
 }
 
-function openTipTapWindow(path, recordType) {
-  if (!path || !recordType) return
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  url.searchParams.delete('tiptapPath')
-  url.searchParams.delete('tiptapType')
-  url.searchParams.delete('tiptapBundle')
-  url.searchParams.set('tiptapPath', path)
-  url.searchParams.set('tiptapType', recordType)
-  const bundle = schemaLoader.selectedBundle?.value
-  if (bundle) {
-    url.searchParams.set('tiptapBundle', bundle)
-  }
-  window.open(url.toString(), '_blank', 'noopener,noreferrer')
-}
-
-function openPlateEditorWindow(path) {
-  if (!path) return
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  url.searchParams.delete('plateEditorPath')
-  url.searchParams.delete('plateEditorBundle')
-  url.searchParams.set('plateEditorPath', path)
-  const bundle = schemaLoader.selectedBundle?.value
-  if (bundle) {
-    url.searchParams.set('plateEditorBundle', bundle)
-  }
-  window.open(url.toString(), '_blank', 'noopener,noreferrer')
-}
-
-function openProtocolEditorWindow(path) {
-  if (!path) return
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  url.searchParams.delete('protocolEditorPath')
-  url.searchParams.delete('protocolEditorBundle')
-  url.searchParams.set('protocolEditorPath', path)
-  const bundle = schemaLoader.selectedBundle?.value
-  if (bundle) {
-    url.searchParams.set('protocolEditorBundle', bundle)
-  }
-  window.open(url.toString(), '_blank', 'noopener,noreferrer')
-}
-
-function openRunEditorWindow(path) {
-  if (!path) return
-  if (typeof window === 'undefined') return
-  const url = new URL(window.location.href)
-  url.searchParams.delete('runEditorPath')
-  url.searchParams.delete('runEditorBundle')
-  url.searchParams.set('runEditorPath', path)
-  const bundle = schemaLoader.selectedBundle?.value
-  if (bundle) {
-    url.searchParams.set('runEditorBundle', bundle)
-  }
-  window.open(url.toString(), '_blank', 'noopener,noreferrer')
-}
-
 function handleGraphOpenTipTap(payload) {
   if (!payload?.path || !payload?.recordType) return
-  openTipTapWindow(payload.path, payload.recordType)
+  const bundle = schemaLoader.selectedBundle?.value
+  openTipTapWindow(payload.path, payload.recordType, bundle)
 }
 
 function handleGraphOpenProtocol(payload) {
   if (!payload) return
   const path = payload.path || payload.node?.path || ''
   if (!path) return
-  openProtocolEditorWindow(path)
+  const bundle = schemaLoader.selectedBundle?.value
+  openProtocolEditorWindow(path, bundle)
 }
 
 function handleGraphSupportingDoc(payload) {
