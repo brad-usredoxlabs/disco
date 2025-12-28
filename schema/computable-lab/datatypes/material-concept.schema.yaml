@@ -1,0 +1,30 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-concept.schema.yaml"
+
+title: MaterialConcept
+type: object
+additionalProperties: false
+required: [id, label, category]
+
+properties:
+  id:
+    type: string
+    pattern: "^material:[a-z0-9_:-]+$"
+  label:
+    type: string
+    minLength: 1
+  category:
+    type: string
+    description: "Operational category (reagent, medium, solvent, etc.)"
+  tags:
+    type: array
+    items: { type: string }
+  xref:
+    type: object
+    additionalProperties: { type: string }
+  aliases:
+    type: array
+    items: { type: string }
+  created_at:
+    type: string
+    format: date-time

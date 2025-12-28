@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import MaterialPicker from './MaterialPicker.vue'
 import OntologyFieldInput from '../../tiptap/nodes/OntologyFieldInput.vue'
+import RevisionReviewModal from '../../components/RevisionReviewModal.vue'
+import MaterialRevisionViewer from '../../components/MaterialRevisionViewer.vue'
 
 const props = defineProps({
   roles: {
@@ -68,6 +70,9 @@ const EXPECTED_EFFECT_OPTIONS = [
 
 const selectedRole = ref('')
 const selectedMaterial = ref(null)
+const pendingMaterial = ref(null)
+const showConfirmModal = ref(false)
+const revisionForm = ref(buildEmptyRevisionForm())
 const volumeValue = ref('')
 const volumeUnit = ref('uL')
 const concentrationValue = ref('')
@@ -77,6 +82,16 @@ let controlIntentCounter = 0
 
 const featureOptions = computed(() => props.features || [])
 const useOntologySearch = computed(() => Boolean(props.ontologyVocab))
+const filteredMaterials = computed(() =>
+  Array.isArray(props.materials) ? props.materials.filter((m) => m?.category !== 'waste') : []
+)
+const mergedSearchOptions = computed(() => {
+  if (!useOntologySearch.value) return props.ontologySearchOptions
+  return {
+    ...props.ontologySearchOptions,
+    localMaterials: filteredMaterials.value
+  }
+})
 
 watch(
   () => props.roles,
@@ -119,10 +134,12 @@ watch(
 )
 
 const canApply = computed(() => {
+  const isWaste = selectedMaterial.value?.category === 'waste'
   return Boolean(
     props.selectionCount &&
       selectedRole.value &&
       selectedMaterial.value?.id &&
+      !isWaste &&
       volumeValue.value &&
       volumeUnit.value &&
       concentrationValue.value &&
@@ -135,7 +152,13 @@ const canRemove = computed(() => {
 })
 
 function handleMaterialSelect(entry) {
-  selectMaterial(entry)
+  if (entry?.id) {
+    pendingMaterial.value = entry
+    populateRevisionForm(entry)
+    showConfirmModal.value = true
+  } else {
+    selectMaterial(entry)
+  }
 }
 
 function handleOntologySelect(term) {
@@ -149,9 +172,11 @@ function handleOntologySelect(term) {
     source: term.source || term.ontology || '',
     provenance: term.provenance || ''
   }
-  const localEntry = props.materials.find((item) => item.id === normalized.id)
+  const localEntry = findLocalMaterial(normalized)
   if (localEntry) {
-    selectMaterial(localEntry)
+    pendingMaterial.value = localEntry
+    populateRevisionForm(localEntry)
+    showConfirmModal.value = true
     return
   }
   emit('request-import', { term, normalized })
@@ -170,6 +195,7 @@ function handleApply() {
   emit('apply', {
     role: selectedRole.value,
     materialId: selectedMaterial.value.id,
+    materialRevision: selectedMaterial.value.material_revision || selectedMaterial.value.latest_revision_id || '',
     materialLabel: selectedMaterial.value.label,
     volume: normalizeVolumePayload(),
     concentration: normalizeConcentrationPayload(),
@@ -195,6 +221,84 @@ function handleRequestCreate(payload) {
 
 function handleRequestEdit(entry) {
   emit('request-edit', entry)
+}
+
+function buildEmptyRevisionForm() {
+  return {
+    id: '',
+    label: '',
+    category: '',
+    experimental_intents: [],
+    tags: [],
+    measures: [],
+    xref: {},
+    classified_as: [],
+    mechanism: { type: '', targets: [] },
+    affected_processes: [],
+    control_role: '',
+    control_for: { features: [], acquisition_modalities: [], notes: '' }
+  }
+}
+
+function populateRevisionForm(material = {}) {
+  const latest = material.latest_revision || {}
+  const src = { ...latest, ...material }
+  revisionForm.value = {
+    id: src.id || material.id || '',
+    label: src.label || material.label || '',
+    category: src.category || material.category || '',
+    experimental_intents: Array.isArray(src.experimental_intents) ? [...src.experimental_intents] : [],
+    tags: Array.isArray(src.tags) ? [...src.tags] : [],
+    measures: Array.isArray(src.measures) ? [...src.measures] : [],
+    xref: src.xref && typeof src.xref === 'object' ? { ...src.xref } : {},
+    classified_as: Array.isArray(src.classified_as) ? [...src.classified_as] : [],
+    mechanism: {
+      type: src.mechanism?.type || '',
+      targets: Array.isArray(src.mechanism?.targets) ? [...src.mechanism.targets] : []
+    },
+    affected_processes: Array.isArray(src.affected_processes)
+      ? [...src.affected_processes]
+      : src.affected_process
+      ? [src.affected_process]
+      : [],
+    control_role: src.control_role || '',
+    control_for: {
+      features: Array.isArray(src.control_for?.features) ? [...src.control_for.features] : [],
+      acquisition_modalities: Array.isArray(src.control_for?.acquisition_modalities)
+        ? [...src.control_for.acquisition_modalities]
+        : [],
+      notes: src.control_for?.notes || ''
+    }
+  }
+}
+
+function findLocalMaterial(normalized = {}) {
+  const targetId = (normalized.id || '').trim().toLowerCase()
+  const targetLabel = (normalized.label || '').trim().toLowerCase()
+  const candidates = props.materials || []
+  const direct = candidates.find(
+    (item) => item.id?.toLowerCase() === targetId || item.label?.toLowerCase() === targetLabel
+  )
+  if (direct) return direct
+  if (!targetId && !targetLabel) return null
+  const byXref = candidates.find((item) =>
+    Object.values(item.xref || {}).some((val) => typeof val === 'string' && val.trim().toLowerCase() === targetId)
+  )
+  return byXref || null
+}
+
+function confirmMaterialSelection() {
+  if (!pendingMaterial.value) return
+  selectMaterial(pendingMaterial.value)
+  showConfirmModal.value = false
+  pendingMaterial.value = null
+}
+
+function requestNewRevision() {
+  if (!pendingMaterial.value) return
+  emit('request-revision', pendingMaterial.value)
+  showConfirmModal.value = false
+  pendingMaterial.value = null
 }
 
 function normalizeAmount() {
@@ -292,7 +396,7 @@ function buildControlIntents() {
         class="ontology-picker"
         :value="selectedMaterial"
         :vocab="ontologyVocab"
-        :search-options="ontologySearchOptions"
+        :search-options="mergedSearchOptions"
         :show-add-button="true"
         placeholder="Search materials…"
         @update:value="handleOntologySelect"
@@ -300,7 +404,7 @@ function buildControlIntents() {
       />
       <MaterialPicker
         v-else
-        :materials="materials"
+        :materials="filteredMaterials"
         :selected-id="selectedMaterial?.id"
         :role="selectedRole"
         :recent-ids="recentIds"
@@ -309,8 +413,21 @@ function buildControlIntents() {
         @favorite-toggle="handleFavoriteToggle"
         @request-create="handleRequestCreate"
         @request-edit="handleRequestEdit"
+        @request-revision="(mat) => emit('request-revision', mat)"
       />
     </div>
+    <RevisionReviewModal
+      :open="showConfirmModal"
+      title="Review material"
+      :concept="pendingMaterial"
+      :revision="pendingMaterial?.latest_revision"
+      @cancel="showConfirmModal = false"
+      @use="confirmMaterialSelection"
+      @create-new="requestNewRevision"
+    >
+      <MaterialRevisionViewer v-if="pendingMaterial?.latest_revision" :revision="pendingMaterial.latest_revision" />
+      <p v-else class="muted">No active revision found for this material.</p>
+    </RevisionReviewModal>
 
     <div class="amount-row">
       <div class="field-group">
@@ -527,5 +644,98 @@ input {
 .ghost.tiny {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;
+}
+
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+.confirm-card {
+  background: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  max-width: 640px;
+  width: 100%;
+}
+
+.confirm-card header h4 {
+  margin: 0 0 0.25rem 0;
+}
+
+.confirm-card .muted {
+  margin: 0;
+}
+
+.revision-preview {
+  margin-top: 0.75rem;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.preview-grid label {
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.preview-grid input,
+.preview-grid textarea {
+  border: 1px solid #cbd5f5;
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.95rem;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+
+.confirm-card {
+  background: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  max-width: 440px;
+  width: 100%;
+}
+
+.confirm-card header h4 {
+  margin: 0 0 0.25rem 0;
+}
+
+.confirm-card .muted {
+  margin: 0;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  flex-wrap: wrap;
 }
 </style>

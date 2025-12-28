@@ -74,6 +74,19 @@ properties:
     type: string
     description: "Optional explicit material identifier if not derived from source."
 
+  material_revision:
+    type: string
+    description: "Optional material revision id to pin immutable snapshot."
+    pattern: "^materialrev:[a-z0-9_:-]+@[0-9T]+$"
+
+  material_revision_label:
+    type: string
+    description: "Optional cached revision label for display."
+
+  material_revision_status:
+    type: string
+    description: "Optional cached revision status."
+
   pipetting_hint:
     type: object
     description: "Optional robot hint; never required for correctness."

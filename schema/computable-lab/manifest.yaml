@@ -3,6 +3,10 @@ recordSchemas:
   - datatypes/ontology-term.schema.yaml
   - datatypes/biological-entity.schema.yaml
   - datatypes/material-library-entry.schema.yaml
+  - datatypes/material-concept.schema.yaml
+  - datatypes/material-revision.schema.yaml
+  - datatypes/feature-concept.schema.yaml
+  - datatypes/feature-revision.schema.yaml
   - datatypes/material-ref.schema.yaml
   - datatypes/material-use.schema.yaml
   - datatypes/labware-ref.schema.yaml
@@ -49,6 +53,7 @@ biologyRequirements:
 vocabSchemas:
   - reagents.yaml
   - materials.yaml
+  - features.yaml
   - biological-entity.yaml
   - mechanism-targets.yaml
   - mechanism-processes.yaml

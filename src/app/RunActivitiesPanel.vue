@@ -76,6 +76,9 @@ function buildActivityTemplate(kind = 'protocol_segment') {
       kind,
       label: '',
       acquisition_type: '',
+      modality: '',
+      features_measured: [],
+      materials_used: [],
       acquisitions: []
     }
   }
@@ -575,14 +578,31 @@ function updateSampleFileField(activityIndex, fileIndex, field, value) {
                 type="text"
                 :value="activity.acquisition_type || ''"
                 :readonly="readOnly"
-                @input="updateActivityField(index, 'acquisition_type', $event.target.value)"
-              />
-            </label>
-            <label>
-              <span>Instrument</span>
-              <input
-                type="text"
-                :value="activity.instrument || ''"
+              @input="updateActivityField(index, 'acquisition_type', $event.target.value)"
+            />
+          </label>
+          <label>
+            <span>Modality</span>
+            <select
+              :value="activity.modality || ''"
+              :readonly="readOnly"
+              @change="updateActivityField(index, 'modality', $event.target.value)"
+            >
+              <option value="">Select modality…</option>
+              <option value="fluorescence">Fluorescence</option>
+              <option value="absorbance">Absorbance</option>
+              <option value="luminescence">Luminescence</option>
+              <option value="microscopy">Microscopy</option>
+              <option value="ms">MS</option>
+              <option value="qpcr">qPCR</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>
+            <span>Instrument</span>
+            <input
+              type="text"
+              :value="activity.instrument || ''"
                 :readonly="readOnly"
                 @input="updateActivityField(index, 'instrument', $event.target.value)"
               />
@@ -593,11 +613,11 @@ function updateSampleFileField(activityIndex, fileIndex, field, value) {
                 type="text"
                 :value="activity.mode || ''"
                 :readonly="readOnly"
-                @input="updateActivityField(index, 'mode', $event.target.value)"
-              />
-            </label>
-            <label>
-              <span>Channels</span>
+              @input="updateActivityField(index, 'mode', $event.target.value)"
+            />
+          </label>
+          <label>
+            <span>Channels</span>
               <input
                 type="text"
                 placeholder="Comma-separated"
@@ -614,9 +634,48 @@ function updateSampleFileField(activityIndex, fileIndex, field, value) {
                 "
               />
             </label>
+            <label>
+              <span>Features measured (feature:*)</span>
+              <input
+                type="text"
+                placeholder="feature:abc, feature:def"
+                :value="formatList(activity.features_measured)"
+                :readonly="readOnly"
+                @input="
+                  updateActivity(index, (draft) => {
+                    const tokens = $event.target.value
+                      .split(',')
+                      .map((token) => token.trim())
+                      .filter(Boolean)
+                    draft.features_measured = tokens.length ? tokens : undefined
+                  })
+                "
+              />
+            </label>
+            <label>
+              <span>Materials used (material:*)</span>
+              <input
+                type="text"
+                placeholder="material:dye_x, material:probe_y"
+                :value="formatList(activity.materials_used)"
+                :readonly="readOnly"
+                @input="
+                  updateActivity(index, (draft) => {
+                    const tokens = $event.target.value
+                      .split(',')
+                      .map((token) => token.trim())
+                      .filter(Boolean)
+                    draft.materials_used = tokens.length ? tokens : undefined
+                  })
+                "
+              />
+            </label>
           </div>
           <p class="activity-meta" v-if="activity.acquisitions?.length">
             {{ activity.acquisitions.length }} timepoint slice{{ activity.acquisitions.length === 1 ? '' : 's' }} recorded.
+          </p>
+          <p class="activity-meta" v-if="activity.features_measured?.length">
+            Features: {{ formatList(activity.features_measured) }}
           </p>
         </div>
 

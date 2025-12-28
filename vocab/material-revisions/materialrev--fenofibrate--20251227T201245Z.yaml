@@ -1,0 +1,35 @@
+id: materialrev:fenofibrate@20251227T201245Z
+of_material: material:fenofibrate
+revision: 1
+status: active
+created_at: 20251227T201245Z
+created_by: user
+changes_summary: New revision
+label: fenofibrate
+category: reagent
+experimental_intents:
+  - treatment
+tags: []
+xref:
+  chebi: CHEBI:5001
+aliases: []
+classified_as: []
+mechanism:
+  type: inhibitor
+  targets:
+    - id: NCIT:C91751
+      label: PPARa
+    - id: CHEBI:13193
+      label: hydrogen acceptor
+affected_process: {}
+measures: []
+detection:
+  modality: ""
+  channel_hint: ""
+  excitation_nm: ""
+  emission_nm: ""
+control_role: ""
+control_for:
+  features: []
+  acquisition_modalities: []
+  notes: ""

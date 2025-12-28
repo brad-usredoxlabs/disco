@@ -14,6 +14,13 @@ properties:
       id:
         type: string
         pattern: "^material:[a-z0-9_]+$"
+      revision:
+        type: string
+        pattern: "^materialrev:[a-z0-9_:-]+@[0-9T]+$"
+      revision_label:
+        type: string
+      revision_status:
+        type: string
 
   role:
     type: string

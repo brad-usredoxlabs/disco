@@ -1,14 +1,15 @@
 import YAML from 'yaml'
 import { ensureMaterialId } from '../utils/materialId'
 
-const DEFAULT_LIBRARY_PATH = '/vocab/materials.lab.yaml'
-
 export async function upsertMaterialLibraryEntry(repoConnection, entryInput = {}, options = {}) {
   if (!repoConnection?.readFile || !repoConnection?.writeFile) {
     throw new Error('Repository connection is not ready.')
   }
-  const path = options.path || DEFAULT_LIBRARY_PATH
+  const path = options.path
   const normalized = normalizeMaterialLibraryEntry(entryInput)
+  if (!path) {
+    throw new Error('materialLibraryWriter requires an explicit path; legacy monolith is deprecated.')
+  }
   const raw = await safeReadFile(repoConnection, path)
   const doc = raw ? YAML.parseDocument(raw) : new YAML.Document([])
   ensureSequence(doc)

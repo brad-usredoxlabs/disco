@@ -12,7 +12,8 @@ import MaterialDetailsDrawer from './components/MaterialDetailsDrawer.vue'
 import { useMaterialLibrary } from './composables/useMaterialLibrary'
 import { loadLabwareLibrary, resolveLabwareLayout } from './utils/labwareLibrary'
 import { resolveLayoutIndex } from './utils/layoutResolver'
-import { upsertMaterialLibraryEntry } from './services/materialLibraryWriter'
+import { writeMaterialConcept, writeMaterialRevision, rebuildMaterialsIndex } from '../vocab/materialWriter'
+import BaseModal from '../ui/modal/BaseModal.vue'
 
 const props = defineProps({
   repo: {
@@ -49,6 +50,12 @@ const materialDrawer = reactive({
   entry: null
 })
 const materialDrawerSaving = ref(false)
+const revisionModal = reactive({
+  open: false,
+  material: null,
+  changes: '',
+  error: ''
+})
 
 const recordModel = computed(() => store.state.record || null)
 const specModel = computed(() => store.state.spec || null)
@@ -164,6 +171,7 @@ watch(layoutIndex, () => {
 
 function handleApplyBarApply(payload) {
   const materialId = sanitizeMaterialId(payload?.materialId || '')
+  const materialRevision = payload?.materialRevision || ''
   const wells = activeSelection.value
   if (!materialId || !payload?.role) {
     notifyStatus('Select a material and role before applying.')
@@ -175,6 +183,7 @@ function handleApplyBarApply(payload) {
   }
   store.applyMaterialUse({
     material: materialId,
+    materialRevision,
     role: payload.role,
     amount: payload.amount || null,
     controlIntents: Array.isArray(payload.controlIntents) ? payload.controlIntents : [],
@@ -219,6 +228,69 @@ function handleFavoriteToggle(payload) {
     ? favoriteMaterialIds.value.filter((entry) => entry !== id)
     : [id, ...favoriteMaterialIds.value].slice(0, 24)
   persistStoredList(FAVORITES_KEY, favoriteMaterialIds.value)
+}
+
+function handleRequestRevision(material = {}) {
+  if (!material?.id) {
+    notifyStatus('Select a material before creating a revision.')
+    return
+  }
+  revisionModal.material = material
+  revisionModal.changes = ''
+  revisionModal.error = ''
+  revisionModal.open = true
+}
+
+async function handleConfirmRevision() {
+  const material = revisionModal.material
+  const changes = revisionModal.changes?.trim()
+  if (!material?.id) {
+    revisionModal.error = 'Material is required.'
+    return
+  }
+  if (!changes) {
+    revisionModal.error = 'Changes summary is required.'
+    return
+  }
+  revisionModal.error = ''
+  try {
+    const baseRevision = material.latest_revision || {}
+    const nextRevisionNumber = (Number(baseRevision.revision) || 1) + 1
+    const payload = {
+      ...baseRevision,
+      id: material.id,
+      label: material.label,
+      category: material.category,
+      experimental_intents: material.experimental_intents || baseRevision.experimental_intents || [],
+      tags: material.tags || baseRevision.tags || [],
+      xref: material.xref || baseRevision.xref || {},
+      aliases: material.aliases || baseRevision.aliases || [],
+      classified_as: material.classified_as || baseRevision.classified_as || [],
+      mechanism: material.mechanism || baseRevision.mechanism || {},
+      affected_process: material.affected_process || baseRevision.affected_process || {},
+      measures: material.measures || baseRevision.measures || [],
+      detection: material.detection || baseRevision.detection || {},
+      control_role: material.control_role || baseRevision.control_role || '',
+      control_for: material.control_for || baseRevision.control_for || {},
+      revision: nextRevisionNumber,
+      changes_summary: changes,
+      status: 'active'
+    }
+    const { revision } = await writeMaterialRevision(props.repo, payload, { createdBy: 'user' })
+    await rebuildMaterialsIndex(props.repo)
+    await materialLibrary.reload()
+    notifyStatus(`Created revision ${revision.id}`)
+    closeRevisionModal()
+  } catch (err) {
+    revisionModal.error = err?.message || 'Failed to create revision.'
+  }
+}
+
+function closeRevisionModal() {
+  revisionModal.open = false
+  revisionModal.material = null
+  revisionModal.changes = ''
+  revisionModal.error = ''
 }
 
 function handleMaterialCreateRequest(payload) {
@@ -270,19 +342,31 @@ async function handleMaterialDrawerSave(entry) {
   materialDrawerSaving.value = true
   const drawerMode = materialDrawer.mode
   try {
-    const normalized = await upsertMaterialLibraryEntry(props.repo, entry, { insert: 'alphabetical' })
+    const saved = await writeMaterialConceptAndRevision(entry)
     await materialLibrary.reload()
     handleMaterialDrawerClose()
-    materialPrefill.value = { id: normalized.id, nonce: Date.now() }
-    ensureMaterialInPalette(normalized.id, normalized.defaults?.role || '')
-    addRecentMaterial(normalized.id)
+    materialPrefill.value = { id: saved.concept.id, nonce: Date.now() }
+    ensureMaterialInPalette(saved.concept.id, saved.concept.defaults?.role || '')
+    addRecentMaterial(saved.concept.id)
     const verb = drawerMode === 'edit' ? 'Updated' : 'Created'
-    notifyStatus(`${verb} ${normalized.label} in the material library.`)
+    notifyStatus(`${verb} ${saved.concept.label} in the material library.`)
   } catch (err) {
     notifyStatus(err?.message || 'Failed to save material.')
   } finally {
     materialDrawerSaving.value = false
   }
+}
+
+async function writeMaterialConceptAndRevision(entry = {}) {
+  const timestamp = new Date().toISOString().replace(/[:-]/g, '').replace(/\.\d+Z$/, 'Z')
+  const payload = {
+    ...entry,
+    changes_summary: entry.changes_summary || 'Initial import'
+  }
+  const conceptResult = await writeMaterialConcept(props.repo, payload, { timestamp })
+  const revisionResult = await writeMaterialRevision(props.repo, payload, { timestamp, createdBy: 'user' })
+  await rebuildMaterialsIndex(props.repo)
+  return { concept: conceptResult.concept, revision: revisionResult.revision }
 }
 
 onMounted(() => {
@@ -1035,6 +1119,7 @@ function openInspectorWindow() {
             @favorite-toggle="handleFavoriteToggle"
             @request-create="handleMaterialCreateRequest"
             @request-edit="handleMaterialEditRequest"
+            @request-revision="handleRequestRevision"
           />
         </aside>
 
@@ -1088,6 +1173,30 @@ function openInspectorWindow() {
       @cancel="handleMaterialDrawerClose"
       @save="handleMaterialDrawerSave"
     />
+    <BaseModal v-if="revisionModal.open" title="Create material revision" @close="closeRevisionModal">
+      <template #body>
+        <div class="modal-form">
+          <p class="status">
+            Base: {{ revisionModal.material?.id }} ({{ revisionModal.material?.label }})
+          </p>
+          <p class="status" v-if="revisionModal.material?.latest_revision_id">
+            Latest rev: {{ revisionModal.material.latest_revision_id }}
+          </p>
+          <p class="muted" v-if="revisionModal.material?.latest_revision?.changes_summary">
+            {{ revisionModal.material.latest_revision.changes_summary }}
+          </p>
+          <label>
+            Changes summary
+            <textarea v-model="revisionModal.changes" rows="3" placeholder="What changed?"></textarea>
+          </label>
+          <p v-if="revisionModal.error" class="status status-error">{{ revisionModal.error }}</p>
+        </div>
+      </template>
+      <template #footer>
+        <button class="ghost-button" type="button" @click="closeRevisionModal">Cancel</button>
+        <button class="primary" type="button" @click="handleConfirmRevision">Create revision</button>
+      </template>
+    </BaseModal>
   </div>
 </template>
 

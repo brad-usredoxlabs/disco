@@ -1,0 +1,39 @@
+id: materialrev:fenofibrate2@20251227T202833Z
+of_material: material:fenofibrate2
+revision: 1
+status: active
+created_at: 20251227T202833Z
+created_by: user
+changes_summary: New revision
+label: fenofibrate2
+category: reagent
+experimental_intents:
+  - sample
+tags: []
+xref:
+  chebi: CHEBI:5001
+aliases: []
+classified_as:
+  - id: NCBITaxon:9606
+    label: Homo sapiens
+    domain: taxon
+    source: ncbitaxon
+  - id: NCIT:C12392
+    label: Liver
+    domain: tissue
+    source: ncit
+mechanism:
+  type: ""
+  targets: []
+affected_process: {}
+measures: []
+detection:
+  modality: ""
+  channel_hint: ""
+  excitation_nm: ""
+  emission_nm: ""
+control_role: ""
+control_for:
+  features: []
+  acquisition_modalities: []
+  notes: ""

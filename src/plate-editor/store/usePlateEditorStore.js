@@ -147,11 +147,14 @@ export function usePlateEditorStore() {
 
   function applyMaterialUse(payload = {}) {
     if (!state.record) return
-    const { material, role, amount, wells, label, controlIntents, labware } = payload
+    const { material, materialRevision, role, amount, wells, label, controlIntents, labware } = payload
     const targets = Array.isArray(wells) && wells.length ? wells : [...state.selection.wells]
     if (!targets.length || !material || !role) return
+    const revisionMeta = resolveMaterialRevision(material, materialRevision)
     const eventPayload = buildTransferEvent({
       material,
+      materialRevision: revisionMeta?.id || '',
+      materialRevisionStatus: revisionMeta?.status || '',
       role,
       amount,
       wells: targets,
@@ -248,6 +251,8 @@ export function usePlateEditorStore() {
     if (!state.record) return null
     const labwareRef = options.labwareRef || resolvePrimaryLabwareRef(state.record)
     const materialId = options.material
+    const materialRevision = options.materialRevision || ''
+    const materialRevisionStatus = options.materialRevisionStatus || ''
     const role = options.role
     const selectedWells = Array.isArray(options.wells) ? options.wells : []
     const volume = formatVolumeString(options.amount)
@@ -268,6 +273,12 @@ export function usePlateEditorStore() {
         well: wellId,
         role,
         material_id: materialId,
+        ...(materialRevision
+          ? {
+              material_revision: materialRevision,
+              material_revision_status: materialRevisionStatus
+            }
+          : {}),
         notes: options.label || '',
         volume
       }
@@ -296,6 +307,13 @@ export function usePlateEditorStore() {
           label: resolveMaterialLabel(materialId, options.label),
           kind: role || 'other'
         },
+        ...(materialRevision
+          ? {
+              material_revision: materialRevision,
+              material_revision_label: materialRevision,
+              material_revision_status: materialRevisionStatus || 'active'
+            }
+          : {}),
         pipetting_hint: null
       }
     }
@@ -342,6 +360,16 @@ export function usePlateEditorStore() {
     if (!materialId) return fallback || ''
     const entry = state.materialLibrary.byId[materialId]
     return entry?.label || fallback || materialId
+  }
+
+  function resolveMaterialRevision(materialId, overrideId = '') {
+    const entry = state.materialLibrary.byId[materialId]
+    const revisionId = overrideId || entry?.material_revision || entry?.latest_revision_id || ''
+    if (!revisionId) return null
+    return {
+      id: revisionId,
+      status: entry?.latest_revision_status || 'active'
+    }
   }
 
   function formatVolumeString(amount) {

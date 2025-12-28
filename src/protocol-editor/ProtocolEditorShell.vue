@@ -5,6 +5,8 @@ import { useGridSelection } from '../plate-editor/composables/useGridSelection'
 import TransferStepSidecar from '../plate-editor/components/TransferStepSidecar.vue'
 import LabwareGrid from '../plate-editor/components/LabwareGrid.vue'
 import { resolveLayoutFromRole } from '../plate-editor/utils/layoutResolver'
+import { useMaterialLibrary } from '../plate-editor/composables/useMaterialLibrary'
+import MaterialPicker from '../plate-editor/components/MaterialPicker.vue'
 
 const LABWARE_KINDS = ['plate', 'reservoir', 'tube_rack', 'tip_rack', 'trash', 'other']
 const DEFAULT_EVENT_TYPES = ['transfer', 'incubate', 'read', 'wash', 'other']
@@ -52,6 +54,7 @@ const selectedEvent = computed(() => protocolState.events[selectedEventIndex.val
 const previewEvents = computed(() => protocolState.events.map((event, index) => formatEventSummary(event, index)))
 const parameterNames = computed(() => Object.keys(frontMatterRef.value?.data?.parametersSchema?.properties || {}))
 const labwareRoleNames = computed(() => protocolState.labwareRoles.map((role) => role.name).filter(Boolean))
+const availableMaterials = computed(() => materialLibrary.entries.value || [])
 const sourceRole = ref('')
 const targetRole = ref('')
 const sourceLayoutIndex = computed(() =>
@@ -63,6 +66,7 @@ const targetLayoutIndex = computed(() =>
 const sourceSelection = useGridSelection(sourceLayoutIndex)
 const targetSelection = useGridSelection(targetLayoutIndex)
 const transferFocusSide = ref('target')
+const materialLibrary = useMaterialLibrary(props.repo)
 let roleIdCounter = 0
 
 watch(
@@ -243,6 +247,14 @@ function handleGridInteraction(side, payload) {
   }
 }
 
+function handleMaterialSelect(selection = {}) {
+  if (!selectedEvent.value || selectedEvent.value.event_type !== 'transfer') return
+  if (!selection?.id) return
+  selectedEvent.value.details.material = selection.id
+  const rev = selection.material_revision || selection.latest_revision_id || ''
+  selectedEvent.value.details.material_revision = rev
+}
+
 function selectEvent(index) {
   selectedEventIndex.value = index
 }
@@ -353,6 +365,7 @@ function ensureDetailsByType(eventType, details = null) {
         mapping: Array.isArray(base.mapping) ? base.mapping : [{ source_well: '', target_well: '' }],
         volume: base.volume || '',
         material: base.material || null,
+        material_revision: base.material_revision || '',
         notes: base.notes || '',
         pipetting_hint: base.pipetting_hint || null
       }
@@ -463,7 +476,8 @@ function handleCreateTransferStep(step) {
         target_role: step.details.target_role,
         mapping: step.details.mapping,
         volume: step.details.volume || '',
-        material: step.details.material || null
+        material: step.details.material || null,
+        material_revision: step.details.material_revision || ''
       }
     }
   ]
@@ -682,6 +696,26 @@ function handleCreateTransferStep(step) {
             Target role
             <input v-model="selectedEvent.details.target_role" type="text" placeholder="cell_plate" />
           </label>
+          <div class="field">
+            <label>Material</label>
+            <MaterialPicker
+              :materials="availableMaterials"
+              :selected-id="selectedEvent.details.material"
+              :role="selectedEvent.details.target_role"
+              @select="handleMaterialSelect"
+            />
+            <p class="status" v-if="selectedEvent.details.material_revision">
+              Revision: {{ selectedEvent.details.material_revision }}
+            </p>
+            <label>
+              Revision override (optional)
+              <input
+                v-model="selectedEvent.details.material_revision"
+                type="text"
+                placeholder="materialrev:ros_dye@20250101T000000"
+              />
+            </label>
+          </div>
           <label>
             Volume
             <input v-model="selectedEvent.details.volume" type="text" placeholder="100 uL or ${seed_volume}" />

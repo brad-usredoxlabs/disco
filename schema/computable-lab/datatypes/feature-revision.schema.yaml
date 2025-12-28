@@ -1,0 +1,49 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "feature-revision.schema.yaml"
+
+title: FeatureRevision
+type: object
+additionalProperties: false
+required:
+  - id
+  - of_feature
+  - revision
+  - status
+  - created_at
+  - label
+
+properties:
+  id:
+    type: string
+    pattern: "^featurerev:[a-z0-9_:-]+@[0-9T]+$"
+  of_feature:
+    type: string
+    pattern: "^feature:[a-z0-9_:-]+$"
+  revision:
+    type: integer
+    minimum: 1
+  status:
+    type: string
+    enum: [draft, active, deprecated]
+  created_at:
+    type: string
+    format: date-time
+  created_by:
+    type: string
+  changes_summary:
+    type: string
+
+  label:
+    type: string
+  description:
+    type: string
+  tags:
+    type: array
+    items: { type: string }
+  modality:
+    type: string
+  units:
+    type: string
+  ontology:
+    type: object
+    additionalProperties: { type: string }

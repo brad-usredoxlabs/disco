@@ -1,0 +1,116 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "material-revision.schema.yaml"
+
+title: MaterialRevision
+type: object
+additionalProperties: false
+required:
+  - id
+  - of_material
+  - revision
+  - status
+  - created_at
+  - label
+  - category
+
+properties:
+  id:
+    type: string
+    pattern: "^materialrev:[a-z0-9_:-]+@[0-9T]+$"
+  of_material:
+    type: string
+    pattern: "^material:[a-z0-9_:-]+$"
+  revision:
+    type: integer
+    minimum: 1
+  status:
+    type: string
+    enum: [draft, active, deprecated]
+  created_at:
+    type: string
+    format: date-time
+  created_by:
+    type: string
+  changes_summary:
+    type: string
+
+  label:
+    type: string
+  category:
+    type: string
+  experimental_intents:
+    type: array
+    items: { type: string }
+  tags:
+    type: array
+    items: { type: string }
+  xref:
+    type: object
+    additionalProperties: { type: string }
+  aliases:
+    type: array
+    items: { type: string }
+
+  classified_as:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [id, label, domain]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        domain: { type: string }
+        source: { type: string }
+
+  mechanism:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string }
+      targets:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [id, label]
+          properties:
+            id: { type: string }
+            label: { type: string }
+
+  affected_process:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      label: { type: string }
+
+  measures:
+    type: array
+    items: { type: string }
+
+  detection:
+    type: object
+    additionalProperties: false
+    properties:
+      modality: { type: string }
+      channel_hint: { type: string }
+      excitation_nm: { type: number }
+      emission_nm: { type: number }
+
+  control_role:
+    type: string
+    enum: [positive, negative, vehicle, ""]
+
+  control_for:
+    type: object
+    additionalProperties: false
+    properties:
+      features:
+        type: array
+        items: { type: string }
+      acquisition_modalities:
+        type: array
+        items: { type: string }
+      notes:
+        type: string

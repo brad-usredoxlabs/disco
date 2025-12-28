@@ -1,0 +1,11 @@
+id: feature:relative_gene_expression
+label: Relative gene expression
+domain: gene_expression
+description: >
+  Relative transcript abundance for a gene target compared to a reference (e.g., ΔΔCt).
+tags: [qpcr, expression]
+ontology: {}
+modality_hints:
+  - modality: qpcr
+    channel_hints: ["FAM", "HEX"]
+    notes: "Raw signal may be Ct/Cq; feature value is typically normalized (ΔCt/ΔΔCt)."

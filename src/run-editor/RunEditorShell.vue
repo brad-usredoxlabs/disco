@@ -177,12 +177,13 @@
             :selection-count="selectionCount"
             :recent-ids="[]"
             :favorite-ids="[]"
-            :features="[]"
+            :features="featureVocab"
             :prefill-selection="applyBarPrefill"
-            ontology-vocab="materials.lab"
+            ontology-vocab="materials"
             @apply="handleApply"
             @remove="handleRemove"
             @request-import="handleMaterialImportRequest"
+            @request-revision="handleRequestRevision"
           />
         </div>
         <div class="transfer-panel">
@@ -223,14 +224,40 @@
   :term="materialImportModal.term"
   :saving="materialImportModal.saving"
   :error="materialImportModal.error"
+  :features="featureVocab"
   @cancel="closeMaterialImportModal"
   @save="handleMaterialImportSave"
 />
+<BaseModal v-if="revisionModal.open" title="Create material revision" @close="revisionModal.open = false">
+  <template #body>
+    <div class="modal-form">
+      <p class="status">
+        Base: {{ revisionModal.material?.id }} ({{ revisionModal.material?.label }})
+        <StatusTag v-if="revisionModal.material?.latest_revision_status" :status="revisionModal.material.latest_revision_status" />
+      </p>
+      <p class="status" v-if="revisionModal.material?.latest_revision_id">
+        Latest rev: {{ revisionModal.material.latest_revision_id }}
+      </p>
+      <p class="muted" v-if="revisionModal.material?.latest_revision?.changes_summary">
+        {{ revisionModal.material.latest_revision.changes_summary }}
+      </p>
+      <label>
+        Changes summary
+        <textarea v-model="revisionModal.changes" rows="3" placeholder="What changed?"></textarea>
+      </label>
+      <p v-if="revisionModal.error" class="status status-error">{{ revisionModal.error }}</p>
+    </div>
+  </template>
+  <template #footer>
+    <button class="ghost-button" type="button" @click="revisionModal.open = false">Cancel</button>
+    <button class="primary" type="button" @click="handleConfirmRevision">Create revision</button>
+  </template>
+</BaseModal>
 </div>
 </template>
 
 <script setup>
-import { computed, watch, ref, reactive } from 'vue'
+import { computed, watch, ref, reactive, onMounted } from 'vue'
 import YAML from 'yaml'
 import TimelineScrubber from '../explorer/TimelineScrubber.vue'
 import ApplyBar from '../plate-editor/components/ApplyBar.vue'
@@ -248,6 +275,10 @@ import { resolveLayoutIndex } from '../plate-editor/utils/layoutResolver'
 import { templateLayoutForKind } from './labwareTemplates'
 import { useRepoConnection } from '../fs/repoConnection'
 import { ensureMaterialId } from '../plate-editor/utils/materialId'
+import { validateMaterialEntry } from './materialValidation'
+import { writeMaterialConcept, writeMaterialRevision, rebuildMaterialsIndex } from '../vocab/materialWriter'
+import BaseModal from '../ui/modal/BaseModal.vue'
+import StatusTag from '../components/StatusTag.vue'
 
 const props = defineProps({
   run: {
@@ -280,10 +311,17 @@ const store = useRunEditorStore()
 const repo = useRepoConnection()
 const materialLibraryLocal = ref([])
 const applyBarPrefill = ref(null)
+const featureVocab = ref([])
 const materialImportModal = reactive({
   open: false,
   term: null,
   saving: false,
+  error: ''
+})
+const revisionModal = reactive({
+  open: false,
+  material: null,
+  changes: '',
   error: ''
 })
 const newActivityLabel = ref('')
@@ -307,6 +345,32 @@ const runSourceForm = reactive({
   labwareId: '',
   label: ''
 })
+
+async function loadFeatureVocab() {
+  if (!repo?.readFile) return
+  try {
+    const raw = await repo.readFile('/vocab/features.yaml')
+    const parsed = raw ? YAML.parse(raw) || {} : {}
+    const entries = Array.isArray(parsed.features) ? parsed.features : []
+    featureVocab.value = entries
+      .map((f) => ({
+        id: f.id,
+        label: f.label || f.id
+      }))
+      .filter((f) => f.id)
+  } catch (err) {
+    featureVocab.value = []
+  }
+}
+
+onMounted(() => {
+  loadFeatureVocab()
+})
+
+watch(
+  () => repo?.directoryHandle?.value,
+  () => loadFeatureVocab()
+)
 
 function toggleEventsExpanded() {
   eventsExpanded.value = !eventsExpanded.value
@@ -566,17 +630,93 @@ async function handleMaterialImportSave(entry = {}) {
     materialImportModal.error = 'ID and label are required.'
     return
   }
+  const validation = validateMaterialEntry(entry, featureVocab.value)
+  if (!validation.ok) {
+    materialImportModal.error = validation.errors.join(' | ')
+    return
+  }
   materialImportModal.saving = true
   materialImportModal.error = ''
   try {
-    const canonical = await writeMaterialToVocab(entry)
-    upsertLocalMaterial(canonical)
+    const saved = await writeMaterialConceptAndRevision(entry)
+    upsertLocalMaterial(saved.revision || entry)
     closeMaterialImportModal()
   } catch (err) {
     materialImportModal.error = err?.message || 'Failed to save material.'
   } finally {
     materialImportModal.saving = false
   }
+}
+
+function handleRequestRevision(material = {}) {
+  if (!material?.id) return
+  revisionModal.material = material
+  revisionModal.changes = ''
+  revisionModal.open = true
+}
+
+async function handleConfirmRevision() {
+  const material = revisionModal.material
+  if (!material?.id) return
+  const baseRevision = material.latest_revision || {}
+  const changes = revisionModal.changes?.trim()
+  if (!changes) {
+    revisionModal.error = 'Changes summary is required for a new revision.'
+    return
+  }
+  try {
+    const nextRevisionNumber = (Number(baseRevision.revision) || 1) + 1
+    const payload = {
+      ...baseRevision,
+      id: material.id,
+      label: material.label,
+      category: material.category,
+      experimental_intents: material.experimental_intents || baseRevision.experimental_intents || [],
+      tags: material.tags || baseRevision.tags || [],
+      xref: material.xref || baseRevision.xref || {},
+      aliases: material.aliases || baseRevision.aliases || [],
+      classified_as: material.classified_as || baseRevision.classified_as || [],
+      mechanism: material.mechanism || baseRevision.mechanism || {},
+      affected_process: material.affected_process || baseRevision.affected_process || {},
+      measures: material.measures || baseRevision.measures || [],
+      detection: material.detection || baseRevision.detection || {},
+      control_role: material.control_role || baseRevision.control_role || '',
+      control_for: material.control_for || baseRevision.control_for || {},
+      revision: nextRevisionNumber,
+      changes_summary: changes,
+      status: 'active'
+    }
+    const { revision } = await writeMaterialRevision(repo, payload, { createdBy: 'user' })
+    await rebuildMaterialsIndex(repo)
+    const index = materialLibraryLocal.value.findIndex((m) => m.id === material.id)
+    if (index >= 0) {
+      materialLibraryLocal.value[index] = {
+        ...materialLibraryLocal.value[index],
+        latest_revision_id: revision.id,
+        latest_revision_status: revision.status,
+        latest_revision: revision
+      }
+      materialLibraryLocal.value = [...materialLibraryLocal.value]
+      store.setMaterialLibrary(materialLibraryLocal.value)
+    }
+    applyBarPrefill.value = {
+      ...material,
+      latest_revision_id: revision.id,
+      latest_revision_status: revision.status,
+      latest_revision: revision,
+      material_revision: revision.id
+    }
+    closeRevisionModal()
+  } catch (err) {
+    revisionModal.error = err?.message || 'Failed to create revision.'
+  }
+}
+
+function closeRevisionModal() {
+  revisionModal.open = false
+  revisionModal.material = null
+  revisionModal.changes = ''
+  revisionModal.error = ''
 }
 
 function setActiveSource(labwareId) {
@@ -712,6 +852,13 @@ function handleCreateTransferStep(step = {}) {
 
 function handleApply(payload = {}) {
   if (!payload?.materialId || !payload?.role) return
+  const material = availableMaterials.value.find((m) => m.id === payload.materialId) || {}
+  const revisionId =
+    payload.materialRevision ||
+    payload.material_revision ||
+    material.material_revision ||
+    material.latest_revision_id ||
+    ''
   const applyingToSource = transferFocusSide.value === 'source'
   const targetWells = applyingToSource
     ? sourceSelection.selection.value
@@ -728,6 +875,7 @@ function handleApply(payload = {}) {
         target_labware: sourceLabwareRef?.['@id'] || sourceLabwareRef,
         wells: targetWells,
         material_id: payload.materialId,
+        material_revision: revisionId || null,
         stock_concentration: payload.concentration || null,
         volume: normalizeVolumeInput(payload.volume),
         role: payload.role || 'component',
@@ -747,6 +895,7 @@ function handleApply(payload = {}) {
       wells: targetWells,
       mapping,
       material: payload.materialId,
+      material_revision: revisionId || null,
       role: payload.role,
       volume: payload.volume,
       concentration: payload.concentration,
@@ -782,41 +931,9 @@ function handleRemove(payload = {}) {
   }
 }
 
+// Legacy writer removed: rely on concept/revision files + index
 async function writeMaterialToVocab(entry = {}) {
-  if (!repo?.writeFile) {
-    throw new Error('Connect a repository to save materials.')
-  }
-  const path = '/vocab/materials.lab.yaml'
-  let parsed = {}
-  try {
-    const raw = await repo.readFile(path)
-    parsed = raw ? YAML.parse(raw) || {} : {}
-  } catch {
-    parsed = {}
-  }
-  if (Array.isArray(parsed)) {
-    parsed = { local_extensions: parsed }
-  }
-  parsed.local_extensions = Array.isArray(parsed.local_extensions) ? parsed.local_extensions : []
-  parsed.cached_terms = Array.isArray(parsed.cached_terms) ? parsed.cached_terms : []
-  parsed.id_aliases = parsed.id_aliases && typeof parsed.id_aliases === 'object' ? parsed.id_aliases : {}
-
-  const { entry: canonical, aliases } = canonicalizeMaterialEntry(entry)
-  Object.entries(aliases).forEach(([from, to]) => {
-    parsed.id_aliases[from] = to
-  })
-
-  const existingIndex = parsed.local_extensions.findIndex((item) => item?.id === canonical.id)
-  if (existingIndex >= 0) {
-    parsed.local_extensions.splice(existingIndex, 1, canonical)
-  } else {
-    parsed.local_extensions.push(canonical)
-  }
-
-  const doc = new YAML.Document(parsed)
-  const output = doc.toString({ lineWidth: 0 })
-  await repo.writeFile(path, output)
-  return canonical
+  return entry
 }
 
 function upsertLocalMaterial(entry = {}) {
@@ -843,7 +960,9 @@ function normalizeMaterialEntry(entry = {}) {
   if (!label) return null
   const id = ensureMaterialId(entry.id || label)
   const tags = dedupeStrings(entry.tags || [])
-  const intents = dedupeStrings(entry.intents || [], { preserveCase: true })
+  const experimentalIntents = dedupeStrings(entry.experimental_intents || entry.intents || [], {
+    preserveCase: true
+  })
   const synonyms = dedupeStrings(entry.synonyms || [], { preserveCase: true })
   const xrefTokens = buildXrefTokens(entry.xref)
   const defaults = normalizeDefaults(entry.defaults)
@@ -852,13 +971,33 @@ function normalizeMaterialEntry(entry = {}) {
     id,
     label,
     category: entry.category || 'other',
-    intents,
+    experimental_intents: experimentalIntents,
     tags,
     synonyms,
     defaults
   }
-  normalized.searchTokens = buildSearchTokens({ id, label, tags, synonyms, intents, xrefTokens })
+  normalized.searchTokens = buildSearchTokens({
+    id,
+    label,
+    tags,
+    synonyms,
+    intents: experimentalIntents,
+    category: entry.category || 'other',
+    measures: ensureArray(entry.measures),
+    controlFeatures: ensureArray(entry.control_for?.features),
+    xrefTokens
+  })
   return normalized
+}
+
+async function writeMaterialConceptAndRevision(entry = {}) {
+  const timestamp = new Date().toISOString().replace(/[:-]/g, '').replace(/\.\d+Z$/, 'Z')
+  const conceptResult = await writeMaterialConcept(repo, entry, { timestamp })
+  const revisionResult = await writeMaterialRevision(repo, entry, { timestamp, createdBy: 'user' })
+  // Optionally keep legacy file updated if present
+  await writeMaterialToVocab(entry)
+  await rebuildMaterialsIndex(repo)
+  return { concept: conceptResult.concept, revision: revisionResult.revision }
 }
 
 function normalizeDefaults(defaults = {}) {
@@ -890,9 +1029,29 @@ function buildXrefTokens(xref = {}) {
     .filter(Boolean)
 }
 
-function buildSearchTokens({ id, label, tags = [], synonyms = [], intents = [], xrefTokens = [] }) {
+function buildSearchTokens({
+  id,
+  label,
+  tags = [],
+  synonyms = [],
+  intents = [],
+  category = '',
+  measures = [],
+  controlFeatures = [],
+  xrefTokens = []
+}) {
   const bucket = new Set()
-  ;[id, label, ...tags, ...synonyms, ...intents, ...xrefTokens]
+  ;[
+    id,
+    label,
+    category,
+    ...tags,
+    ...synonyms,
+    ...intents,
+    ...measures,
+    ...controlFeatures,
+    ...xrefTokens
+  ]
     .map((token) => (typeof token === 'string' ? token.trim().toLowerCase() : ''))
     .filter(Boolean)
     .forEach((token) => bucket.add(token))
@@ -914,6 +1073,10 @@ function dedupeStrings(list = [], options = {}) {
     bucket.push(preserveCase ? trimmed : trimmed.toLowerCase())
   })
   return bucket
+}
+
+function ensureArray(value) {
+  return Array.isArray(value) ? value : []
 }
 
 function ensureSequence(doc) {

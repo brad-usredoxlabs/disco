@@ -15,7 +15,9 @@ const CATEGORY_OPTIONS = [
   { value: 'other', label: 'Other' }
 ]
 
-const MECHANISM_TYPES = ['agonist', 'antagonist', 'activator', 'inhibitor', 'inducer', 'suppressor', 'other']
+const INTENT_OPTIONS = ['sample', 'treatment', 'assay_material', 'control', 'other']
+const MECHANISM_TYPES = ['agonist', 'antagonist', 'activator', 'inhibitor', 'inducer', 'suppressor', 'uncoupler', 'other']
+const ACQUISITION_MODALITIES = ['fluorescence', 'absorbance', 'luminescence', 'microscopy', 'ms', 'qpcr', 'other']
 const XREF_KEYS = ['chebi', 'cl', 'cellosaurus', 'ncit', 'ncbitaxon', 'go', 'other']
 const TARGET_VOCAB = 'mechanism-targets'
 const PROCESS_VOCAB = 'mechanism-processes'
@@ -27,39 +29,16 @@ const CROSSREF_KEY_MAP = {
   cellosaurus: 'cellosaurus',
   ncit: 'ncit'
 }
+
 const props = defineProps({
-  modelValue: {
-    type: Boolean,
-    default: false
-  },
-  mode: {
-    type: String,
-    default: 'create'
-  },
-  entry: {
-    type: Object,
-    default: () => null
-  },
-  seedLabel: {
-    type: String,
-    default: ''
-  },
-  seedTags: {
-    type: Array,
-    default: () => []
-  },
-  roleOptions: {
-    type: Array,
-    default: () => []
-  },
-  existingIds: {
-    type: Array,
-    default: () => []
-  },
-  saving: {
-    type: Boolean,
-    default: false
-  }
+  modelValue: { type: Boolean, default: false },
+  mode: { type: String, default: 'create' },
+  entry: { type: Object, default: () => null },
+  seedLabel: { type: String, default: '' },
+  seedTags: { type: Array, default: () => [] },
+  roleOptions: { type: Array, default: () => [] },
+  existingIds: { type: Array, default: () => [] },
+  saving: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:modelValue', 'cancel', 'save'])
@@ -67,15 +46,37 @@ const emit = defineEmits(['update:modelValue', 'cancel', 'save'])
 const form = reactive({
   label: '',
   category: '',
+  experimentalIntents: [],
   extraTags: '',
   synonymsText: '',
   defaultsRole: '',
   amountValue: '',
   amountUnit: '',
   measures: '',
-  mechanismType: '',
-  mechanismTargetTerm: null,
+  detection: {
+    modality: '',
+    channel_hint: '',
+    excitation_nm: '',
+    emission_nm: ''
+  },
+  mechanism: {
+    type: '',
+    targets: []
+  },
+  classified_as: [],
+  classificationDraft: {
+    term: null,
+    domain: '',
+    role: ''
+  },
   affectedProcessTerm: null,
+  affectedProcesses: [],
+  control_role: '',
+  control_for: {
+    featuresInput: '',
+    acquisition_modalities: [],
+    notes: ''
+  },
   xrefTerm: null,
   xref: {
     chebi: '',
@@ -90,19 +91,13 @@ const form = reactive({
 
 const errorMessages = ref([])
 
-const drawerTitle = computed(() =>
-  props.mode === 'edit' ? 'Edit material details' : 'Create material'
-)
+const drawerTitle = computed(() => (props.mode === 'edit' ? 'Edit material details' : 'Create material'))
 
 const currentId = computed(() => {
-  if (props.mode === 'edit' && props.entry?.id) {
-    return props.entry.id
-  }
+  if (props.mode === 'edit' && props.entry?.id) return props.entry.id
   const base = form.label || props.seedLabel || 'material'
   return generateUniqueMaterialId(base, props.existingIds, { skipId: props.entry?.id })
 })
-
-const roleOptions = computed(() => props.roleOptions || [])
 
 const parsedTags = computed(() => {
   const bucket = new Set()
@@ -111,9 +106,16 @@ const parsedTags = computed(() => {
   return Array.from(bucket)
 })
 
-const canSave = computed(() => {
-  return Boolean(form.label.trim() && parsedTags.value.length)
+const isSample = computed(() => form.experimentalIntents.includes('sample'))
+const isTreatment = computed(() => form.experimentalIntents.includes('treatment'))
+const isAssay = computed(() => form.experimentalIntents.includes('assay_material'))
+const isControl = computed(() => form.experimentalIntents.includes('control'))
+const canAddProcess = computed(() => {
+  const term = form.affectedProcessTerm
+  return Boolean(term && (term.id || term.identifier))
 })
+
+const canSave = computed(() => Boolean(form.label.trim() && parsedTags.value.length && form.experimentalIntents.length))
 
 watch(
   () => props.modelValue,
@@ -139,28 +141,42 @@ watch(
 function initializeForm() {
   const entry = props.entry || {}
   form.label = entry.label || props.seedLabel || ''
-  form.category = pickCategory(entry.tags) || deriveCategoryFromSeed() || ''
-  const sourceTags =
-    (Array.isArray(entry.tags) && entry.tags.length ? entry.tags : props.seedTags) || []
+  form.category = entry.category || pickCategory(entry.tags) || deriveCategoryFromSeed() || ''
+  const sourceTags = (Array.isArray(entry.tags) && entry.tags.length ? entry.tags : props.seedTags) || []
   form.extraTags = formatExtraTags(sourceTags, form.category)
   form.synonymsText = Array.isArray(entry.synonyms) ? entry.synonyms.join('\n') : ''
+  form.experimentalIntents = Array.isArray(entry.experimental_intents) ? [...entry.experimental_intents] : []
   form.defaultsRole = entry.defaults?.role || ''
   form.amountValue = entry.defaults?.amount?.value ?? ''
   form.amountUnit = entry.defaults?.amount?.unit ?? ''
-  form.measures = entry.measures || ''
-  form.mechanismType = entry.mechanism?.type || ''
-  form.mechanismTargetTerm = entry.mechanism?.target?.id
-    ? {
-        id: entry.mechanism.target.id,
-        label: entry.mechanism.target.label || entry.mechanism.target.id
-      }
-    : null
-  form.affectedProcessTerm = entry.affected_process?.id
-    ? {
-        id: entry.affected_process.id,
-        label: entry.affected_process.label || entry.affected_process.id
-      }
-    : null
+  form.measures = Array.isArray(entry.measures) ? entry.measures.join(', ') : entry.measures || ''
+  form.detection = {
+    modality: entry.detection?.modality || '',
+    channel_hint: entry.detection?.channel_hint || '',
+    excitation_nm: entry.detection?.excitation_nm || '',
+    emission_nm: entry.detection?.emission_nm || ''
+  }
+  form.mechanism.type = entry.mechanism?.type || ''
+  form.mechanism.targets = Array.isArray(entry.mechanism?.targets)
+    ? entry.mechanism.targets.map((t) => ({ id: t.id, label: t.label }))
+    : []
+  form.classified_as = Array.isArray(entry.classified_as)
+    ? entry.classified_as.map((c) => ({ id: c.id, label: c.label, domain: c.domain, source: c.source }))
+    : []
+  form.affectedProcesses = Array.isArray(entry.affected_processes)
+    ? entry.affected_processes.map((p) => ({ id: p.id, label: p.label || p.id }))
+    : entry.affected_process?.id
+    ? [{ id: entry.affected_process.id, label: entry.affected_process.label || entry.affected_process.id }]
+    : []
+  form.affectedProcessTerm = null
+  form.control_role = entry.control_role || ''
+  form.control_for = {
+    featuresInput: Array.isArray(entry.control_for?.features) ? entry.control_for.features.join(', ') : entry.control_for?.features || '',
+    acquisition_modalities: Array.isArray(entry.control_for?.acquisition_modalities)
+      ? [...entry.control_for.acquisition_modalities]
+      : [],
+    notes: entry.control_for?.notes || ''
+  }
   form.xrefTerm = resolveInitialXrefTerm(entry.xref || {})
   XREF_KEYS.forEach((key) => {
     form.xref[key] = entry.xref?.[key] || ''
@@ -204,6 +220,14 @@ function parseSynonymsInput(value = '') {
     .filter(Boolean)
 }
 
+function parseList(value = '') {
+  if (!value) return []
+  return value
+    .split(/[,\n]/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+}
+
 function handleClose() {
   emit('update:modelValue', false)
   emit('cancel')
@@ -211,95 +235,120 @@ function handleClose() {
 
 function handleSubmit() {
   const errors = []
-  if (!form.label.trim()) {
-    errors.push('Label is required.')
-  }
-  if (!parsedTags.value.length) {
-    errors.push('Choose a category or add at least one tag.')
-  }
+  if (!form.label.trim()) errors.push('Label is required.')
+  if (!form.category) errors.push('Category is required.')
+  if (!form.experimentalIntents.length) errors.push('Select at least one experimental intent.')
+  if (!parsedTags.value.length) errors.push('Choose a category or add at least one tag.')
   if ((form.amountValue && !form.amountUnit) || (!form.amountValue && form.amountUnit)) {
     errors.push('Amount requires both value and unit.')
-  } else if (form.amountValue && form.amountUnit) {
-    const numeric = Number(form.amountValue)
-    if (!Number.isFinite(numeric)) {
-      errors.push('Amount value must be numeric.')
-    }
+  } else if (form.amountValue && form.amountUnit && !Number.isFinite(Number(form.amountValue))) {
+    errors.push('Amount value must be numeric.')
   }
-  const hasMechanismType = Boolean(form.mechanismType)
-  const hasMechanismTarget = Boolean(getTermId(form.mechanismTargetTerm))
-  if (hasMechanismType || hasMechanismTarget) {
-    if (!hasMechanismType || !hasMechanismTarget) {
-      errors.push('Mechanism entries must include both a type and a selected target.')
-    }
+  if (isSample.value && !form.classified_as.length) {
+    errors.push('Sample intent requires at least one classification.')
+  }
+  const hasMechanismTargets = Array.isArray(form.mechanism.targets) && form.mechanism.targets.length
+  if (isTreatment.value && form.mechanism.type !== 'other' && (!form.mechanism.type || !hasMechanismTargets)) {
+    errors.push('Treatment intent requires mechanism.type and targets (unless type is other).')
+  }
+  const measureList = parseList(form.measures)
+  if (isAssay.value && !measureList.length) {
+    errors.push('Assay material intent requires measures (feature IDs).')
+  }
+  const controlFeatures = parseList(form.control_for.featuresInput)
+  if (isControl.value) {
+    if (!form.control_role) errors.push('Control intent requires control_role.')
+    if (!controlFeatures.length) errors.push('Control intent requires control_for.features.')
   }
   errorMessages.value = errors
   if (errors.length) return
-  const payload = buildEntryPayload()
-  emit('save', payload)
+  emit('save', buildEntryPayload())
 }
 
 function buildEntryPayload() {
   const entry = {
     id: currentId.value,
     label: form.label.trim(),
+    category: form.category || 'other',
+    experimental_intents: [...form.experimentalIntents],
     tags: parsedTags.value
   }
   const synonyms = parseSynonymsInput(form.synonymsText)
-  if (synonyms.length) {
-    entry.synonyms = synonyms
-  }
-  if (form.measures.trim()) {
-    entry.measures = form.measures.trim()
+  if (synonyms.length) entry.synonyms = synonyms
+  const measures = parseList(form.measures)
+  if (measures.length) entry.measures = measures
+  entry.detection = {
+    modality: form.detection.modality || '',
+    channel_hint: form.detection.channel_hint || '',
+    excitation_nm: form.detection.excitation_nm || '',
+    emission_nm: form.detection.emission_nm || ''
   }
   if (form.defaultsRole || (form.amountValue && form.amountUnit)) {
     entry.defaults = {}
-    if (form.defaultsRole) {
-      entry.defaults.role = form.defaultsRole
-    }
+    if (form.defaultsRole) entry.defaults.role = form.defaultsRole
     if (form.amountValue && form.amountUnit) {
-      entry.defaults.amount = {
-        value: Number(form.amountValue),
-        unit: form.amountUnit
-      }
+      entry.defaults.amount = { value: Number(form.amountValue), unit: form.amountUnit }
     }
   }
-  const targetId = getTermId(form.mechanismTargetTerm)
-  const targetLabel = getTermLabel(form.mechanismTargetTerm)
-  if (form.mechanismType && targetId && targetLabel) {
-    entry.mechanism = {
-      type: form.mechanismType,
-      target: {
-        id: targetId,
-        label: targetLabel
-      }
+  if (form.mechanism.type && form.mechanism.targets.length) {
+    entry.mechanism = { type: form.mechanism.type, targets: form.mechanism.targets }
+  }
+  if (form.affectedProcesses.length) {
+    entry.affected_processes = form.affectedProcesses.map((p) => ({ id: p.id, label: p.label }))
+    entry.affected_process = entry.affected_processes[0]
+  }
+  const controlFeatures = parseList(form.control_for.featuresInput)
+  if (form.control_role || controlFeatures.length || form.control_for.acquisition_modalities.length || form.control_for.notes) {
+    entry.control_role = form.control_role
+    entry.control_for = {
+      features: controlFeatures,
+      acquisition_modalities: form.control_for.acquisition_modalities || [],
+      notes: form.control_for.notes || ''
     }
   }
-  const processId = getTermId(form.affectedProcessTerm)
-  const processLabel = getTermLabel(form.affectedProcessTerm)
-  if (processId && processLabel) {
-    entry.affected_process = {
-      id: processId,
-      label: processLabel
-    }
+  if (form.classified_as.length) {
+    entry.classified_as = form.classified_as.map((c) => ({
+      id: c.id,
+      label: c.label,
+      domain: c.domain,
+      source: c.source
+    }))
   }
   const xref = {}
   XREF_KEYS.forEach((key) => {
-    if (form.xref[key]) {
-      xref[key] = form.xref[key]
-    }
+    if (form.xref[key]) xref[key] = form.xref[key]
   })
-  if (Object.keys(xref).length) {
-    entry.xref = xref
-  }
+  if (Object.keys(xref).length) entry.xref = xref
   return entry
 }
 
 function handleMechanismTargetSelect(value) {
-  form.mechanismTargetTerm = value || null
+  if (!value) return
+  const id = getTermId(value)
+  const label = getTermLabel(value)
+  if (!id || !label) return
+  const exists = form.mechanism.targets.some((t) => t.id === id)
+  if (!exists) form.mechanism.targets.push({ id, label })
+}
+
+function removeMechanismTarget(index) {
+  form.mechanism.targets.splice(index, 1)
 }
 
 function handleProcessSelect(value) {
   form.affectedProcessTerm = value || null
+  const id = getTermId(form.affectedProcessTerm)
+  const label = getTermLabel(form.affectedProcessTerm)
+  if (!id || !label) return
+  const exists = form.affectedProcesses.some((p) => p.id === id)
+  if (!exists) {
+    form.affectedProcesses.push({ id, label })
+  }
+  form.affectedProcessTerm = null
+}
+
+function removeAffectedProcess(index) {
+  form.affectedProcesses.splice(index, 1)
 }
 
 function handleCrossrefSelect(value) {
@@ -341,6 +390,23 @@ function resolveInitialXrefTerm(xref = {}) {
   return null
 }
 
+function addClassification() {
+  const term = form.classificationDraft.term || {}
+  const id = getTermId(term)
+  const label = getTermLabel(term)
+  const domain = (form.classificationDraft.domain || '').trim()
+  const source = (term.ontologyEnum || term.source || '').trim()
+  if (!id || !label || !domain || !source) return
+  form.classified_as.push({ id, label, domain, source })
+  form.classificationDraft.term = null
+  form.classificationDraft.domain = ''
+  form.classificationDraft.role = ''
+}
+
+function removeClassification(index) {
+  form.classified_as.splice(index, 1)
+}
+
 function getTermId(term) {
   if (!term) return ''
   if (typeof term === 'string') return term.trim()
@@ -369,7 +435,8 @@ function getTermLabel(term) {
             <p class="drawer-eyebrow">{{ mode === 'edit' ? 'Library entry' : 'New material' }}</p>
             <h2>{{ drawerTitle }}</h2>
             <p class="drawer-subtitle">
-              Materials are saved to <code>vocab/materials.lab.yaml</code> so the picker can reuse them.
+              Materials are saved as concepts in <code>vocab/materials/</code> with immutable revisions in
+              <code>vocab/material-revisions/</code>.
             </p>
           </header>
 
@@ -403,13 +470,19 @@ function getTermLabel(term) {
                 </select>
               </div>
               <div class="field">
-                <label>Additional tags</label>
-                <input
-                  v-model="form.extraTags"
-                  type="text"
-                  placeholder="comma-separated, e.g., cell_line, sample"
-                />
+                <label>Experimental intents</label>
+                <div class="chips">
+                  <label v-for="opt in INTENT_OPTIONS" :key="opt" class="chip">
+                    <input v-model="form.experimentalIntents" type="checkbox" :value="opt" />
+                    {{ opt }}
+                  </label>
+                </div>
               </div>
+            </div>
+
+            <div class="field">
+              <label>Additional tags</label>
+              <input v-model="form.extraTags" type="text" placeholder="comma-separated, e.g., cell_line, sample" />
             </div>
 
             <div class="field">
@@ -422,87 +495,213 @@ function getTermLabel(term) {
                 <label>Default role</label>
                 <select v-model="form.defaultsRole">
                   <option value="">None</option>
-                  <option
-                    v-for="role in roleOptions"
-                    :key="role.role || role"
-                    :value="role.role || role"
-                  >
+                  <option v-for="role in roleOptions" :key="role.role || role" :value="role.role || role">
                     {{ role.label || role.role || role }}
                   </option>
                 </select>
               </div>
               <div class="field">
                 <label>Default amount</label>
-                <div class="amount-inputs">
+                <div class="split">
                   <input v-model="form.amountValue" type="number" step="any" placeholder="Value" />
                   <input v-model="form.amountUnit" type="text" placeholder="Unit" />
                 </div>
               </div>
             </div>
 
-            <div class="field">
-              <label>Measures / feature</label>
-              <input
-                v-model="form.measures"
-                type="text"
-                placeholder="feature:thiol_reduction_state_proxy"
-              />
+            <div v-if="isSample" class="section">
+              <div class="section__header">
+                <h4>Classified as</h4>
+              </div>
+              <div class="field-grid">
+                <OntologyFieldInput
+                  class="ontology-picker"
+                  :value="form.classificationDraft.term"
+                  vocab="materials"
+                  placeholder="Search ontology term"
+                  :search-options="{ domain: form.classificationDraft.domain, skipLocal: true, skipCache: true }"
+                  :show-selection-badge="false"
+                  disable-cache
+                  @update:value="(val) => (form.classificationDraft.term = val)"
+                />
+                <div class="split">
+                  <select v-model="form.classificationDraft.domain">
+                    <option value="">domain…</option>
+                    <option value="taxon">taxon</option>
+                    <option value="cell_line">cell_line</option>
+                    <option value="tissue">tissue</option>
+                  </select>
+                  <button class="ghost tiny" type="button" :disabled="!form.classificationDraft.term || !form.classificationDraft.domain" @click="addClassification">
+                    Add
+                  </button>
+                </div>
+              </div>
+              <ul v-if="form.classified_as.length" class="classification-list">
+                <li v-for="(row, idx) in form.classified_as" :key="`${row.id}-${idx}`" class="classification-pill">
+                  <span class="pill-label">{{ row.label }}</span>
+                  <span class="pill-meta">{{ row.domain }} · {{ row.source }}</span>
+                  <button class="ghost tiny" type="button" @click="removeClassification(idx)">×</button>
+                </li>
+              </ul>
+              <div v-else class="muted">No classifications.</div>
             </div>
 
-    <div class="field-grid">
-      <div class="field">
-        <label>Mechanism type</label>
-        <select v-model="form.mechanismType">
-          <option value="">None</option>
-          <option v-for="kind in MECHANISM_TYPES" :key="kind" :value="kind">
-            {{ kind }}
-          </option>
-        </select>
-      </div>
-      <div class="field field--wide">
-        <label>Mechanism target</label>
-        <OntologyFieldInput
-          :value="form.mechanismTargetTerm"
-          :vocab="TARGET_VOCAB"
-          placeholder="Search NCIt targets (local-first)"
-          @update:value="handleMechanismTargetSelect"
-        />
-        <small v-if="form.mechanismTargetTerm">Selected: {{ form.mechanismTargetTerm.label }}</small>
-      </div>
-    </div>
+            <div v-if="isTreatment" class="section">
+              <div class="section__header">
+                <h4>Mechanism</h4>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Type
+                  <select v-model="form.mechanism.type">
+                    <option value="">Select type…</option>
+                    <option v-for="opt in MECHANISM_TYPES" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </label>
+                <label>
+                  Target (ontology search)
+                  <OntologyFieldInput
+                    class="ontology-picker"
+                    :value="null"
+                    :vocab="TARGET_VOCAB"
+                    placeholder="Search target term"
+                    :search-options="{ skipLocal: true, skipCache: true }"
+                    :show-selection-badge="false"
+                    disable-cache
+                    @update:value="handleMechanismTargetSelect"
+                  />
+                </label>
+              </div>
+              <ul v-if="form.mechanism.targets.length" class="classification-list">
+                <li v-for="(target, idx) in form.mechanism.targets" :key="`${target.id}-${idx}`" class="classification-pill">
+                  <span class="pill-label">{{ target.label }}</span>
+                  <span class="pill-meta">{{ target.id }}</span>
+                  <button class="ghost tiny" type="button" @click="removeMechanismTarget(idx)">×</button>
+                </li>
+              </ul>
+              <div v-else class="muted">No targets.</div>
 
-    <div class="field">
-      <label>Affected process (optional)</label>
-      <OntologyFieldInput
-        :value="form.affectedProcessTerm"
-        :vocab="PROCESS_VOCAB"
-        placeholder="Search GO processes"
-        @update:value="handleProcessSelect"
-      />
-      <small v-if="form.affectedProcessTerm">Selected: {{ form.affectedProcessTerm.label }}</small>
-    </div>
+              <div class="section__header">
+                <h4>Affected processes</h4>
+              </div>
+              <div class="field-grid">
+                <OntologyFieldInput
+                  class="ontology-picker"
+                  :value="form.affectedProcessTerm"
+                  :vocab="PROCESS_VOCAB"
+                  placeholder="Search GO process"
+                  :search-options="{ ontology: 'GO', skipLocal: true, skipCache: true }"
+                  :show-selection-badge="false"
+                  disable-cache
+                  @update:value="handleProcessSelect"
+                />
+                <div class="split">
+                  <span class="muted">Select and add</span>
+                  <button class="ghost tiny full-width" type="button" :disabled="!canAddProcess" @click="handleProcessSelect(form.affectedProcessTerm)">
+                    Add process
+                  </button>
+                </div>
+              </div>
+              <ul v-if="form.affectedProcesses.length" class="classification-list">
+                <li v-for="(process, idx) in form.affectedProcesses" :key="`${process.id}-${idx}`" class="classification-pill">
+                  <span class="pill-label">{{ process.label }}</span>
+                  <span class="pill-meta">{{ process.id }}</span>
+                  <button class="ghost tiny" type="button" @click="removeAffectedProcess(idx)">×</button>
+                </li>
+              </ul>
+              <div v-else class="muted">No affected processes.</div>
+            </div>
 
-    <div class="field">
-      <label>External ontology reference</label>
-      <OntologyFieldInput
-        :value="form.xrefTerm"
-        :vocab="CROSSREF_VOCAB"
-        placeholder="Search CHEBI, CL, Cellosaurus, or NCIT"
-        value-shape="reference"
-        @update:value="handleCrossrefSelect"
-      />
-      <small v-if="form.xrefTerm">Selected: {{ form.xrefTerm.label }}</small>
-      <button
-        v-if="form.xrefTerm"
-        type="button"
-        class="ghost tiny"
-        @click="handleCrossrefSelect(null)"
-      >
-        Clear reference
-      </button>
-    </div>
+            <div v-if="isAssay" class="section">
+              <div class="section__header">
+                <h4>Assay material features</h4>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Measures (feature IDs)
+                  <input v-model="form.measures" type="text" placeholder="feature:ros_proxy, feature:mmp_proxy" />
+                </label>
+                <label>
+                  Detection modality
+                  <select v-model="form.detection.modality">
+                    <option value="">Select modality…</option>
+                    <option v-for="opt in ACQUISITION_MODALITIES" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Channel hint
+                  <input v-model="form.detection.channel_hint" type="text" placeholder="e.g., texas_red" />
+                </label>
+                <label>
+                  Excitation (nm)
+                  <input v-model="form.detection.excitation_nm" type="number" min="0" step="1" />
+                </label>
+                <label>
+                  Emission (nm)
+                  <input v-model="form.detection.emission_nm" type="number" min="0" step="1" />
+                </label>
+              </div>
+            </div>
 
-            <footer class="drawer-actions">
+            <div v-if="isControl" class="section">
+              <div class="section__header">
+                <h4>Control</h4>
+              </div>
+              <div class="field-grid">
+                <label>
+                  Control role
+                  <select v-model="form.control_role">
+                    <option value="">Select role…</option>
+                    <option value="positive">positive</option>
+                    <option value="negative">negative</option>
+                    <option value="vehicle">vehicle</option>
+                  </select>
+                </label>
+                <label>
+                  Acquisition modalities
+                  <div class="chips">
+                    <label v-for="opt in ACQUISITION_MODALITIES" :key="opt" class="chip">
+                      <input v-model="form.control_for.acquisition_modalities" type="checkbox" :value="opt" />
+                      {{ opt }}
+                    </label>
+                  </div>
+                </label>
+              </div>
+              <label>
+                Control features (feature IDs)
+                <input v-model="form.control_for.featuresInput" type="text" placeholder="feature:intracellular_ros_proxy" />
+              </label>
+              <label>
+                Notes
+                <textarea v-model="form.control_for.notes" rows="2" placeholder="Optional notes"></textarea>
+              </label>
+            </div>
+
+            <div class="section">
+              <div class="section__header">
+                <h4>Cross references</h4>
+              </div>
+              <div class="field-grid">
+                <OntologyFieldInput
+                  class="ontology-picker"
+                  :value="form.xrefTerm"
+                  :vocab="CROSSREF_VOCAB"
+                  placeholder="Search CHEBI, CL, Cellosaurus, or NCIT"
+                  :value-shape="'reference'"
+                  :show-selection-badge="false"
+                  disable-cache
+                  @update:value="handleCrossrefSelect"
+                />
+                <div class="split">
+                  <span class="muted">Selected IDs populate xref keys.</span>
+                  <button class="ghost tiny" type="button" @click="clearCrossrefKeys">Clear</button>
+                </div>
+              </div>
+            </div>
+
+            <footer class="drawer-footer">
               <button class="ghost" type="button" @click="handleClose">Cancel</button>
               <button class="primary" type="submit" :disabled="saving || !canSave">
                 {{ saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Create material' }}
@@ -519,129 +718,142 @@ function getTermLabel(term) {
 .material-drawer {
   position: fixed;
   inset: 0;
-  z-index: 40;
-}
-
-.material-drawer__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.35);
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
 }
-
-.material-drawer__panel {
-  width: min(480px, 100%);
+.material-drawer__backdrop {
+  width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.material-drawer__panel {
   background: #fff;
-  padding: 1.5rem;
-  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  width: min(960px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
 }
-
-header h2 {
-  margin: 0.1rem 0;
-}
-
 .drawer-eyebrow {
   margin: 0;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  color: #64748b;
-  letter-spacing: 0.05em;
+  color: #475569;
+  font-size: 0.9rem;
 }
-
 .drawer-subtitle {
-  font-size: 0.85rem;
+  margin: 4px 0 0;
   color: #475569;
 }
-
 .drawer-errors {
-  border: 1px solid #fecaca;
+  border: 1px solid #fca5a5;
   background: #fef2f2;
+  color: #b91c1c;
+  padding: 8px;
   border-radius: 8px;
-  padding: 0.75rem;
-  color: #991b1b;
 }
-
 .field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 4px;
 }
-
-label {
-  font-weight: 600;
-  color: #0f172a;
-}
-
-input,
-select,
-textarea {
-  border: 1px solid #cbd5f5;
-  border-radius: 10px;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.95rem;
-}
-
 .field-grid {
   display: grid;
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  align-items: flex-end;
 }
-
-@media (min-width: 720px) {
-  .field-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
-}
-.field--wide {
-  grid-column: span 2;
-}
-
-.amount-inputs {
+.split {
   display: flex;
-  gap: 0.35rem;
+  gap: 6px;
 }
-
-.amount-inputs input {
-  flex: 1;
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-
-.drawer-actions {
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 0.9rem;
+}
+.section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+.section__header h4 {
+  margin: 0 0 4px 0;
+}
+.classification-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.classification-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px 8px;
+  background: #f8fafc;
+}
+.pill-label {
+  font-weight: 600;
+}
+.pill-meta {
+  font-size: 0.85rem;
+  color: #475569;
+}
+.drawer-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 8px;
+  margin-top: 12px;
 }
-
-.primary,
-.ghost {
-  border-radius: 999px;
-  padding: 0.45rem 1rem;
-  font-weight: 600;
-  cursor: pointer;
+.muted {
+  color: #94a3b8;
 }
-
-.primary {
-  background: #2563eb;
-  color: #fff;
-  border: none;
-}
-
-.primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .ghost {
   border: 1px solid #cbd5f5;
   background: transparent;
-  color: #0f172a;
+  padding: 6px 10px;
+  border-radius: 8px;
 }
-
-small {
-  color: #64748b;
+.ghost.tiny {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+.primary {
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid #2563eb;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+textarea,
+input,
+select {
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.95rem;
 }
 </style>

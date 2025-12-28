@@ -20,13 +20,7 @@ export function configureOntologyService({ repoConnection, systemConfig, vocabSc
 function getVocabSchema(name) {
   if (!name) return null
   const exact = vocabSchemas?.[name]
-  if (exact) return exact
-  // Graceful fallback: strip common suffixes like ".lab"
-  const stripped = name.replace(/\.lab$/i, '')
-  if (stripped && vocabSchemas?.[stripped]) {
-    return vocabSchemas[stripped]
-  }
-  return null
+  return exact || null
 }
 
 async function readVocab(name) {
@@ -79,21 +73,41 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
   const schema = getVocabSchema(vocabName) || buildFallbackSchema(vocabName)
   const normalizedOptions = normalizeSearchOptions(options)
   const resultsMap = new Map()
+  const localMaterialsResults = []
+
+  // Priority 1: Local materials from options (e.g., material library in Run Editor)
+  if (options?.localMaterials && Array.isArray(options.localMaterials) && !skipLocal) {
+    options.localMaterials.forEach((entry) => {
+      const normalized = annotateOntology(normalizeTerm(entry, 'local'), schema)
+      if (!normalized?.id) return
+      if (matchesQuery(normalized, trimmed) && matchesContext(normalized, normalizedOptions)) {
+        localMaterialsResults.push({ ...normalized, provenance: 'local_library' })
+        resultsMap.set(normalized.id, { ...normalized, provenance: 'local_library' })
+      }
+    })
+  }
 
   const vocab = await readVocab(vocabName)
   if (!vocab) {
     throw new Error(`Unable to read vocabulary file for "${vocabName}".`)
   }
+  // Allow missing vocab files (e.g., materials.yaml) when concept/revision registries are used instead
+  // The vocab object will have empty local_extensions and cached_terms arrays, which is fine
   if (vocab.__missing) {
-    throw new Error(`Missing vocabulary file at /vocab/${vocabName}.yaml in the selected repository.`)
+    console.warn(
+      `[OntologyService] Vocabulary file missing at /vocab/${vocabName}.yaml - proceeding with OLS search only`
+    )
   }
 
+  // Priority 2: Vocab file entries
   if (vocab && !skipLocal) {
     ;[...(vocab.local_extensions || []), ...(vocab.cached_terms || [])].forEach((entry) => {
       const normalized = annotateOntology(normalizeTerm(entry, entry.source || 'local'), schema)
       if (!normalized?.id) return
       if (matchesQuery(normalized, trimmed) && matchesContext(normalized, normalizedOptions)) {
-        resultsMap.set(normalized.id, { ...normalized, provenance: 'local' })
+        if (!resultsMap.has(normalized.id)) {
+          resultsMap.set(normalized.id, { ...normalized, provenance: 'local' })
+        }
       }
     })
   }
@@ -142,7 +156,11 @@ export async function searchOntologyTerms(vocabName, query = '', options = {}) {
     }
   }
 
-  return Array.from(resultsMap.values())
+  // Return results with local materials first
+  const olsAndVocabResults = Array.from(resultsMap.values()).filter(
+    (result) => result.provenance !== 'local_library'
+  )
+  return [...localMaterialsResults, ...olsAndVocabResults]
 }
 
 function matchesQuery(term, query) {

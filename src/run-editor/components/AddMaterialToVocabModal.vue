@@ -3,7 +3,7 @@
     <div class="modal__card">
       <header class="modal__header">
         <h3>Add material to local vocab</h3>
-        <p class="modal__hint">Save ontology hits into /vocab/materials.lab.yaml</p>
+        <p class="modal__hint">Saves material concept + revision into /vocab/materials/ and /vocab/material-revisions/</p>
       </header>
 
       <div class="modal__body">
@@ -25,16 +25,17 @@
               <option v-for="opt in categoryOptions" :key="opt" :value="opt">{{ opt }}</option>
             </select>
           </label>
-          <label>
-            Intents
-            <div class="chips">
-              <label v-for="opt in intentOptions" :key="opt" class="chip">
-                <input v-model="form.intents" type="checkbox" :value="opt" />
-                {{ opt }}
-              </label>
-            </div>
-          </label>
         </div>
+
+        <label>
+          Experimental intents
+          <div class="chips">
+            <label v-for="opt in intentOptions" :key="opt" class="chip">
+              <input v-model="form.experimental_intents" type="checkbox" :value="opt" />
+              {{ opt }}
+            </label>
+          </div>
+        </label>
 
         <label>
           Tags (comma-separated)
@@ -58,7 +59,7 @@
           </label>
         </div>
 
-        <div class="section">
+        <div v-if="isSample" class="section">
           <div class="section__header">
             <h4>Classified as</h4>
           </div>
@@ -66,7 +67,7 @@
             <OntologyFieldInput
               class="ontology-picker"
               :value="classificationDraft.term"
-              vocab="materials.lab"
+              vocab="materials"
               placeholder="Search ontology term"
               :search-options="{ domain: classificationDraft.domain, skipLocal: true, skipCache: true }"
               :show-selection-badge="false"
@@ -93,7 +94,7 @@
           </ul>
         </div>
 
-        <div class="section">
+        <div v-if="isTreatment" class="section">
           <div class="section__header">
             <h4>Mechanism</h4>
           </div>
@@ -110,7 +111,7 @@
               <OntologyFieldInput
               class="ontology-picker"
               :value="mechanismDraft.term"
-              vocab="materials.lab"
+              vocab="materials"
               placeholder="Search target term"
               :search-options="{ skipLocal: true, skipCache: true }"
               :show-selection-badge="false"
@@ -141,7 +142,7 @@
           </ul>
         </div>
 
-        <div class="section">
+        <div v-if="isTreatment" class="section">
           <div class="section__header">
             <h4>Affected process</h4>
           </div>
@@ -149,7 +150,7 @@
             <OntologyFieldInput
               class="ontology-picker"
               :value="processDraft.term"
-              vocab="materials.lab"
+              vocab="materials"
               placeholder="Search GO process"
               :search-options="{ ontology: 'GO', skipLocal: true, skipCache: true }"
               :show-selection-badge="false"
@@ -173,6 +174,101 @@
           <div v-else class="muted">No affected process selected.</div>
         </div>
 
+        <div v-if="isAssayMaterial" class="section">
+          <div class="section__header">
+            <h4>Assay material features</h4>
+          </div>
+          <div class="grid two-col">
+            <label>
+              <span>Measures (feature IDs)</span>
+              <div class="split">
+                <select @change="addMeasure($event.target.value)">
+                  <option value="">Select feature…</option>
+                  <option v-for="feat in featureOptions" :key="feat.id" :value="feat.id">
+                    {{ feat.label || feat.id }}
+                  </option>
+                </select>
+                <button class="ghost tiny" type="button" @click="form.measures = []">Clear</button>
+              </div>
+              <div class="chips">
+                <span v-for="feat in form.measures" :key="feat" class="pill-label">
+                  {{ feat }}
+                  <button class="ghost tiny" type="button" @click="removeMeasure(feat)">×</button>
+                </span>
+              </div>
+            </label>
+            <label>
+              Detection modality
+              <select v-model="form.detection.modality">
+                <option value="">Select modality…</option>
+                <option v-for="opt in acquisitionModalities" :key="opt" :value="opt">{{ opt }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid two-col">
+            <label>
+              Channel hint
+              <input v-model="form.detection.channel_hint" type="text" placeholder="e.g. texas_red" />
+            </label>
+            <label>
+              Excitation (nm)
+              <input v-model="form.detection.excitation_nm" type="number" min="0" step="1" />
+            </label>
+            <label>
+              Emission (nm)
+              <input v-model="form.detection.emission_nm" type="number" min="0" step="1" />
+            </label>
+          </div>
+        </div>
+
+        <div v-if="isControl" class="section">
+          <div class="section__header">
+            <h4>Control</h4>
+          </div>
+          <div class="grid two-col">
+            <label>
+              Control role
+              <select v-model="form.control_role">
+                <option value="">Select role…</option>
+                <option value="positive">positive</option>
+                <option value="negative">negative</option>
+                <option value="vehicle">vehicle</option>
+              </select>
+            </label>
+            <label>
+              Acquisition modalities
+              <div class="chips">
+                <label v-for="opt in acquisitionModalities" :key="opt" class="chip">
+                  <input v-model="form.control_for.acquisition_modalities" type="checkbox" :value="opt" />
+                  {{ opt }}
+                </label>
+              </div>
+            </label>
+          </div>
+          <label>
+            Control features (feature IDs)
+            <div class="split">
+              <select @change="addControlFeature($event.target.value)">
+                <option value="">Select feature…</option>
+                <option v-for="feat in featureOptions" :key="feat.id" :value="feat.id">
+                  {{ feat.label || feat.id }}
+                </option>
+              </select>
+              <button class="ghost tiny" type="button" @click="form.control_for.features = []">Clear</button>
+            </div>
+            <div class="chips">
+              <span v-for="feat in form.control_for.features" :key="feat" class="pill-label">
+                {{ feat }}
+                <button class="ghost tiny" type="button" @click="removeControlFeature(feat)">×</button>
+              </span>
+            </div>
+          </label>
+          <label>
+            Control notes
+            <input v-model="form.control_for.notes" type="text" placeholder="Optional notes" />
+          </label>
+        </div>
+
         <p v-if="error" class="error">{{ error }}</p>
       </div>
 
@@ -191,17 +287,10 @@ import { computed, reactive, watch } from 'vue'
 import OntologyFieldInput from '../../tiptap/nodes/OntologyFieldInput.vue'
 import { ensureMaterialId } from '../../plate-editor/utils/materialId'
 
-const CATEGORY_OPTIONS = ['compound', 'dye', 'cell_line', 'media', 'solvent', 'buffer', 'other']
-const INTENT_OPTIONS = [
-  'treatment',
-  'assay_material',
-  'positive_control',
-  'negative_control',
-  'vehicle_control',
-  'sample',
-  'other'
-]
-const DOMAIN_OPTIONS = ['taxon', 'cell_line', 'tissue', 'role', 'mechanism', 'compound']
+const CATEGORY_OPTIONS = ['reagent', 'medium', 'solvent', 'buffer', 'additive', 'waste', 'other']
+const INTENT_OPTIONS = ['sample', 'treatment', 'assay_material', 'control', 'other']
+const DOMAIN_OPTIONS = ['taxon', 'cell_line', 'tissue']
+const ACQUISITION_MODALITIES = ['fluorescence', 'absorbance', 'luminescence', 'microscopy', 'ms', 'qpcr', 'other']
 const MECHANISM_TYPES = [
   'agonist',
   'antagonist',
@@ -230,6 +319,10 @@ const props = defineProps({
   error: {
     type: String,
     default: ''
+  },
+  features: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -253,6 +346,12 @@ const categoryOptions = computed(() => CATEGORY_OPTIONS)
 const intentOptions = computed(() => INTENT_OPTIONS)
 const domainOptions = computed(() => DOMAIN_OPTIONS)
 const mechanismTypeOptions = computed(() => MECHANISM_TYPES)
+const acquisitionModalities = computed(() => ACQUISITION_MODALITIES)
+const featureOptions = computed(() => props.features || [])
+const isSample = computed(() => form.experimental_intents.includes('sample'))
+const isTreatment = computed(() => form.experimental_intents.includes('treatment'))
+const isAssayMaterial = computed(() => form.experimental_intents.includes('assay_material'))
+const isControl = computed(() => form.experimental_intents.includes('control'))
 const canAddClassification = computed(() => {
   const term = classificationDraft.term
   const domain = classificationDraft.domain?.trim()
@@ -298,9 +397,9 @@ function resetForm(term) {
     const label = term.label || term.prefLabel || term.id || ''
     const ontologyKey = term.ontologyEnum || term.ontology || term.source || ''
     next.label = label
-    next.id = ensureMaterialId(term.id || label || '')
-    next.category = 'compound'
-    next.intents = ['treatment']
+    next.id = ensureMaterialId(label || term.id || '')
+    next.category = 'reagent'
+    next.experimental_intents = []
     next.tagsInput = ''
     if (ontologyKey && term.id) {
       next.xrefKey = ontologyKey
@@ -314,8 +413,8 @@ function buildEmptyForm() {
   return {
     id: '',
     label: '',
-    category: 'compound',
-    intents: [],
+    category: 'reagent',
+    experimental_intents: [],
     tagsInput: '',
     xrefKey: '',
     xrefValue: '',
@@ -327,6 +426,19 @@ function buildEmptyForm() {
     affected_process: {
       id: '',
       label: ''
+    },
+    measures: [],
+    detection: {
+      modality: '',
+      channel_hint: '',
+      excitation_nm: '',
+      emission_nm: ''
+    },
+    control_role: '',
+    control_for: {
+      features: [],
+      acquisition_modalities: [],
+      notes: ''
     }
   }
 }
@@ -388,6 +500,30 @@ function clearAffectedProcess() {
   processDraft.term = null
 }
 
+function addMeasure(featureId) {
+  const val = (featureId || '').trim()
+  if (!val) return
+  if (!form.measures.includes(val)) {
+    form.measures.push(val)
+  }
+}
+
+function removeMeasure(featureId) {
+  form.measures = form.measures.filter((id) => id !== featureId)
+}
+
+function addControlFeature(featureId) {
+  const val = (featureId || '').trim()
+  if (!val) return
+  if (!form.control_for.features.includes(val)) {
+    form.control_for.features.push(val)
+  }
+}
+
+function removeControlFeature(featureId) {
+  form.control_for.features = form.control_for.features.filter((id) => id !== featureId)
+}
+
 function handleSave() {
   const payload = buildPayload()
   emit('save', payload)
@@ -406,7 +542,9 @@ function buildPayload() {
     id: form.id ? ensureMaterialId(form.id) : '',
     label: form.label || '',
     category: form.category || 'other',
-    intents: Array.isArray(form.intents) ? form.intents.filter(Boolean) : [],
+    experimental_intents: Array.isArray(form.experimental_intents)
+      ? form.experimental_intents.filter(Boolean)
+      : [],
     tags,
     xref,
     classified_as: form.classified_as.map((row) => ({
@@ -430,7 +568,22 @@ function buildPayload() {
             id: (form.affected_process.id || form.affected_process.label || '').trim(),
             label: (form.affected_process.label || form.affected_process.id || '').trim()
           }
-        : null
+        : null,
+    measures: Array.isArray(form.measures) ? form.measures.filter(Boolean) : [],
+    detection: {
+      modality: form.detection.modality || '',
+      channel_hint: form.detection.channel_hint || '',
+      excitation_nm: form.detection.excitation_nm || '',
+      emission_nm: form.detection.emission_nm || ''
+    },
+    control_role: form.control_role || '',
+    control_for: {
+      features: Array.isArray(form.control_for.features) ? form.control_for.features.filter(Boolean) : [],
+      acquisition_modalities: Array.isArray(form.control_for.acquisition_modalities)
+        ? form.control_for.acquisition_modalities.filter(Boolean)
+        : [],
+      notes: form.control_for.notes || ''
+    }
   }
 }
 

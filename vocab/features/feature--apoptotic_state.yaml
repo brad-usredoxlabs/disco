@@ -1,0 +1,11 @@
+id: feature:apoptotic_state
+label: Apoptotic state
+domain: cellular_state
+description: >
+  Programmed cell death state; may be estimated by markers (Annexin V, caspase activity), morphology, or ML inference.
+tags: [apoptosis]
+ontology: {}
+modality_hints:
+  - modality: fluorescence
+    channel_hints: ["varies"]
+    notes: "Marker-dependent; analysis defines thresholds/classification."

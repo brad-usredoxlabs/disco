@@ -1,0 +1,36 @@
+id: materialrev:chebi-3750@20251227T194138Z
+of_material: material:chebi_3750
+revision: 1
+status: active
+created_at: 20251227T194138Z
+created_by: user
+changes_summary: New revision
+label: clofibrate
+category: reagent
+experimental_intents:
+  - treatment
+tags:
+  - ppara
+xref:
+  chebi: CHEBI:3750
+aliases: []
+classified_as: []
+mechanism:
+  type: agonist
+  targets:
+    - id: NCIT:C91751
+      label: PPARa Agonist
+affected_process:
+  id: GO:0034626
+  label: fatty acid elongation, polyunsaturated fatty acid
+measures: []
+detection:
+  modality: ""
+  channel_hint: ""
+  excitation_nm: ""
+  emission_nm: ""
+control_role: ""
+control_for:
+  features: []
+  acquisition_modalities: []
+  notes: ""

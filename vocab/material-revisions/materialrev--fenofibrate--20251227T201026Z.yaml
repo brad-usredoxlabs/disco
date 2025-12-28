@@ -1,0 +1,39 @@
+id: materialrev:fenofibrate@20251227T201026Z
+of_material: material:fenofibrate
+revision: 1
+status: active
+created_at: 20251227T201026Z
+created_by: user
+changes_summary: New revision
+label: Fenofibrate
+category: reagent
+experimental_intents:
+  - treatment
+tags:
+  - ppara
+  - d6d
+  - d5d
+  - agonist
+xref:
+  ncit: NCIT:C29047
+aliases: []
+classified_as: []
+mechanism:
+  type: agonist
+  targets:
+    - id: NCIT:C91751
+      label: PPARa
+affected_process:
+  id: GO:0034625
+  label: fatty acid elongation, monounsaturated fatty acid
+measures: []
+detection:
+  modality: ""
+  channel_hint: ""
+  excitation_nm: ""
+  emission_nm: ""
+control_role: ""
+control_for:
+  features: []
+  acquisition_modalities: []
+  notes: ""

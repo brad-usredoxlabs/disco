@@ -1,0 +1,47 @@
+name: features
+description: "Controlled vocabulary for semantic observables (Features). Assay-agnostic."
+
+validation:
+  required_fields:
+    - id
+    - label
+  id_prefix: "feature:"
+  id_pattern: "^feature:[a-z0-9_]+$"
+  allowed_domains:
+    - cellular_state
+    - molecular
+    - metabolite
+    - gene_expression
+    - morphology
+    - physiology
+    - other
+  allowed_modalities:
+    - fluorescence
+    - absorbance
+    - luminescence
+    - microscopy
+    - ms
+    - qpcr
+    - other
+
+  shape:
+    id:
+      type: string
+      pattern: "^feature:[a-z0-9_]+$"
+    label: string
+    description: string
+    domain:
+      type: string
+      enum: allowed_domains
+    tags: list:string
+    ontology: map:string
+
+    # UI hints only (optional)
+    modality_hints: list:
+      - modality: enum:allowed_modalities
+        channel_hints: list:string
+        notes: string
+
+display:
+  label_format: "{label} ({id})"
+  show_definitions: true

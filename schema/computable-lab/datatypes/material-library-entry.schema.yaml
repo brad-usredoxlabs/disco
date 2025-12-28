@@ -3,7 +3,7 @@ $id: "material-library-entry.schema.yaml"
 title: MaterialLibraryEntry
 type: object
 additionalProperties: false
-required: [id, label, tags]
+required: [id, label, category, experimental_intents]
 
 properties:
   id:
@@ -15,9 +15,20 @@ properties:
     type: string
     minLength: 1
 
-  tags:
+  category:
+    type: string
+    enum: [reagent, medium, solvent, buffer, additive, waste, other, compound, dye, cell_line, media]
+
+  experimental_intents:
     type: array
     minItems: 1
+    items:
+      type: string
+      enum: [sample, treatment, assay_material, control, other]
+
+  tags:
+    type: array
+    minItems: 0
     items:
       type: string
       minLength: 1
@@ -32,32 +43,55 @@ properties:
     items:
       type: object
       additionalProperties: false
-      required: [id, label, domain, role]
+      required: [id, label, domain, source]
       properties:
         id: { type: string }
         label: { type: string }
-        domain: { type: string }
-        role: { type: string }
+        domain:
+          type: string
+          enum: [taxon, cell_line, tissue]
+        source:
+          type: string
+          enum: [NCBITaxon, CL, UBERON, local]
 
   measures:
-    type: string
-    description: "Optional feature ID measured/used by this material (e.g., dyes)."
+    type: array
+    description: "Optional feature IDs measured/indicated by this material (e.g., dyes)."
+    items:
+      type: string
+      pattern: "^feature:[a-z0-9_]+$"
+
+  detection:
+    type: object
+    additionalProperties: false
+    properties:
+      modality:
+        type: string
+        enum: [fluorescence, absorbance, luminescence, microscopy, ms, qpcr, other]
+      channel_hint:
+        type: string
+      excitation_nm:
+        type: number
+      emission_nm:
+        type: number
 
   mechanism:
     type: object
     additionalProperties: false
-    required: [type, target]
+    required: [type, targets]
     properties:
       type:
         type: string
         enum: [agonist, antagonist, activator, inhibitor, inducer, suppressor, uncoupler, stabilizer, modulator, other]
-      target:
-        type: object
-        additionalProperties: false
-        required: [id, label]
-        properties:
-          id: { type: string }
-          label: { type: string }
+      targets:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [id, label]
+          properties:
+            id: { type: string }
+            label: { type: string }
   affected_process:
     type: object
     additionalProperties: false
@@ -65,6 +99,27 @@ properties:
     properties:
       id: { type: string }
       label: { type: string }
+
+  control_role:
+    type: string
+    enum: [positive, negative, vehicle]
+
+  control_for:
+    type: object
+    additionalProperties: false
+    properties:
+      features:
+        type: array
+        items:
+          type: string
+          pattern: "^feature:[a-z0-9_]+$"
+      acquisition_modalities:
+        type: array
+        items:
+          type: string
+          enum: [fluorescence, absorbance, luminescence, microscopy, ms, qpcr, other]
+      notes:
+        type: string
 
   xref:
     type: object

@@ -381,6 +381,10 @@ export function useRunEditorStore() {
     if (details.material_id === null || details.material_id === undefined || details.material_id === '') {
       delete details.material_id
     }
+    if (!details.material_revision) {
+      delete details.material_revision_label
+      delete details.material_revision_status
+    }
     delete details.source
     delete details.target
     next.details = details
@@ -744,6 +748,7 @@ export function useRunEditorStore() {
     if (!targets.length || !payload.material || !payload.role) return
     const eventPayload = buildTransferEvent({
       material: payload.material,
+      materialRevision: payload.material_revision || payload.materialRevision || '',
       role: payload.role,
       amount: payload.volume,
       stockConcentration: payload.concentration,
@@ -777,6 +782,7 @@ export function useRunEditorStore() {
     const sourceLabware =
       (options.sourceLabware && resolveLabwareRef(options.sourceLabware)) || resolveSourceLabwareRef()
     const materialId = options.material
+    const materialRevision = options.materialRevision || ''
     const volume = normalizeVolume(options.amount) || { value: 1, unit: 'uL' }
     const mapping = Array.isArray(options.mapping)
       ? options.mapping.map((entry) => ({
@@ -810,7 +816,14 @@ export function useRunEditorStore() {
         mapping: simplified.mapping,
         ...(mappingSpec ? { mapping_spec: mappingSpec } : {}),
         volume: simplified.volume,
-        ...(materialId ? { material_id: materialId } : {})
+        ...(materialId ? { material_id: materialId } : {}),
+        ...(options.materialRevision
+          ? {
+              material_revision: options.materialRevision,
+              material_revision_label: resolveMaterialLabel(options.materialRevision),
+              material_revision_status: 'active'
+            }
+          : {})
       }
     }
   }

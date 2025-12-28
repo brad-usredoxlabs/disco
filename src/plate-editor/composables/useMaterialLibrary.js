@@ -1,29 +1,21 @@
 import { computed, ref, watch } from 'vue'
 import YAML from 'yaml'
 import { ensureMaterialId } from '../utils/materialId'
+import { attachLatestRevision } from '../../vocab/materialResolver'
 
-const DEFAULT_SOURCES = [
-  { path: '/vocab/materials.core.yaml', optional: true },
-  { path: '/vocab/materials.lab.yaml', optional: true }
-]
+const DEFAULT_INDEX_PATH = '/vocab/materials.index.json'
+const DEFAULT_CONCEPT_DIR = '/vocab/materials'
+const DEFAULT_REVISION_DIR = '/vocab/material-revisions'
 
 export function useMaterialLibrary(repoConnection, options = {}) {
-  const sources = options.sources || DEFAULT_SOURCES
+  const indexPath = options.indexPath || DEFAULT_INDEX_PATH
+  const conceptDir = options.conceptDir || DEFAULT_CONCEPT_DIR
+  const revisionDir = options.revisionDir || DEFAULT_REVISION_DIR
   const entries = ref([])
   const status = ref('idle')
   const error = ref('')
   const lastLoadedAt = ref(null)
   const version = ref(0)
-
-  async function readSource(path, { optional = true } = {}) {
-    try {
-      const payload = await repoConnection.readFile(path)
-      return YAML.parse(payload) || []
-    } catch (err) {
-      if (optional) return []
-      throw new Error(`Failed to read ${path}: ${err?.message || err}`)
-    }
-  }
 
   async function reload() {
     if (!repoConnection?.directoryHandle?.value) {
@@ -35,28 +27,37 @@ export function useMaterialLibrary(repoConnection, options = {}) {
     status.value = 'loading'
     error.value = ''
     try {
-      const aggregated = []
-      const seenIds = new Set()
-      for (const source of sources) {
-        const sourcePath = typeof source === 'string' ? source : source?.path
-        if (!sourcePath) continue
-        const optional = typeof source === 'object' ? source.optional !== false : true
-        const list = await readSource(sourcePath, { optional })
-        list
-          .map((entry) => normalizeMaterialEntry(entry, sourcePath))
-          .filter(Boolean)
-          .forEach((entry) => {
-            if (seenIds.has(entry.id)) {
-              // Later sources override earlier ones
-              const index = aggregated.findIndex((item) => item.id === entry.id)
-              aggregated.splice(index, 1, entry)
-            } else {
-              aggregated.push(entry)
-              seenIds.add(entry.id)
-            }
-          })
+      // Option 1: load prebuilt index (fast path)
+      let materials = []
+      let usedIndex = false
+      try {
+        materials = await loadMaterialIndex(repoConnection, indexPath)
+        usedIndex = materials.length > 0
+      } catch (err) {
+        console.warn('[MaterialLibrary] Failed to load materials index, falling back to directories', err)
       }
-      entries.value = aggregated
+
+      let revisions = []
+      try {
+        revisions = await loadRevisionEntries(repoConnection, revisionDir)
+      } catch (err) {
+        console.warn('[MaterialLibrary] Failed to load revisions', err)
+      }
+
+      if (!usedIndex) {
+        const concepts = (await loadConceptEntries(repoConnection, conceptDir)).map((entry) =>
+          normalizeMaterialEntry(entry, conceptDir)
+        )
+        materials = concepts.filter(Boolean)
+      } else {
+        materials = materials.map((entry) => normalizeMaterialEntry(entry, indexPath)).filter(Boolean)
+      }
+
+      materials = attachLatestRevision(materials, revisions)
+
+      const normalized = materials
+
+      entries.value = normalized
       lastLoadedAt.value = new Date()
       version.value += 1
       status.value = 'ready'
@@ -86,6 +87,17 @@ export function useMaterialLibrary(repoConnection, options = {}) {
     },
     { immediate: true }
   )
+
+  if (repoConnection?.on) {
+    repoConnection.on('fs:write', () => {
+      reload()
+    })
+    repoConnection.on('fs:directoryNeedsRefresh', ({ path } = {}) => {
+      if (typeof path === 'string' && path.includes('/vocab/')) {
+        reload()
+      }
+    })
+  }
 
   return {
     entries,
@@ -123,6 +135,60 @@ function normalizeMaterialEntry(entry = {}, sourcePath = '') {
     defaults,
     searchTokens: buildSearchTokens({ id, label, tags, synonyms, xrefTokens }),
     __source: sourcePath
+  }
+}
+
+async function loadRevisionEntries(repoConnection, revisionDir) {
+  if (!repoConnection?.directoryHandle?.value || !repoConnection.listDir) return []
+  const entries = await repoConnection.listDir(revisionDir)
+  const files = entries.filter((entry) => entry.kind === 'file' && entry.name.endsWith('.yaml'))
+  const loaded = []
+  for (const file of files) {
+    try {
+      const text = await repoConnection.readFile(file.path)
+      const parsed = YAML.parse(text) || {}
+      loaded.push(parsed)
+    } catch (err) {
+      console.warn('[MaterialLibrary] Failed to read revision', file.path, err)
+    }
+  }
+  return loaded
+}
+
+async function loadConceptEntries(repoConnection, dir, { optional = true } = {}) {
+  if (!repoConnection?.directoryHandle?.value || !repoConnection.listDir) return []
+  try {
+    const entries = await repoConnection.listDir(dir)
+    const files = entries.filter((entry) => entry.kind === 'file' && entry.name.endsWith('.yaml'))
+    const loaded = []
+    for (const file of files) {
+      try {
+        const text = await repoConnection.readFile(file.path)
+        const parsed = YAML.parse(text) || {}
+        loaded.push(parsed)
+      } catch (err) {
+        console.warn('[MaterialLibrary] Failed to read material file', file.path, err)
+      }
+    }
+    return loaded
+  } catch (err) {
+    if (optional) return []
+    throw err
+  }
+}
+
+async function loadMaterialIndex(repoConnection, path) {
+  if (!repoConnection?.readFile) return []
+  try {
+    const payload = await repoConnection.readFile(path)
+    if (!payload) return []
+    return JSON.parse(payload) || []
+  } catch (err) {
+    const message = err?.message || ''
+    if (message.includes('ENOENT') || message.includes('NotFoundError')) {
+      return []
+    }
+    throw err
   }
 }
 

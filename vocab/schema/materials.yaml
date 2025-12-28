@@ -1,5 +1,6 @@
-name: materials.lab
-description: "Controlled vocabulary for run-editor materials (lab-local)"
+name: materials
+description: "Materials registry (concept/revision structure under vocab/materials/ and vocab/material-revisions/)"
+legacy_monolith_path: null  # Explicitly mark monolith removed
 
 bioportal_ontologies:
   - acronym: chebi      # chemicals, roles
@@ -20,44 +21,66 @@ validation:
     - id
     - label
     - category
-    - intents
+    - experimental_intents
   allowed_categories:
+    - reagent
+    - medium
+    - solvent
+    - buffer
+    - additive
+    - waste
+    - other
     - compound
     - dye
     - cell_line
     - media
-    - solvent
-    - buffer
-    - other
-  allowed_intents:
+  allowed_experimental_intents:
     - sample
     - treatment
     - assay_material
-    - positive_control
-    - negative_control
-    - vehicle_control
+    - control
+    - other
+  allowed_acquisition_modalities:
+    - fluorescence
+    - absorbance
+    - luminescence
+    - microscopy
+    - ms
+    - qpcr
     - other
   shape:
-    id: string
+    id:
+      type: string
+      pattern: "^material:[a-z0-9_]+$"
     label: string
     category: enum:allowed_categories
-    intents: list:allowed_intents
+    experimental_intents: list:allowed_experimental_intents
     tags: list:string
     xref: map:string
     classified_as: list:
       - id: string
         label: string
-        domain: enum:[taxon, cell_line, tissue, role, mechanism, compound]
-        source: enum:[NCBITaxon, CL, UBERON, NCIT, CHEBI]
-    measures: list:string
+        domain: enum:[taxon, cell_line, tissue]
+        source: enum:[NCBITaxon, CL, UBERON, local]
+    measures: list:string       # feature IDs
     mechanism:
       type: string
       targets: list:
         - id: string
           label: string
+    detection:
+      modality: enum:allowed_acquisition_modalities
+      channel_hint: string
+      excitation_nm: number
+      emission_nm: number
     affected_process:
       id: string
       label: string
+    control_role: enum:[positive, negative, vehicle]
+    control_for:
+      features: list:string              # feature IDs
+      acquisition_modalities: list:allowed_acquisition_modalities
+      notes: string
 
 display:
   label_format: "{label} ({id})"

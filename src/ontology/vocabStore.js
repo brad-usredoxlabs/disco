@@ -1,4 +1,5 @@
 import YAML from 'yaml'
+import { ensureMaterialId } from '../plate-editor/utils/materialId'
 
 const VOCAB_DIR = '/vocab'
 
@@ -38,6 +39,9 @@ function normalizeTerm(term) {
 export function createVocabStore(repoConnection) {
   async function readVocab(name) {
     if (!name) throw new Error('Vocab name is required')
+    if (name === 'materials') {
+      return readMaterialsVocab()
+    }
     try {
       const payload = await repoConnection.readFile(vocabPath(name))
       const parsed = YAML.parse(payload) || {}
@@ -49,6 +53,11 @@ export function createVocabStore(repoConnection) {
 
   async function writeVocab(name, data) {
     if (!name) throw new Error('Vocab name is required')
+    if (name === 'materials.lab' || name === 'materials') {
+      throw new Error(
+        'DEPRECATED: writeVocab() should not be used for materials. Use writeMaterialConcept/revision instead.'
+      )
+    }
     const normalized = hydrateVocab(name, data)
     await repoConnection.writeFile(vocabPath(name), YAML.stringify(normalized))
     return normalized
@@ -127,5 +136,79 @@ export function createVocabStore(repoConnection) {
     findCachedTerm,
     findLocalTerm,
     vocabPath
+  }
+
+  async function readMaterialsVocab() {
+    const base = defaultVocab('materials')
+    try {
+      const entries = await loadMaterialsFromIndexOrDirs()
+      base.local_extensions = entries
+      Object.defineProperty(base, '__missing', {
+        value: false,
+        enumerable: false,
+        configurable: true
+      })
+      return base
+    } catch {
+      return defaultVocab('materials', { missing: true })
+    }
+  }
+
+  async function loadMaterialsFromIndexOrDirs() {
+    // Fast path: index
+    try {
+      const text = await repoConnection.readFile('/vocab/materials.index.json')
+      if (text) {
+        const parsed = JSON.parse(text) || []
+        return parsed.map(toOntologyEntry).filter(Boolean)
+      }
+    } catch (err) {
+      const msg = err?.message || ''
+      const name = err?.name || ''
+      if (!(msg.includes('ENOENT') || msg.includes('NotFoundError') || name === 'NotFoundError')) {
+        throw err
+      }
+    }
+
+    // Fallback: scan concept dir
+    try {
+      const entries = await repoConnection.listDir('/vocab/materials')
+      const files = entries.filter((entry) => entry.kind === 'file' && entry.name.endsWith('.yaml'))
+      const out = []
+      for (const file of files) {
+        try {
+          const text = await repoConnection.readFile(file.path)
+          const parsed = YAML.parse(text) || {}
+          const entry = toOntologyEntry(parsed)
+          if (entry) out.push(entry)
+        } catch {
+          // ignore bad file
+        }
+      }
+      return out
+    } catch (err) {
+      const msg = err?.message || ''
+      const name = err?.name || ''
+      if (msg.includes('ENOENT') || msg.includes('NotFoundError') || name === 'NotFoundError') {
+        return []
+      }
+      throw err
+    }
+  }
+
+  function toOntologyEntry(entry = {}) {
+    const label = (entry.label || entry.id || '').trim()
+    if (!label) return null
+    const id = ensureMaterialId(entry.id || label)
+    const tags = Array.isArray(entry.tags)
+      ? entry.tags.map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : '')).filter(Boolean)
+      : []
+    return {
+      id,
+      label,
+      source: 'materials',
+      tags,
+      cached_at: new Date().toISOString()
+    }
   }
 }

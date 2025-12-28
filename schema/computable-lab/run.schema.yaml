@@ -349,6 +349,25 @@ definitions:
           Examples: 'imaging_cell_count', 'plate_reader_fluorescence', 'qpcr', 'gcms_metabolomics'.
         minLength: 1
 
+      modality:
+        type: string
+        description: "Primary acquisition modality."
+        enum: [fluorescence, absorbance, luminescence, microscopy, ms, qpcr, other]
+
+      features_measured:
+        type: array
+        description: "Feature IDs measured or indicated by this acquisition (align to vocab/features.yaml)."
+        items:
+          type: string
+          pattern: "^feature:[a-z0-9_]+$"
+
+      materials_used:
+        type: array
+        description: "Material IDs used in the acquisition (e.g., dyes, assay reagents)."
+        items:
+          type: string
+          pattern: "^material:[a-z0-9_]+$"
+
       instrument:
         type: string
         description: "Instrument @id or label (plate reader, microscope, qPCR machine, GC-MS)."

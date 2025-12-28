@@ -1,0 +1,207 @@
+[
+  {
+    "id": "material:chebi_3750",
+    "label": "clofibrate",
+    "category": "reagent",
+    "tags": [
+      "ppara"
+    ],
+    "latest_revision_id": "materialrev:chebi-3750@20251227T194138Z",
+    "latest_revision_status": "active",
+    "latest_revision": {
+      "id": "materialrev:chebi-3750@20251227T194138Z",
+      "of_material": "material:chebi_3750",
+      "revision": 1,
+      "status": "active",
+      "created_at": "20251227T194138Z",
+      "created_by": "user",
+      "changes_summary": "New revision",
+      "label": "clofibrate",
+      "category": "reagent",
+      "experimental_intents": [
+        "treatment"
+      ],
+      "tags": [
+        "ppara"
+      ],
+      "xref": {
+        "chebi": "CHEBI:3750"
+      },
+      "aliases": [],
+      "classified_as": [],
+      "mechanism": {
+        "type": "agonist",
+        "targets": [
+          {
+            "id": "NCIT:C91751",
+            "label": "PPARa Agonist"
+          }
+        ]
+      },
+      "affected_process": {
+        "id": "GO:0034626",
+        "label": "fatty acid elongation, polyunsaturated fatty acid"
+      },
+      "measures": [],
+      "detection": {
+        "modality": "",
+        "channel_hint": "",
+        "excitation_nm": "",
+        "emission_nm": ""
+      },
+      "control_role": "",
+      "control_for": {
+        "features": [],
+        "acquisition_modalities": [],
+        "notes": ""
+      }
+    }
+  },
+  {
+    "id": "material:example",
+    "label": "Example material",
+    "category": "reagent",
+    "tags": [],
+    "latest_revision_id": "materialrev:example@20250101T000000",
+    "latest_revision_status": "active",
+    "latest_revision": {
+      "id": "materialrev:example@20250101T000000",
+      "of_material": "material:example",
+      "revision": 1,
+      "status": "active",
+      "created_at": "2025-01-01T00:00:00Z",
+      "created_by": "system",
+      "changes_summary": "Initial snapshot example",
+      "label": "Example material",
+      "category": "reagent",
+      "experimental_intents": [],
+      "tags": [],
+      "xref": {},
+      "classified_as": [],
+      "mechanism": {},
+      "affected_process": {},
+      "measures": [],
+      "detection": {},
+      "control_role": "",
+      "control_for": {}
+    }
+  },
+  {
+    "id": "material:fenofibrate",
+    "label": "fenofibrate",
+    "category": "reagent",
+    "tags": [],
+    "latest_revision_id": "materialrev:fenofibrate@20251227T201026Z",
+    "latest_revision_status": "active",
+    "latest_revision": {
+      "id": "materialrev:fenofibrate@20251227T201026Z",
+      "of_material": "material:fenofibrate",
+      "revision": 1,
+      "status": "active",
+      "created_at": "20251227T201026Z",
+      "created_by": "user",
+      "changes_summary": "New revision",
+      "label": "Fenofibrate",
+      "category": "reagent",
+      "experimental_intents": [
+        "treatment"
+      ],
+      "tags": [
+        "ppara",
+        "d6d",
+        "d5d",
+        "agonist"
+      ],
+      "xref": {
+        "ncit": "NCIT:C29047"
+      },
+      "aliases": [],
+      "classified_as": [],
+      "mechanism": {
+        "type": "agonist",
+        "targets": [
+          {
+            "id": "NCIT:C91751",
+            "label": "PPARa"
+          }
+        ]
+      },
+      "affected_process": {
+        "id": "GO:0034625",
+        "label": "fatty acid elongation, monounsaturated fatty acid"
+      },
+      "measures": [],
+      "detection": {
+        "modality": "",
+        "channel_hint": "",
+        "excitation_nm": "",
+        "emission_nm": ""
+      },
+      "control_role": "",
+      "control_for": {
+        "features": [],
+        "acquisition_modalities": [],
+        "notes": ""
+      }
+    }
+  },
+  {
+    "id": "material:fenofibrate2",
+    "label": "fenofibrate2",
+    "category": "reagent",
+    "tags": [],
+    "latest_revision_id": "materialrev:fenofibrate2@20251227T202833Z",
+    "latest_revision_status": "active",
+    "latest_revision": {
+      "id": "materialrev:fenofibrate2@20251227T202833Z",
+      "of_material": "material:fenofibrate2",
+      "revision": 1,
+      "status": "active",
+      "created_at": "20251227T202833Z",
+      "created_by": "user",
+      "changes_summary": "New revision",
+      "label": "fenofibrate2",
+      "category": "reagent",
+      "experimental_intents": [
+        "sample"
+      ],
+      "tags": [],
+      "xref": {
+        "chebi": "CHEBI:5001"
+      },
+      "aliases": [],
+      "classified_as": [
+        {
+          "id": "NCBITaxon:9606",
+          "label": "Homo sapiens",
+          "domain": "taxon",
+          "source": "ncbitaxon"
+        },
+        {
+          "id": "NCIT:C12392",
+          "label": "Liver",
+          "domain": "tissue",
+          "source": "ncit"
+        }
+      ],
+      "mechanism": {
+        "type": "",
+        "targets": []
+      },
+      "affected_process": {},
+      "measures": [],
+      "detection": {
+        "modality": "",
+        "channel_hint": "",
+        "excitation_nm": "",
+        "emission_nm": ""
+      },
+      "control_role": "",
+      "control_for": {
+        "features": [],
+        "acquisition_modalities": [],
+        "notes": ""
+      }
+    }
+  }
+]

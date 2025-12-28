@@ -32,6 +32,19 @@ properties:
     type: string
     description: "Material identifier from the material library."
 
+  material_revision:
+    type: string
+    description: "Material revision identifier (immutable)."
+    pattern: "^materialrev:[a-z0-9_:-]+@[0-9T]+$"
+
+  material_revision_label:
+    type: string
+    description: "Optional cached revision label for display."
+
+  material_revision_status:
+    type: string
+    description: "Optional cached revision status."
+
   stock_concentration:
     type: object
     description: "Optional override of stock concentration."

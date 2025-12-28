@@ -38,4 +38,14 @@ properties:
     type: string
     description: "Optional recipe id within that protocol (e.g. 'gel_mix', 'running_buffer')."
 
+  material_id:
+    type: string
+    description: "Optional material concept id (material:...)."
+    pattern: "^material:[a-z0-9_:-]+$"
+
+  material_revision:
+    type: string
+    description: "Optional material revision id to pin immutable snapshot."
+    pattern: "^materialrev:[a-z0-9_:-]+@[0-9T]+$"
+
 additionalProperties: false

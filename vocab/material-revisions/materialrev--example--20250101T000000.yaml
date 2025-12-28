@@ -1,0 +1,21 @@
+id: materialrev:example@20250101T000000
+of_material: material:example
+revision: 1
+status: active  # draft | active | deprecated
+created_at: 2025-01-01T00:00:00Z
+created_by: system
+changes_summary: "Initial snapshot example"
+
+# Snapshot fields
+label: Example material
+category: reagent
+experimental_intents: []
+tags: []
+xref: {}
+classified_as: []
+mechanism: {}
+affected_process: {}
+measures: []
+detection: {}
+control_role: ""
+control_for: {}

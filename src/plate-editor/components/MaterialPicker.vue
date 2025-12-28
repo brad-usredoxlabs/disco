@@ -24,7 +24,9 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['select', 'favorite-toggle', 'request-create', 'request-edit'])
+const emit = defineEmits(['select', 'favorite-toggle', 'request-create', 'request-edit', 'request-revision'])
+const selectedRevision = ref('')
+const revisionOverrides = ref({})
 
 const activeTab = ref('search')
 
@@ -79,12 +81,9 @@ const activeFilters = ref([])
 
 watch(
   () => props.role,
-  (role) => {
-    if (role && ROLE_TAG_PRIORITIES[role]) {
-      activeFilters.value = [...ROLE_TAG_PRIORITIES[role]]
-    } else {
-      activeFilters.value = []
-    }
+  () => {
+    // Do not auto-apply tag filters; keep search local-first and let users opt into filters.
+    activeFilters.value = []
   },
   { immediate: true }
 )
@@ -123,7 +122,11 @@ watch(
 
 function handleSelect(item) {
   if (!item) return
-  emit('select', item)
+  const rev = revisionOverrides.value[item.id] || item.material_revision || item.latest_revision_id
+  emit('select', {
+    ...item,
+    material_revision: rev || ''
+  })
 }
 
 function handleFavorite(item, event) {
@@ -318,7 +321,49 @@ function buildCreationTags() {
           <p class="result-meta">
             <span v-html="highlightText(material.id)"></span>
             <span v-if="material.tags?.length"> · {{ material.tags.slice(0, 3).join(', ') }}</span>
+            <span v-if="material.latest_revision_id">
+              · rev: <strong>{{ material.latest_revision_id }}</strong>
+              <span class="pill" :class="`status-${material.latest_revision_status || 'unknown'}`">
+                {{ material.latest_revision_status || 'unknown' }}
+              </span>
+            </span>
           </p>
+          <p v-if="material.latest_revision?.changes_summary" class="result-note">
+            {{ material.latest_revision.changes_summary }}
+          </p>
+          <div v-if="material.latest_revision_id" class="revision-row">
+            <label>
+              Revision ID
+              <input
+                type="text"
+                readonly
+                :value="material.latest_revision_id"
+                @click.stop
+              />
+            </label>
+            <label>
+              Use a different revision (optional)
+              <input
+                type="text"
+                :value="revisionOverrides[material.id] || ''"
+                placeholder="materialrev:... or leave blank"
+                @click.stop
+                @input="(e) => (revisionOverrides[material.id] = e.target.value)"
+              />
+            </label>
+            <button
+              class="text-button"
+              type="button"
+              @click.stop="
+                emit('select', {
+                  ...material,
+                  material_revision: revisionOverrides[material.id] || material.latest_revision_id
+                })
+              "
+            >
+              Use this revision
+            </button>
+          </div>
         </div>
         <div class="row-actions">
           <button
@@ -331,6 +376,9 @@ function buildCreationTags() {
           </button>
           <button class="text-button" type="button" @click="(event) => handleEdit(material, event)">
             Edit
+          </button>
+          <button class="text-button" type="button" @click.stop="emit('request-revision', material)">
+            New revision
           </button>
         </div>
       </li>
@@ -455,6 +503,38 @@ input {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid #cbd5f5;
+}
+
+.status-active {
+  background: #ecfdf3;
+  border-color: #4ade80;
+  color: #166534;
+}
+
+.status-draft {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.status-deprecated {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.result-note {
+  margin: 0.1rem 0 0;
+  color: #475569;
+  font-size: 0.85rem;
 }
 
 .text-button {
