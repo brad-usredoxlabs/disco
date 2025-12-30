@@ -1,6 +1,7 @@
 <script setup>
 import BaseModal from '../../ui/modal/BaseModal.vue'
 import RecordCreatorModal from '../RecordCreatorModal.vue'
+import AssertionModal from '../../assertions/AssertionModal.vue'
 
 defineProps({
   shouldShowModal: { type: Boolean, default: false },
@@ -15,6 +16,10 @@ defineProps({
   explorerLabwareId: { type: String, default: '' },
   showRunEditorModal: { type: Boolean, default: false },
   runEditorFilePath: { type: String, default: '' },
+  showAssertionModal: { type: Boolean, default: false },
+  assertionInvokedFrom: { type: String, default: '' },
+  assertionContext: { type: Object, default: () => ({}) },
+  namespacingConfig: { type: Object, default: () => ({}) },
   showCreator: { type: Boolean, default: false },
   creatorContext: { type: Object, default: null },
   repo: { type: Object, required: true },
@@ -37,6 +42,8 @@ const emit = defineEmits([
   'close-run-editor',
   'open-run-editor',
   'update:runEditorFilePath',
+  'close-assertion',
+  'save-assertion',
   'close-creator',
   'record-created'
 ])
@@ -68,6 +75,14 @@ const emit = defineEmits([
         <label>
           Ontology cache duration (days)
           <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
+        </label>
+        <label>
+          Namespace base IRI
+          <input v-model="settingsForm.baseIri" type="text" placeholder="https://example.org/computable-lab" />
+        </label>
+        <label>
+          CURIE prefix
+          <input v-model="settingsForm.curiePrefix" type="text" placeholder="usrl" />
         </label>
         <label>
           Local namespace (provenance)
@@ -181,6 +196,16 @@ const emit = defineEmits([
       </button>
     </template>
   </BaseModal>
+
+  <AssertionModal
+    v-if="showAssertionModal"
+    :open="showAssertionModal"
+    :invoked-from="assertionInvokedFrom"
+    :context="assertionContext"
+    :namespacing-config="namespacingConfig"
+    @close="emit('close-assertion')"
+    @save="emit('save-assertion', $event)"
+  />
 
   <component
     v-if="showCreator"

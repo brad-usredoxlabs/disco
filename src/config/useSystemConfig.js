@@ -9,6 +9,10 @@ function defaultConfig() {
     ontology: {
       cache_duration: 30
     },
+    namespacing: {
+      base_iri: '',
+      curie_prefix: ''
+    },
     provenance: {
       local_namespace: ''
     },
@@ -100,6 +104,10 @@ export function useSystemConfig(repoConnection) {
         ...base.ontology,
         ...(userConfig.ontology || {})
       },
+      namespacing: {
+        ...base.namespacing,
+        ...(userConfig.namespacing || {})
+      },
       features: {
         ...base.features,
         ...(userConfig.features || {})
@@ -126,6 +134,14 @@ export function useSystemConfig(repoConnection) {
     }
   })
 
+  const namespacingConfig = computed(() => {
+    const source = config.value?.namespacing || {}
+    return {
+      baseIri: source.base_iri || source.baseIri || '',
+      curiePrefix: source.curie_prefix || source.curiePrefix || ''
+    }
+  })
+
   const provenanceConfig = computed(() => {
     const source = config.value?.provenance || {}
     return {
@@ -144,6 +160,10 @@ export function useSystemConfig(repoConnection) {
       ontology: {
         ...(config.value?.ontology || {}),
         ...(partial.ontology || {})
+      },
+      namespacing: {
+        ...(config.value?.namespacing || {}),
+        ...(partial.namespacing || {})
       },
       provenance: {
         ...(config.value?.provenance || {}),
@@ -176,6 +196,7 @@ export function useSystemConfig(repoConnection) {
     error,
     lastLoadedAt,
     ontologyConfig,
+    namespacingConfig,
     provenanceConfig,
     vendorConfig,
     reload: loadConfig,

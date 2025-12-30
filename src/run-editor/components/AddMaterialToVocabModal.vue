@@ -640,8 +640,12 @@ function addIntentMeasure(featureId) {
 }
 
 function handleMeasureSelect(value) {
-  addIntentMeasure(value)
-  measureInput.value = ''
+  measureInput.value = value
+  // Only clear and add if it's a valid existing feature
+  if (value && featureOptionIds.value.includes(value)) {
+    addIntentMeasure(value)
+    measureInput.value = ''
+  }
 }
 
 function removeIntentMeasure(featureId) {
@@ -657,8 +661,12 @@ function addIntentControlFeature(featureId) {
 }
 
 function handleControlFeatureSelect(value) {
-  addIntentControlFeature(value)
-  controlFeatureInput.value = ''
+  controlFeatureInput.value = value
+  // Only clear and add if it's a valid existing feature
+  if (value && featureOptionIds.value.includes(value)) {
+    addIntentControlFeature(value)
+    controlFeatureInput.value = ''
+  }
 }
 
 function removeIntentControlFeature(featureId) {

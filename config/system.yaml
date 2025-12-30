@@ -1,10 +1,10 @@
 ontology:
-  cache_duration: 30 # days
+  cache_duration: 90
 namespacing:
   base_iri: ""
   curie_prefix: ""
 provenance:
-  local_namespace: "urn:local"
+  local_namespace: urn:computable-lab
 features:
   graphTree: true
   graphQueries: false

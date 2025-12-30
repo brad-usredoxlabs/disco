@@ -26,6 +26,7 @@ recordSchemas:
   - datatypes/protocol-event.read.schema.yaml
   - datatypes/protocol-event.wash.schema.yaml
   - datatypes/protocol-event.other.schema.yaml
+  - assertion.schema.yaml
   - recipe.schema.yaml
   - protocol.schema.yaml
   - library-layout.schema.yaml

@@ -34,6 +34,7 @@ const emit = defineEmits([
   'open-promotion',
   'open-explorer',
   'open-run-editor',
+  'open-assertion',
   'graph-create',
   'graph-open-tiptap',
   'graph-open-protocol',
@@ -95,6 +96,9 @@ const handleSelectRootType = (event) => {
           </button>
           <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-run-editor')">
             Open Run Editor
+          </button>
+          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-assertion')">
+            Add assertion
           </button>
         </div>
       </div>

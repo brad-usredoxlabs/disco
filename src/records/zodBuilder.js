@@ -40,6 +40,12 @@ export function buildZodSchema(schemaNode, context) {
       return cache.get(node)
     }
 
+    if (Object.prototype.hasOwnProperty.call(node, 'const')) {
+      const literalSchema = z.literal(node.const)
+      cache.set(node, literalSchema)
+      return literalSchema
+    }
+
     if (node.$ref) {
       const resolved = resolveRef(node.$ref)
       if (!resolved) {

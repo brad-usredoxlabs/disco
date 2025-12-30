@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch, reactive } from 'vue'
+import { computed, ref, watch, reactive, onMounted, onBeforeUnmount } from 'vue'
 import TiptapStandalone from './shell/standalone/TiptapStandalone.vue'
 import SettingsStandalone from './shell/standalone/SettingsStandalone.vue'
 import PlateEditorStandalone from './shell/standalone/PlateEditorStandalone.vue'
@@ -11,6 +11,7 @@ import ShellLayout from './shell/ShellLayout.vue'
 import ShellNavBar from './shell/ShellNavBar.vue'
 import WorkspaceHost from './shell/WorkspaceHost.vue'
 import ShellOverlays from './shell/ShellOverlays.vue'
+import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { resolveLayoutIndex } from '../plate-editor/utils/layoutResolver'
 import { useMaterialLibrary } from '../plate-editor/composables/useMaterialLibrary'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
@@ -24,7 +25,6 @@ import { useRecordValidator } from '../records/recordValidator'
 import { useSystemConfig } from '../config/useSystemConfig'
 import { configureOntologyService } from '../ontology/service'
 import { useOfflineStatus } from '../composables/useOfflineStatus'
-import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { buildZodSchema } from '../records/zodBuilder'
 import { promoteEvents, mappingFromTarget, resolveRole, buildProtocolFrontmatter } from './promotionUtils'
 import { useStandaloneTargets } from './shell/composables/useStandaloneTargets'
@@ -33,6 +33,7 @@ import { useRunEditorState } from './shell/composables/useRunEditorState'
 import { usePromotionWorkflow } from './shell/composables/usePromotionWorkflow'
 import { useRecordCreation } from './shell/composables/useRecordCreation'
 import { useSettingsModal } from './shell/composables/useSettingsModal'
+import { assertionFilename } from '../assertions/assertionUtils'
 import {
   openTipTapWindow,
   openPlateEditorWindow,
@@ -40,6 +41,7 @@ import {
   openRunEditorWindow,
   openFileInspectorWindow
 } from './shell/utils/windowOpeners'
+import AssertionModal from '../assertions/AssertionModal.vue'
 
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
@@ -195,9 +197,13 @@ const {
 
 const rootNodes = tree.rootNodes
 const isTreeBootstrapping = tree.isBootstrapping
+const namespacingConfig = computed(() => systemConfig.namespacingConfig?.value || {})
 
 // Additional reactive state
 const showPrompt = ref(true)
+const showAssertionModal = ref(false)
+const assertionInvokedFrom = ref('')
+const assertionContext = ref({})
 const tiptapStatus = ref('')
 const inspectorStatus = ref('')
 const shouldShowModal = computed(() => showPrompt.value && !repo.directoryHandle.value && !repo.isRestoring.value)
@@ -662,6 +668,127 @@ function handleCreateProtocol() {
     simpleMode: true
   })
 }
+
+function inferContextFromActivePath() {
+  const path = activeRecordPath.value || ''
+  if (!path) return { invokedFrom: 'global_assertions_browser', context: {} }
+  const normalized = path.toLowerCase()
+  if (normalized.includes('/runs/')) {
+    return { invokedFrom: 'run_editor', context: { path } }
+  }
+  if (normalized.includes('/experiments/')) {
+    return { invokedFrom: 'experiment_editor', context: { path } }
+  }
+  if (normalized.includes('/projects/')) {
+    return { invokedFrom: 'project_editor', context: { path } }
+  }
+  return { invokedFrom: 'global_assertions_browser', context: {} }
+}
+
+async function buildAssertionContextFromPath(path) {
+  if (!path) return null
+  try {
+    const raw = await repo.readFile(path)
+    const { data } = parseFrontMatter(raw)
+    const recordId = data?.['@id'] || data?.id || data?.recordId || data?.record_id || data?.identifier || ''
+    const recordType = data?.recordType || data?.kind || ''
+    const scope = {}
+    if (recordType === 'run') scope.run = recordId
+    if (recordType === 'experiment') scope.experiment = recordId
+    if (recordType === 'project') scope.project = recordId
+    return { path, recordId, recordType, scope }
+  } catch (err) {
+    console.warn('[Assertion] Failed to build context from path', path, err)
+    return { path }
+  }
+}
+
+async function handleOpenAssertion(invokedFrom = 'global_assertions_browser', context = {}) {
+  const inferred = inferContextFromActivePath()
+  let resolvedContext = Object.keys(context || {}).length ? { ...context } : { ...inferred.context }
+  if (resolvedContext.path) {
+    const enriched = await buildAssertionContextFromPath(resolvedContext.path)
+    if (enriched?.scope) {
+      resolvedContext = { ...resolvedContext, ...enriched.scope, recordId: enriched.recordId, recordType: enriched.recordType }
+      if (!invokedFrom || invokedFrom === 'global_assertions_browser') {
+        if (enriched.recordType === 'run') invokedFrom = 'run_editor'
+        else if (enriched.recordType === 'experiment') invokedFrom = 'experiment_editor'
+        else if (enriched.recordType === 'project') invokedFrom = 'project_editor'
+      }
+    }
+  }
+  assertionInvokedFrom.value = invokedFrom || inferred.invokedFrom
+  assertionContext.value = resolvedContext
+  showAssertionModal.value = true
+}
+
+function handleCloseAssertion() {
+  showAssertionModal.value = false
+}
+
+function handleQuickAddAssertion() {
+  handleOpenAssertion('quick_add_command_palette', {})
+}
+
+async function handleSaveAssertion(payload) {
+  if (!payload?.ok) {
+    console.warn('[AssertionModal] Save failed', payload?.error)
+    return
+  }
+  const { assertion, storage } = payload
+  try {
+    const embedRecommended = storage?.embedRecommended
+    const hasPath = assertionContext.value?.path || activeRecordPath.value
+    const preferEmbed = embedRecommended && hasPath
+    const mode = preferEmbed ? 'embedded' : storage?.mode || 'embedded'
+
+    if (mode === 'standalone_record') {
+      if (embedRecommended && !hasPath) {
+        console.warn('[AssertionModal] Standalone blocked due to well/run scope; no embedding context available.')
+        return
+      }
+      const targetPath = `/${assertionFilename(assertion['@id'])}`
+      const content = serializeFrontMatter(assertion, '')
+      await repo.writeFile(targetPath, content)
+    } else if (hasPath) {
+      const targetPath = assertionContext.value?.path || activeRecordPath.value
+      const raw = await repo.readFile(targetPath)
+      const { data, body } = parseFrontMatter(raw)
+      const nextData = { ...(data || {}) }
+      const list = Array.isArray(nextData.assertions) ? nextData.assertions.slice() : []
+      list.push(assertion)
+      nextData.assertions = list
+      const content = serializeFrontMatter(nextData, body || '')
+      await repo.writeFile(targetPath, content)
+    } else {
+      console.warn('[AssertionModal] No target context for embedding; assertion not saved.')
+      return
+    }
+    showAssertionModal.value = false
+    recordGraph?.rebuild?.()
+    searchIndex?.rebuild?.()
+  } catch (err) {
+    console.error('[AssertionModal] Failed to save assertion', err)
+  }
+}
+
+// Quick-add command palette shortcut (Ctrl/Cmd + Shift + A)
+function handleKeydown(event) {
+  const isMac = /Mac|iPod|iPhone|iPad/.test(window.navigator?.platform || '')
+  const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey
+  if (cmdOrCtrl && event.shiftKey && event.key?.toLowerCase() === 'a') {
+    event.preventDefault()
+    handleQuickAddAssertion()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <template>
@@ -818,6 +945,7 @@ function handleCreateProtocol() {
       @open-promotion="openPromotionModal"
       @open-explorer="showExplorerModal = true"
       @open-run-editor="showRunEditorModal = true"
+      @open-assertion="handleOpenAssertion('global_assertions_browser', {})"
       @graph-create="handleGraphCreate"
       @graph-open-tiptap="handleGraphOpenTipTap"
       @graph-open-protocol="handleGraphOpenProtocol"
@@ -841,6 +969,10 @@ function handleCreateProtocol() {
       :run-editor-file-path="runEditorFilePath"
       :show-creator="showCreator"
       :creator-context="creatorContext"
+      :show-assertion-modal="showAssertionModal"
+      :assertion-invoked-from="assertionInvokedFrom"
+      :assertion-context="assertionContext"
+      :namespacing-config="namespacingConfig"
       :schema-loader="schemaLoader"
       :workflow-loader="workflowLoader"
       :record-graph="recordGraph"
@@ -859,6 +991,8 @@ function handleCreateProtocol() {
       @update:run-editor-file-path="(val) => (runEditorFilePath = val)"
       @close-creator="closeCreator"
       @record-created="handleRecordCreated"
+      @close-assertion="handleCloseAssertion"
+      @save-assertion="handleSaveAssertion"
     />
   </ShellLayout>
 </template>

@@ -118,3 +118,9 @@ properties:
       entities:
         $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
     additionalProperties: false
+
+  assertions:
+    type: array
+    description: "Embedded assertions associated with this project."
+    items:
+      $ref: "./assertion.schema.yaml"

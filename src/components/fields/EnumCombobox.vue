@@ -65,6 +65,7 @@ function handleFocus() {
 
 function handleInput(event) {
   query.value = event.target.value
+  emit('update:modelValue', query.value)
   openDropdown()
 }
 

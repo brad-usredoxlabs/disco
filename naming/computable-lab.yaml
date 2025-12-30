@@ -1,7 +1,7 @@
 project:
   idField: "id"
   shortSlugField: "shortSlug"
-  baseDir: "02_PROJECTS"
+  baseDir: "projects"
   filenamePattern: "{{id}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "PRJ"
@@ -11,7 +11,7 @@ project:
 experiment:
   idField: "id"
   shortSlugField: "shortSlug"
-  baseDir: "07_EXPERIMENTS"
+  baseDir: "experiments"
   filenamePattern: "{{projectShortSlug}}_{{shortSlug}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "EXP"
@@ -26,7 +26,7 @@ experiment:
 
 run:
   idField: "id"
-  baseDir: "08_RUNS"
+  baseDir: "runs"
   filenamePattern: "{{id}}_{{experimentShortSlug}}_{{date}}.md"
   idGeneration:
     prefix: "RUN"
@@ -41,7 +41,7 @@ run:
 
 plateLayout:
   idField: "id"
-  baseDir: "09_PLATE_LAYOUTS"
+  baseDir: "plate_layouts"
   filenamePattern: "{{id}}_{{runId}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "PLT"
@@ -50,7 +50,7 @@ plateLayout:
 
 recipe:
   idField: "id"
-  baseDir: "05_RECIPES"
+  baseDir: "recipes"
   filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "REC"
@@ -59,7 +59,7 @@ recipe:
 
 protocol:
   idField: "id"
-  baseDir: "06_PROTOCOLS"
+  baseDir: "protocols"
   filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "PRO"

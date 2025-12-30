@@ -26,6 +26,7 @@ async function main() {
   }
   const validators = buildValidators(bundle.recordSchemas)
   const docs = []
+  const jsonLdNodes = []
 
   for (const [recordType, config] of Object.entries(naming)) {
     if (!config?.baseDir) continue
@@ -41,13 +42,17 @@ async function main() {
         validator: validators[recordType]
       })
       if (result) {
-        docs.push(result)
+        if (result.doc) docs.push(result.doc)
+        if (Array.isArray(result.nodes)) {
+          jsonLdNodes.push(...result.nodes)
+        }
       }
     }
   }
 
   docs.sort((a, b) => a.id.localeCompare(b.id))
   await writeShards(docs, bundleName)
+  await writeJsonLdIndexes(jsonLdNodes, bundleName)
   console.log(`Indexed ${docs.length} record(s) into ${Math.max(1, Math.ceil(docs.length / MAX_DOCS_PER_SHARD))} shard(s).`)
 }
 
@@ -101,7 +106,8 @@ async function processRecord({ filePath, relativePath, inferredType, bundle, val
     relativePath,
     body
   })
-  return indexDoc
+  const nodes = buildJsonLdNodes({ jsonLdNode, normalizedFrontMatter, relativePath, recordType })
+  return { doc: indexDoc, nodes }
 }
 
 function enforceBiologyRequirements({ recordType, schemaPayload, relativePath, bundle }) {
@@ -167,6 +173,28 @@ function buildIndexDoc({ jsonLdNode, recordType, schemaPayload, relativePath, bo
   return doc
 }
 
+export function buildJsonLdNodes({ jsonLdNode, normalizedFrontMatter, relativePath, recordType }) {
+  const nodes = []
+  nodes.push({
+    ...jsonLdNode,
+    recordType,
+    path: relativePath
+  })
+  const assertions = Array.isArray(normalizedFrontMatter.assertions) ? normalizedFrontMatter.assertions : []
+  assertions.forEach((assertion) => {
+    if (!assertion || typeof assertion !== 'object') return
+    const assertionId = assertion['@id'] || assertion.id
+    if (!assertionId) return
+    nodes.push({
+      ...assertion,
+      recordType: 'assertion',
+      parent: jsonLdNode['@id'] || '',
+      recordPath: relativePath
+    })
+  })
+  return nodes
+}
+
 function buildSearchText(jsonLdNode, body = '') {
   const parts = []
   Object.entries(jsonLdNode || {}).forEach(([key, value]) => {
@@ -181,6 +209,17 @@ function buildSearchText(jsonLdNode, body = '') {
   })
   parts.push(body || '')
   return parts.join('\n').toLowerCase()
+}
+
+async function writeJsonLdIndexes(nodes = [], bundleName) {
+  const dir = path.join(projectRoot, '_index', 'jsonld')
+  await fs.mkdir(dir, { recursive: true })
+  const flattenedPath = path.join(dir, 'records.flattened.jsonld')
+  const compactedPath = path.join(dir, 'records.compacted.jsonld')
+  const sorted = [...nodes].sort((a, b) => String(a['@id'] || a.id || '').localeCompare(String(b['@id'] || b.id || '')))
+  await fs.writeFile(flattenedPath, JSON.stringify(sorted, null, 2), 'utf8')
+  await fs.writeFile(compactedPath, JSON.stringify(sorted, null, 2), 'utf8')
+  console.log(`[build-index] Wrote ${sorted.length} JSON-LD node(s) to ${dir} for bundle ${bundleName}.`)
 }
 
 function pickId(value) {

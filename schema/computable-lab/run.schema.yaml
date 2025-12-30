@@ -85,6 +85,12 @@ properties:
     items:
       $ref: "#/definitions/file_ref"
 
+  assertions:
+    type: array
+    description: "Embedded assertions associated with this run."
+    items:
+      $ref: "./assertion.schema.yaml"
+
 additionalProperties: false
 
 definitions:

@@ -39,6 +39,22 @@ const handleSave = () => emit('save')
           <input v-model.number="settingsForm.cacheDuration" type="number" min="1" />
         </label>
         <label>
+          Namespace base IRI
+          <input
+            v-model="settingsForm.baseIri"
+            type="text"
+            placeholder="https://example.org/computable-lab"
+          />
+        </label>
+        <label>
+          CURIE prefix
+          <input
+            v-model="settingsForm.curiePrefix"
+            type="text"
+            placeholder="usrl"
+          />
+        </label>
+        <label>
           Local namespace (provenance)
           <input
             v-model="settingsForm.localNamespace"

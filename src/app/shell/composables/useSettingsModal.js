@@ -16,6 +16,8 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
   const settingsError = ref('')
   const settingsForm = reactive({
     cacheDuration: 30,
+    baseIri: '',
+    curiePrefix: '',
     localNamespace: '',
     vendors: []
   })
@@ -58,6 +60,10 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
         ontology: {
           cache_duration: Number(settingsForm.cacheDuration) || 30
         },
+        namespacing: {
+          base_iri: settingsForm.baseIri || '',
+          curie_prefix: settingsForm.curiePrefix || ''
+        },
         provenance: {
           local_namespace: settingsForm.localNamespace || ''
         },
@@ -78,6 +84,9 @@ export function useSettingsModal(systemConfig, isReady, isStandaloneSettings, cl
   function syncSettingsForm() {
     const ontologyCfg = systemConfig.ontologyConfig.value
     settingsForm.cacheDuration = ontologyCfg.cacheDuration || 30
+    const namespacingCfg = systemConfig.namespacingConfig?.value || {}
+    settingsForm.baseIri = namespacingCfg.baseIri || ''
+    settingsForm.curiePrefix = namespacingCfg.curiePrefix || ''
     settingsForm.localNamespace = systemConfig.provenanceConfig?.value?.localNamespace || ''
     settingsForm.vendors = normalizeVendors(systemConfig.vendorConfig?.value || [])
   }
