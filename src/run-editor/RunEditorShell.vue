@@ -1220,7 +1220,7 @@ function buildRunValidationPayload(run = {}) {
     '@id': run['@id'] || meta.recordId || meta.id || '',
     kind: run.kind || 'run',
     label: meta.title || meta.label || '',
-    project: meta.project || data.project || '',
+    study: meta.study || data.study || '',
     experiment: meta.experiment || data.experiment || '',
     labware_bindings: data.labware_bindings || {},
     labware_instances: data.labware_instances || [],

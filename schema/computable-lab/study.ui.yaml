@@ -1,0 +1,75 @@
+title: "Study UI Configuration"
+recordType: "study"
+
+layout:
+  fields:
+    recordType:
+      group: "metadata"
+      order: 0
+      ui:
+        readOnly: true
+    kind:
+      group: "metadata"
+      order: 2
+      ui:
+        readOnly: true
+    status:
+      group: "metadata"
+      order: 5
+      ui:
+        component: select
+        options: ["draft", "active", "complete", "archived"]
+    label:
+      group: "header"
+      order: 10
+      ui:
+        width: 9
+    shortSlug:
+      group: "header"
+      order: 20
+      ui:
+        width: 3
+    description:
+      group: "main"
+      order: 30
+      ui:
+        component: "markdown-textarea"
+        rows: 6
+    aims:
+      group: "details"
+      order: 40
+      ui:
+        display: "table"
+        collapsible: true
+    biology:
+      group: "biology"
+      order: 50
+      ui:
+        collapsible: true
+        summaryField: "taxon.label"
+    experiments:
+      group: "relationships"
+      order: 60
+      ui:
+        display: "list"
+        collapsible: true
+        navigation:
+          relationship: "child"
+          relatedType: "experiment"
+          allowDrillDown: true
+    runs:
+      group: "relationships"
+      order: 70
+      ui:
+        display: "list"
+        collapsible: true
+        navigation:
+          relatedType: "run"
+          allowDrillDown: true
+    assertions:
+      group: "assertions"
+      order: 80
+      ui:
+        display: "list"
+        collapsible: true
+        summaryField: "label"

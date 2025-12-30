@@ -16,7 +16,7 @@ import { buildZodSchema } from '../src/records/zodBuilder.js'
 const SCHEMA_ROOT = path.join(process.cwd(), 'schema', 'computable-lab')
 async function main() {
   const targetFiles = [
-    ...(await listDir('08_RUNS')),
+    ...(await listDir('runs')),
     ...(await listDir('tmp/fixtures')).filter((p) => p.endsWith('.md'))
   ]
   const schemas = await loadSchemas()
@@ -113,7 +113,7 @@ function normalizeRunPayload(frontmatter = {}) {
     '@id': meta['@id'] || meta.id || meta.recordId || '',
     kind: 'run',
     label: meta.title || '',
-    project: meta.project || '',
+    study: meta.study || '',
     experiment: meta.experiment || meta.experimentId || '',
     notes: ops.notes || data.notes || '',
     activities

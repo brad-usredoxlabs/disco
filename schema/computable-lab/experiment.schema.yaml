@@ -9,7 +9,7 @@ required:
   - title
   - protocolId
   - biologicalEntities
-  - projectId
+  - studyId
   - shortSlug
 
 properties:
@@ -31,13 +31,11 @@ properties:
     minLength: 2
     maxLength: 4
 
-  projectId:
+  studyId:
     type: string
     description: >
-      Reference to parent Project/Investigation.
-      Should match an existing project record ID.
-    # Optional pattern; adjust to your naming convention
-    # pattern: "^PRJ-[0-9]{4}(_[A-Z0-9_]+)?$"
+      Reference to parent Study.
+      Should match an existing study record ID.
 
   protocolId:
     type: string
@@ -45,9 +43,9 @@ properties:
       Reference to the protocol record used for this experiment.
     # pattern: "^PR-[0-9]{4}(_[A-Z0-9_]+)?$"
 
-  projectShortSlug:
+  studyShortSlug:
     type: string
-    description: "Short slug inherited from the parent project for path generation."
+    description: "Short slug inherited from the parent study for path generation."
 
   biologicalEntities:
     type: array

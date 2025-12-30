@@ -1,6 +1,14 @@
 name: features
 description: "Controlled vocabulary for semantic observables (Features). Assay-agnostic."
 
+ontologies:
+  - acronym: oba        # biological features
+  - acronym: obi        # feature acquisition
+  - acronym: pato       # feature quantity and direction
+  - acronym: go         # processes/features
+  - acronym: uberon     # tissues
+  - acronym: cl         # cell types
+
 validation:
   required_fields:
     - id
@@ -34,7 +42,31 @@ validation:
       type: string
       enum: allowed_domains
     tags: list:string
-    ontology: map:string
+    ontology:
+      type: object
+      description: "Primary ontology xref plus optional additional xrefs."
+      required: [primary]
+      properties:
+        primary:
+          type: object
+          required: [id, label, source]
+          properties:
+            id: string
+            label: string
+            source:
+              type: string
+              enum: ontologies.acronym
+        additional:
+          type: array
+          items:
+            type: object
+            required: [id, label, source]
+            properties:
+              id: string
+              label: string
+              source:
+                type: string
+                enum: ontologies.acronym
 
     # UI hints only (optional)
     modality_hints: list:

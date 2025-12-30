@@ -1,0 +1,91 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "study.schema.yaml"
+title: Study
+description: >
+  A Study is a top-level scientific container grouping related experiments and runs.
+  It may embed or reference assertions that capture study-level claims or criteria.
+type: object
+
+allOf:
+  - $ref: "./common.schema.yaml#/$defs/FAIRCommon"
+
+required:
+  - "@id"
+  - kind
+  - label
+
+properties:
+  recordType:
+    type: string
+    description: "Record discriminator. Should be 'study'."
+
+  kind:
+    type: string
+    const: "study"
+
+  label:
+    type: string
+    description: "Human-readable study label/title."
+
+  shortSlug:
+    type: string
+    description: "Short identifier used for derived paths/ids."
+    pattern: "^[A-Z0-9]{2,4}$"
+    minLength: 2
+    maxLength: 4
+
+  description:
+    type: string
+    description: "Optional study description."
+
+  status:
+    type: string
+    enum: ["draft", "active", "complete", "archived"]
+
+  aims:
+    type: array
+    description: "High-level aims or questions."
+    items:
+      type: object
+      required: ["id", "statement"]
+      properties:
+        id: { type: string }
+        statement: { type: string }
+        notes: { type: string }
+      additionalProperties: false
+
+  assertions:
+    type: array
+    description: "Embedded assertions associated with this study."
+    items:
+      $ref: "./assertion.schema.yaml"
+
+  biology:
+    type: object
+    description: "Optional shared biology context for the whole study."
+    properties:
+      taxon:
+        type: object
+        required: ["@id"]
+        properties:
+          "@id": { type: string }
+          label: { type: string }
+        additionalProperties: false
+      system:
+        type: string
+        description: "e.g., HepG2, C. elegans, primary hepatocytes"
+    additionalProperties: false
+
+  experiments:
+    type: array
+    description: "Experiment @ids included in this study."
+    items:
+      type: string
+
+  runs:
+    type: array
+    description: "Optional Run @ids directly associated with the study."
+    items:
+      type: string
+
+additionalProperties: false

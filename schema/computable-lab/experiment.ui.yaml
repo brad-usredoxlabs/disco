@@ -19,7 +19,7 @@ layout:
       order: 8
       ui:
         readOnly: true
-    projectShortSlug:
+    studyShortSlug:
       group: "metadata"
       order: 9
       ui:
@@ -37,7 +37,7 @@ layout:
       order: 10
       ui:
         width: 3
-    projectId:
+    studyId:
       group: "header"
       order: 20
       ui:

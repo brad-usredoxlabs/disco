@@ -1,5 +1,5 @@
 recordTypes:
-  project:
+  study:
     idField: "id"
     slugField: "shortSlug"
 
@@ -22,9 +22,9 @@ recordTypes:
     slugField: "shortSlug"
 
     parents:
-      project:
-        field: "projectId"
-        recordType: "project"
+      study:
+        field: "studyId"
+        recordType: "study"
         cardinality: "1"
       protocol:
         field: "protocolId"

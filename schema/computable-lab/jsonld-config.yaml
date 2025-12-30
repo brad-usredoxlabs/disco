@@ -12,11 +12,11 @@ prefixes:
   go: "http://purl.obolibrary.org/obo/GO_"
 
 recordTypes:
-  project:
+  study:
     classIris:
-      - "ex:Project"
-      - "schema:Project"
-    pathSegment: "project"
+      - "ex:Study"
+      - "schema:Study"
+    pathSegment: "study"
   experiment:
     classIris:
       - "ex:Experiment"

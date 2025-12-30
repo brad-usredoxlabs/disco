@@ -1,28 +1,28 @@
-project:
+study:
   idField: "id"
   shortSlugField: "shortSlug"
-  baseDir: "projects"
+  baseDir: "studies"
   filenamePattern: "{{id}}_{{title_sanitized}}.md"
   idGeneration:
-    prefix: "PRJ"
-    format: "PRJ-{counter:0000}"
-    counterFile: ".counters/project.counter"
+    prefix: "STD"
+    format: "STD-{counter:0000}"
+    counterFile: ".counters/study.counter"
 
 experiment:
   idField: "id"
   shortSlugField: "shortSlug"
   baseDir: "experiments"
-  filenamePattern: "{{projectShortSlug}}_{{shortSlug}}_{{title_sanitized}}.md"
+  filenamePattern: "{{studyShortSlug}}_{{shortSlug}}_{{title_sanitized}}.md"
   idGeneration:
     prefix: "EXP"
     format: "EXP-{counter:0000}"
     counterFile: ".counters/experiment.counter"
   derivedFields:
-    projectShortSlug:
-      sourceRecordType: "project"
+    studyShortSlug:
+      sourceRecordType: "study"
       sourceField: "shortSlug"
       linkage:
-        viaField: "projectId"
+        viaField: "studyId"
 
 run:
   idField: "id"

@@ -179,7 +179,7 @@ function buildHeaderSection(recordType, metadata = {}) {
   if (metadata.state) badges.push(`**Status:** ${metadata.state}`)
   if (recordType) badges.push(`**Record type:** ${humanizedType}`)
   if (metadata.shortSlug) badges.push(`**Slug:** ${metadata.shortSlug}`)
-  if (metadata.projectId) badges.push(`**Project:** ${formatInlineReference(metadata.projectId)}`)
+  if (metadata.studyId) badges.push(`**Study:** ${formatInlineReference(metadata.studyId)}`)
   return badges.length ? `${headerLine}\n${badges.join(' · ')}` : headerLine
 }
 
@@ -191,13 +191,13 @@ function buildOverviewSection(metadata = {}) {
 
 function buildLinksSection(metadata = {}, bodyData = {}) {
   const entries = []
-  const projectRef = metadata.projectId || metadata.project?.id || bodyData.projectId || pickFirst([
-    bodyData.project,
-    bodyData.projectLink,
-    bodyData.links?.project
+  const projectRef = metadata.studyId || metadata.study?.id || bodyData.studyId || pickFirst([
+    bodyData.study,
+    bodyData.studyLink,
+    bodyData.links?.study
   ])
   if (projectRef) {
-    entries.push(`- **Project:** ${formatReference(projectRef)}`)
+    entries.push(`- **Study:** ${formatReference(projectRef)}`)
   }
 
   const runs = ensureArray(bodyData.runs || bodyData.links?.runs)

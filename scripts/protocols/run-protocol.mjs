@@ -14,7 +14,7 @@ async function main() {
 
   const config = JSON.parse(await fs.readFile(path.resolve(configPath), 'utf8'))
   const protocolPath = path.resolve(config.protocolPath)
-  const outputPath = path.resolve(config.outputRunPath || `08_RUNS/${config.runId || 'RUN-UNKNOWN'}.md`)
+  const outputPath = path.resolve(config.outputRunPath || `runs/${config.runId || 'RUN-UNKNOWN'}.md`)
   const protocolRaw = await fs.readFile(protocolPath, 'utf8')
   const { data: protocolFrontMatter } = parseFrontMatter(protocolRaw)
 
@@ -39,7 +39,7 @@ async function main() {
 }
 
 async function buildOrUpdateRunFrontMatter(config, activity) {
-  const outputPath = path.resolve(config.outputRunPath || `08_RUNS/${config.runId || 'RUN-UNKNOWN'}.md`)
+  const outputPath = path.resolve(config.outputRunPath || `runs/${config.runId || 'RUN-UNKNOWN'}.md`)
   if (await fileExists(outputPath)) {
     const runRaw = await fs.readFile(outputPath, 'utf8')
     const { data: existingFrontMatter } = parseFrontMatter(runRaw)

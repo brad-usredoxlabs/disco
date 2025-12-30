@@ -8,7 +8,7 @@
 /**
  * Opens a TipTap editor window for a specific record
  * @param {string} path - Record file path
- * @param {string} recordType - Record type (e.g., 'project', 'run')
+ * @param {string} recordType - Record type (e.g., 'study', 'run')
  * @param {string} [bundle] - Optional schema bundle name
  */
 export function openTipTapWindow(path, recordType, bundle) {

@@ -172,8 +172,8 @@ function extractBiologyEntities(flattened) {
 
 function buildLinkedRecordsSummary(flattened = {}) {
   const lines = []
-  const project = flattened.project || flattened.projectId
-  if (project) lines.push(`- Project: ${formatReference(project)}`)
+  const study = flattened.study || flattened.studyId
+  if (study) lines.push(`- Study: ${formatReference(study)}`)
   const runs = toArray(flattened.runs).concat(toArray(flattened.links?.runs))
   if (runs.length) lines.push(`- Runs: ${runs.map(formatReference).join(', ')}`)
   const samples = toArray(flattened.samples || flattened.links?.samples)

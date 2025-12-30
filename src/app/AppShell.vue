@@ -248,12 +248,12 @@ const featureFlags = computed(() => systemConfig.config.value?.features || {})
 const graphTreeEnabled = computed(() => featureFlags.value.graphTree !== false)
 const graphQueryEnabled = computed(() => featureFlags.value.graphQueries === true)
 const defaultGraphRootType = computed(() => {
-  if (schemaBundle.value?.recordSchemas?.project) return 'project'
+  if (schemaBundle.value?.recordSchemas?.study) return 'study'
   const types = Object.keys(schemaBundle.value?.recordSchemas || {})
   return types[0] || ''
 })
 const defaultGraphRootLabel = computed(() => {
-  if (defaultGraphRootType.value === 'project') return 'Projects'
+  if (defaultGraphRootType.value === 'study') return 'Studies'
   if (!defaultGraphRootType.value) return 'Records'
   return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
 })
@@ -270,6 +270,10 @@ const topLevelRecordTypes = computed(() => {
   if (list.length) return list
   return defaultGraphRootType.value ? [defaultGraphRootType.value] : []
 })
+
+function handleUpdateSelectedRoot(val) {
+  selectedRootRecordType.value = val || ''
+}
 const selectedRootRecordType = ref('')
 const protocolEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.protocol)
 
@@ -654,7 +658,7 @@ function handleCreateSelectedRecord() {
     openCreator()
     return
   }
-  const simpleModeTypes = new Set(['project', 'protocol'])
+  const simpleModeTypes = new Set(['study', 'protocol'])
   openCreator({
     recordType,
     simpleMode: simpleModeTypes.has(recordType)
@@ -679,7 +683,7 @@ function inferContextFromActivePath() {
   if (normalized.includes('/experiments/')) {
     return { invokedFrom: 'experiment_editor', context: { path } }
   }
-  if (normalized.includes('/projects/')) {
+  if (normalized.includes('/studies/')) {
     return { invokedFrom: 'project_editor', context: { path } }
   }
   return { invokedFrom: 'global_assertions_browser', context: {} }
@@ -695,7 +699,7 @@ async function buildAssertionContextFromPath(path) {
     const scope = {}
     if (recordType === 'run') scope.run = recordId
     if (recordType === 'experiment') scope.experiment = recordId
-    if (recordType === 'project') scope.project = recordId
+    if (recordType === 'study') scope.study = recordId
     return { path, recordId, recordType, scope }
   } catch (err) {
     console.warn('[Assertion] Failed to build context from path', path, err)
@@ -713,7 +717,7 @@ async function handleOpenAssertion(invokedFrom = 'global_assertions_browser', co
       if (!invokedFrom || invokedFrom === 'global_assertions_browser') {
         if (enriched.recordType === 'run') invokedFrom = 'run_editor'
         else if (enriched.recordType === 'experiment') invokedFrom = 'experiment_editor'
-        else if (enriched.recordType === 'project') invokedFrom = 'project_editor'
+        else if (enriched.recordType === 'study') invokedFrom = 'project_editor'
       }
     }
   }
@@ -937,7 +941,7 @@ onBeforeUnmount(() => {
       :root-nodes="rootNodes"
       :is-tree-bootstrapping="isTreeBootstrapping"
       :search-index="searchIndex"
-      @update:selected-root-record-type="(val) => (selectedRootRecordType.value = val)"
+      @update:selected-root-record-type="handleUpdateSelectedRoot"
       @select="handleSelect"
       @expand="handleExpand"
       @create-selected-record="handleCreateSelectedRecord"

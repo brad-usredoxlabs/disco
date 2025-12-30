@@ -112,7 +112,7 @@ async function processRecord({ filePath, relativePath, inferredType, bundle, val
 
 function enforceBiologyRequirements({ recordType, schemaPayload, relativePath, bundle }) {
   const requirements = bundle?.manifest?.biologyRequirements || {}
-  if (requirements.requireProjectEntities && recordType === 'project') {
+  if (requirements.requireProjectEntities && recordType === 'study') {
     const entities = schemaPayload?.biology?.entities
     if (!Array.isArray(entities) || entities.length === 0) {
       throw new Error(
@@ -146,7 +146,7 @@ function buildIndexDoc({ jsonLdNode, recordType, schemaPayload, relativePath, bo
     description: jsonLdNode.description || schemaPayload.description || '',
     createdAt: jsonLdNode.createdAt || jsonLdNode.created || '',
     updatedAt: jsonLdNode.updatedAt || jsonLdNode.updated || '',
-    projectId: jsonLdNode.projectId || jsonLdNode.project?.id || schemaPayload.projectId || '',
+    projectId: jsonLdNode.studyId || jsonLdNode.study?.id || schemaPayload.studyId || '',
     plateId: jsonLdNode.plateId || '',
     runDate: jsonLdNode.runDate || jsonLdNode.startedAt || '',
     operatorLabel: pickLabel(jsonLdNode.operator),

@@ -30,12 +30,12 @@ recordSchemas:
   - recipe.schema.yaml
   - protocol.schema.yaml
   - library-layout.schema.yaml
-  - project.schema.yaml
+  - study.schema.yaml
   - experiment.schema.yaml
   - run.schema.yaml
   - plate-layout.schema.yaml
 uiConfigs:
-  - project.ui.yaml
+  - study.ui.yaml
   - experiment.ui.yaml
   - run.ui.yaml
   - common.ui.yaml
@@ -46,11 +46,11 @@ uiConfigs:
 assistantConfig: assistant.yaml
 tiptap:
   recordTypes:
-    - project
+    - study
     - experiment
     - run
 biologyRequirements:
-  requireProjectEntities: true
+  requireProjectEntities: false
 vocabSchemas:
   - reagents.yaml
   - materials.yaml
@@ -78,9 +78,9 @@ metadataFields:
     - title
     - shortSlug
     - description
-    - projectId
+    - studyId
     - protocolId
-    - projectShortSlug
+    - studyShortSlug
     - createdAt
     - createdBy
     - updatedAt
@@ -109,13 +109,13 @@ metadataFields:
     - createdBy
     - updatedAt
     - recordId
-  project:
+  study:
     - id
     - recordType
     - state
     - title
     - shortSlug
-    - identifier
+    - description
     - createdAt
     - createdBy
     - updatedAt

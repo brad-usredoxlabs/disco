@@ -97,7 +97,7 @@ async function validateFile(filePath, relativePath, options = {}) {
   const entities = extractBiologyEntities(data)
   const issues = []
   const hasEntities = entities.length > 0
-  if (options.recordType === 'project' && options.requireProjectEntities && !hasEntities) {
+  if (options.recordType === 'study' && options.requireProjectEntities && !hasEntities) {
     issues.push({
       path: relativePath,
       message: 'Project records must define data.biology.entities with at least one entry.'

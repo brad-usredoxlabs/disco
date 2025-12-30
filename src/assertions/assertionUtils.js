@@ -113,7 +113,8 @@ export function inferStorageMode(invokedFrom) {
 
 export function prefillScope(context = {}) {
   const scope = {}
-  if (context.project) scope.project = context.project
+  if (context.project) scope.study = context.project
+  if (context.study) scope.study = context.study
   if (context.experiment) scope.experiment = context.experiment
   if (context.run) scope.run = context.run
   if (context.plate) scope.plate = context.plate

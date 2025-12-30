@@ -1,9 +1,9 @@
-project:
+study:
   actions:
     - id: summarize
-      label: "Summarize project"
+      label: "Summarize study"
       systemPrompt: |
-        You are a lab documentation assistant. Summarize the project using its metadata and any child experiments.
+        You are a lab documentation assistant. Summarize the study using its metadata and any child experiments.
       userTemplate: |
         Provide a concise summary focusing on objectives and current state.
       include:
@@ -12,7 +12,7 @@ project:
     - id: suggest_next
       label: "Suggest next experiment"
       systemPrompt: |
-        You are helping plan the next experiment in a project.
+        You are helping plan the next experiment in a study.
       userTemplate: |
         Based on current experiments, suggest the next logical experiment.
       include:

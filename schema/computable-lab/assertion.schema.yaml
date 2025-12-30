@@ -101,7 +101,7 @@ properties:
       Context in which this assertion applies.
       Absence of scope implies global or general belief.
     properties:
-      project:
+      study:
         type: string
       experiment:
         type: string
@@ -176,7 +176,7 @@ definitions:
           - well
           - run
           - experiment
-          - project
+          - study
           - material
           - acquisition
           - channel

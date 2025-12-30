@@ -25,9 +25,9 @@ properties:
     type: string
     description: "Human-readable label."
 
-  project:
+  study:
     type: string
-    description: "Optional Project @id."
+    description: "Optional Study @id."
 
   experiment:
     type: string

@@ -34,7 +34,7 @@ export const KNOWN_BIOLOGY_PREFIX_IRIS = Object.freeze({
   go: 'http://purl.obolibrary.org/obo/GO_'
 })
 
-export function composeRecordFrontMatter(recordType, metadataInput = {}, formDataInput = {}, bundle = {}, projectOverrides = {}) {
+export function composeRecordFrontMatter(recordType, metadataInput = {}, formDataInput = {}, bundle = {}, studyOverrides = {}) {
   const resolvedRecordType =
     metadataInput?.recordType || recordType || metadataInput?.record_type || metadataInput?.type || ''
   const descriptors = buildFieldDescriptors(resolvedRecordType, bundle)
@@ -52,7 +52,7 @@ export function composeRecordFrontMatter(recordType, metadataInput = {}, formDat
     ...(isPlainObject(formDataInput) ? formDataInput : {})
   }
 
-  const combinedOverrides = mergeContextOverrides(projectOverrides || {}, metadataInput?.jsonldContextOverrides || {})
+  const combinedOverrides = mergeContextOverrides(studyOverrides || {}, metadataInput?.jsonldContextOverrides || {})
   const dataSections = {}
   descriptors.body.forEach((descriptor) => {
     const source =
@@ -146,7 +146,7 @@ export function mergeMetadataAndFormData(metadata = {}, explicitFormData) {
   return base
 }
 
-function normalizeMetadataSection(recordType, metadataSection = {}, bundle = {}, projectOverrides = {}, formData = {}) {
+function normalizeMetadataSection(recordType, metadataSection = {}, bundle = {}, studyOverrides = {}, formData = {}) {
   const next = cloneValue(metadataSection) || {}
   const typeValue = next.recordType || recordType || next.type || ''
   if (typeValue && !next.recordType) {
@@ -156,7 +156,7 @@ function normalizeMetadataSection(recordType, metadataSection = {}, bundle = {},
     next.recordId = next.id
   }
   const jsonLdConfig = bundle?.jsonLdConfig || {}
-  const contextPrefixes = computeContextPrefixes(projectOverrides, bundle)
+  const contextPrefixes = computeContextPrefixes(studyOverrides, bundle)
   if (!next['@context']) {
     next['@context'] = contextPrefixes
   }
@@ -243,9 +243,9 @@ function normalizeTypesArray(existingValue, jsonLdConfig = {}, recordType = '', 
   return Array.from(typeSet)
 }
 
-function computeContextPrefixes(projectOverrides = {}, bundle = {}) {
+function computeContextPrefixes(studyOverrides = {}, bundle = {}) {
   const basePrefixes = { ...DEFAULT_JSON_LD_CONTEXT, ...(bundle?.jsonLdConfig?.prefixes || {}) }
-  const prefOverrides = (projectOverrides && projectOverrides.prefixes) || {}
+  const prefOverrides = (studyOverrides && studyOverrides.prefixes) || {}
   return { ...basePrefixes, ...prefOverrides }
 }
 
@@ -428,8 +428,8 @@ function mergeBiologyEntities(local = [], inherited = []) {
   return merged
 }
 
-function applyBiologyInheritance(sections = {}, projectOverrides = {}) {
-  const inherited = readValueAtPath(projectOverrides, 'biology.entities')
+function applyBiologyInheritance(sections = {}, studyOverrides = {}) {
+  const inherited = readValueAtPath(studyOverrides, 'biology.entities')
   if (!Array.isArray(inherited) || !inherited.length) return
   const local = readValueAtPath(sections?.biology, 'entities') || []
   const merged = mergeBiologyEntities(local, inherited)

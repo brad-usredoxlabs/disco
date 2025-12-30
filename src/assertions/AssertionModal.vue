@@ -6,7 +6,7 @@ import { storagePlacement, prefillScope, normalizeAssertionId, mintAssertionId }
 const props = defineProps({
   open: { type: Boolean, default: false },
   invokedFrom: { type: String, default: '' }, // run_editor | experiment_editor | project_editor | global_assertions_browser | well_plate_editor | quick_add_command_palette
-  context: { type: Object, default: () => ({}) }, // {project, experiment, run, plate, well, acquisition, channel}
+  context: { type: Object, default: () => ({}) }, // {study, experiment, run, plate, well, acquisition, channel}
   namespacingConfig: { type: Object, default: () => ({}) },
   initialAssertion: { type: Object, default: null }
 })
@@ -101,7 +101,7 @@ function handlePromote() {
       <div class="grid two">
         <label>
           Subject type
-          <input v-model="form.subject.type" type="text" placeholder="run | experiment | project | well | material" />
+          <input v-model="form.subject.type" type="text" placeholder="run | experiment | study | well | material" />
         </label>
         <label>
           Subject ref
@@ -160,8 +160,8 @@ function handlePromote() {
         <summary>Scope</summary>
         <div class="grid two">
           <label>
-            Project
-            <input v-model="form.scope.project" type="text" />
+            Study
+            <input v-model="form.scope.study" type="text" />
           </label>
           <label>
             Experiment
