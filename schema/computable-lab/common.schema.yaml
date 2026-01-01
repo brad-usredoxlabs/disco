@@ -23,6 +23,7 @@ $defs:
       createdBy:
         type: string
         description: Creator (user or agent identifier)
+        readOnly: true
       updatedAt:
         type: string
         format: date-time
@@ -32,10 +33,7 @@ $defs:
         type: string
         description: License identifier/URL for this record
       provenance:
-        type: array
-        description: Provenance statements (links to sources, evidence)
-        items:
-          type: string
+        $ref: "#/$defs/provenance"
       relatedIdentifiers:
         type: array
         description: Related external identifiers (DOIs, accessions, URIs)
@@ -48,13 +46,83 @@ $defs:
       '@context':
         type: object
         description: JSON-LD context prefixes derived from schema bundles and overrides
+        readOnly: true
         additionalProperties:
           type: string
       '@id':
         type: string
         description: Derived JSON-LD IRI for this record
+        readOnly: true
       '@type':
         type: array
         description: JSON-LD type IRIs associated with this record
         items:
           type: string
+  provenance:
+    type: array
+    description: >
+      Append-only lineage/audit trail. Each entry is an immutable event describing
+      an activity that created/modified/derived this record and what it used/produced.
+    items:
+      type: object
+      required: [kind, at, by]
+      properties:
+        kind:
+          type: string
+          enum: [create, update, ingest, transform, analyze, import, export, derive]
+        at:
+          type: string
+          format: date-time
+        by:
+          type: string
+          description: user id, agent id, or pipeline id (prefer a resolvable @id)
+        activity:
+          type: string
+          description: stable activity identifier (e.g. "gcms-parse", "qpcr-ddct")
+        software:
+          type: object
+          additionalProperties: false
+          properties:
+            name: { type: string }
+            version: { type: string }
+            uri: { type: string, description: repo/release/container image URI }
+        inputs:
+          type: array
+          description: upstream things used (record @id, file @id, dataset id)
+          items: { type: string }
+        outputs:
+          type: array
+          description: downstream artifacts produced (record @id, file @id)
+          items: { type: string }
+        params:
+          type: object
+          description: parameters/config used (ideally hashable/serializable)
+          additionalProperties: true
+
+        # ✅ Evidence citations: papers, datasets, protocols, notebooks, etc.
+        evidence:
+          type: array
+          description: External or internal evidence supporting this activity or its results.
+          items:
+            type: object
+            required: [kind, ref]
+          additionalProperties: false
+          properties:
+            kind:
+              type: string
+              enum: [publication, dataset, protocol, notebook, analysis, observation, website]
+            ref:
+              type: string
+              description: DOI, URI, accession, or record/file @id
+            locator:
+              type: string
+              description: optional pointer (page/figure/table/commit/hash)
+            excerpt:
+              type: string
+              description: optional short quote or summary (keep brief)
+            asserted_by:
+              type: string
+              description: who attached this evidence (if different from event.by)
+
+      notes: { type: string }
+    additionalProperties: false

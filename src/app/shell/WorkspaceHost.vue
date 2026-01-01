@@ -9,12 +9,9 @@ const props = defineProps({
   graphTreeEnabled: { type: Boolean, default: false },
   graphQueryEnabled: { type: Boolean, default: false },
   isReady: { type: Boolean, default: false },
-  selectedRootRecordType: { type: String, default: '' },
-  topLevelRecordTypes: { type: Array, default: () => [] },
   protocolEnabled: { type: Boolean, default: false },
   recordGraph: { type: Object, required: true },
   schemaLoader: { type: Object, required: true },
-  workflowLoader: { type: Object, required: true },
   defaultGraphRootType: { type: [String, Object], default: '' },
   defaultGraphRootLabel: { type: String, default: '' },
   activeRecordPath: { type: String, default: '' },
@@ -26,14 +23,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'update:selectedRootRecordType',
   'select',
   'expand',
-  'create-selected-record',
+  'create-study',
   'create-protocol',
-  'open-promotion',
-  'open-explorer',
-  'open-run-editor',
   'open-assertion',
   'graph-create',
   'graph-open-tiptap',
@@ -41,10 +34,6 @@ const emit = defineEmits([
   'graph-create-supporting-doc',
   'graph-use-as-source'
 ])
-
-const handleSelectRootType = (event) => {
-  emit('update:selectedRootRecordType', event?.target?.value || '')
-}
 </script>
 
 <template>
@@ -60,24 +49,11 @@ const handleSelectRootType = (event) => {
           <p v-else>Fallback tree built from the repo handle while graph mode is disabled.</p>
         </div>
         <div v-if="graphTreeEnabled" class="graph-panel__actions">
-          <label class="graph-panel__actions-label" for="graph-create-select">New</label>
-          <select
-            id="graph-create-select"
-            :value="selectedRootRecordType"
-            :disabled="!isReady || !topLevelRecordTypes.length"
-            @change="handleSelectRootType"
-          >
-            <option v-for="type in topLevelRecordTypes" :key="type" :value="type">
-              {{ type }}
-            </option>
-          </select>
-          <button
-            class="ghost-button"
-            type="button"
-            :disabled="!isReady || !selectedRootRecordType"
-            @click="emit('create-selected-record')"
-          >
-            + Add record
+          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('create-study')">
+            New Study
+          </button>
+          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-assertion')">
+            New Assertion
           </button>
           <button
             v-if="protocolEnabled"
@@ -86,19 +62,7 @@ const handleSelectRootType = (event) => {
             :disabled="!isReady"
             @click="emit('create-protocol')"
           >
-            + Add protocol
-          </button>
-          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-promotion')">
-            Promote to protocol
-          </button>
-          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-explorer')">
-            Open Explorer
-          </button>
-          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-run-editor')">
-            Open Run Editor
-          </button>
-          <button class="ghost-button" type="button" :disabled="!isReady" @click="emit('open-assertion')">
-            Add assertion
+            New Protocol
           </button>
         </div>
       </div>
@@ -106,7 +70,6 @@ const handleSelectRootType = (event) => {
         v-if="graphTreeEnabled"
         :graph-state="recordGraph"
         :schema-loader="schemaLoader"
-        :workflow-loader="workflowLoader"
         :default-root-type="defaultGraphRootType"
         :default-root-label="defaultGraphRootLabel"
         :active-path="activeRecordPath"
@@ -129,7 +92,7 @@ const handleSelectRootType = (event) => {
       />
     </AppPanel>
     <AppPanel v-if="graphQueryEnabled" class="graph-query-panel">
-      <GraphQueryPanel :graph-state="recordGraph" :schema-loader="schemaLoader" :workflow-loader="workflowLoader" />
+      <GraphQueryPanel :graph-state="recordGraph" :schema-loader="schemaLoader" />
     </AppPanel>
   </section>
 </template>

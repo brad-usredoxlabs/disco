@@ -7,7 +7,6 @@ const props = defineProps({
   repo: { type: Object, required: true },
   inspectorTarget: { type: Object, default: null },
   schemaLoader: { type: Object, required: true },
-  workflowLoader: { type: Object, required: true },
   recordGraph: { type: Object, required: true }
 })
 
@@ -28,7 +27,6 @@ const handleSaved = () => emit('saved')
       :record-path="inspectorTarget?.path"
       :record-type="''"
       :schema-loader="schemaLoader"
-      :workflow-loader="workflowLoader"
       :record-graph="recordGraph"
       @saved="handleSaved"
     />

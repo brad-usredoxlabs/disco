@@ -69,24 +69,4 @@ recordTypes:
         recordType: "protocol"
         cardinality: "1"
 
-    children:
-      plateLayouts:
-        field: "plateLayouts"
-        recordType: "plateLayout"
-        cardinality: "0..*"
-
-    related:
-      {}
-
-  plateLayout:
-    idField: "id"
-
-    parents:
-      run:
-        field: "runId"
-        recordType: "run"
-        cardinality: "1"
-
-    children: {}
-
     related: {}

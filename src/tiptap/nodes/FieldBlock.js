@@ -110,6 +110,13 @@ export const FieldBlock = Node.create({
         renderHTML: (attributes) => ({
           'data-value-path': attributes.valuePath
         })
+      },
+      required: {
+        default: false,
+        parseHTML: (element) => element.getAttribute('data-required') === 'true',
+        renderHTML: (attributes) => ({
+          'data-required': attributes.required ? 'true' : 'false'
+        })
       }
     }
   },

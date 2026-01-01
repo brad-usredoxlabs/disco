@@ -2,13 +2,12 @@ import { humanizeKey } from './utils.js'
 
 export function buildFieldDescriptors(recordType, bundle = {}) {
   const schema = bundle.recordSchemas?.[recordType] || {}
-  const props = schema.properties || {}
+  const schemaRegistry = bundle.recordSchemas || {}
+  const props = collectSchemaProperties(schema, schemaRegistry)
   const layout = bundle.uiConfigs?.[recordType]?.layout?.fields || {}
   const metadataSet = new Set(bundle.metadataFields?.[recordType] || [])
   const metadataDescriptors = []
   const bodyDescriptors = []
-
-  const schemaRegistry = bundle.recordSchemas || {}
 
   Object.entries(props).forEach(([name, schemaField]) => {
     const layoutConfig = layout[name] || {}
@@ -152,6 +151,30 @@ function dereferenceSchemaNode(node, rootSchema, registry = {}) {
     return dereferenceSchemaNode(external.node, external.root, registry)
   }
   return node
+}
+
+function collectSchemaProperties(schema = {}, registry = {}) {
+  const baseProps = { ...(schema.properties || {}) }
+  if (Array.isArray(schema.allOf)) {
+    schema.allOf.forEach((entry) => {
+      let target = entry
+      if (entry?.$ref) {
+        const resolved = dereferenceSchemaNode(entry, schema, registry)
+        if (resolved) {
+          target = resolved
+        }
+      }
+      const node = target?.node || target
+      if (node?.properties && typeof node.properties === 'object') {
+        Object.entries(node.properties).forEach(([key, value]) => {
+          if (!baseProps[key]) {
+            baseProps[key] = value
+          }
+        })
+      }
+    })
+  }
+  return baseProps
 }
 
 function buildHeaderSection(recordType, metadata = {}) {

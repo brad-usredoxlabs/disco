@@ -2,15 +2,11 @@ import { computed } from 'vue'
 import { useRepoConnection } from '../../fs/repoConnection'
 import { useVirtualRepoTree } from '../../fs/useVirtualRepoTree'
 import { useSchemaBundle } from '../../schema-bundles/useSchemaBundle'
-import { useWorkflowBundle } from '../../workflows/useWorkflowBundle'
 import { useSystemConfig } from '../../config/useSystemConfig'
 import { useOfflineStatus } from '../../composables/useOfflineStatus'
 import type { RepoBundleServices } from '../types'
 
-/**
- * Composes repo connection, virtual tree, schema/workflow bundles, system config, and offline status.
- * Mirrors the existing AppShell bootstrap while keeping a narrow return shape.
- */
+// Compose repo connection, virtual tree, schema bundle, system config, and offline status for the shell.
 export function useShellRepoBundle(): RepoBundleServices & {
   connectionLabel: ReturnType<typeof computed>
   isReady: ReturnType<typeof computed>
@@ -22,7 +18,6 @@ export function useShellRepoBundle(): RepoBundleServices & {
   const repo = useRepoConnection()
   const tree = useVirtualRepoTree(repo)
   const schemaLoader = useSchemaBundle(repo)
-  const workflowLoader = useWorkflowBundle(repo, schemaLoader)
   const systemConfig = useSystemConfig(repo)
   const offlineStatus = useOfflineStatus()
 
@@ -37,7 +32,6 @@ export function useShellRepoBundle(): RepoBundleServices & {
     repo,
     tree,
     schemaLoader,
-    workflowLoader,
     systemConfig,
     offlineStatus,
     connectionLabel,

@@ -34,7 +34,6 @@ recordSchemas:
   - study.schema.yaml
   - experiment.schema.yaml
   - run.schema.yaml
-  - plate-layout.schema.yaml
 uiConfigs:
   - study.ui.yaml
   - experiment.ui.yaml
@@ -43,7 +42,6 @@ uiConfigs:
   - ontology-term.ui.yaml
   - recipe.ui.yaml
   - protocol.ui.yaml
-  - plate-layout.ui.yaml
 assistantConfig: assistant.yaml
 tiptap:
   recordTypes:
@@ -65,6 +63,7 @@ metadataFields:
     - id
     - kind
     - state
+    - status
     - title
     - shortSlug
     - description
@@ -100,20 +99,10 @@ metadataFields:
     - createdBy
     - updatedAt
     - recordId
-  plateLayout:
-    - id
-    - kind
-    - state
-    - title
-    - runId
-    - createdAt
-    - createdBy
-    - updatedAt
-    - recordId
   study:
     - id
     - kind
-    - state
+    - status
     - title
     - shortSlug
     - description

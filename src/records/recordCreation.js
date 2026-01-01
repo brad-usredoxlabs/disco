@@ -36,10 +36,9 @@ export function applyFilenamePattern(pattern = '{{id}}.yaml', metadata = {}) {
   return filename || 'record.yaml'
 }
 
-export function buildDefaultFrontMatter(recordType, namingRule = {}, workflowDefinition) {
+export function buildDefaultFrontMatter(recordType, namingRule = {}) {
   const fm = {
     kind: recordType,
-    state: workflowDefinition?.config?.initial || 'draft',
     id: '',
     title: '',
     createdAt: new Date().toISOString(),

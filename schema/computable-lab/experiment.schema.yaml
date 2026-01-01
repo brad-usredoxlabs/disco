@@ -49,12 +49,28 @@ properties:
     type: string
     description: "Short slug inherited from the parent study for path generation."
 
-  biologicalEntities:
-    type: array
-    description: >
-      Structured list of biological materials (samples, controls, pathways, etc.) referenced by this experiment.
-    items:
-      $ref: "./datatypes/biological-entity.schema.yaml"
+BiologyEntry:
+  type: object
+  description: >
+    Study- or context-level biology annotation that wraps a normalized
+    BiologicalEntityReference and adds human-readable descriptive context.
+
+  additionalProperties: false
+  required:
+    - entity
+
+  properties:
+    entity:
+      $ref: "./biological-entity.schema.yaml"
+      description: >
+        Reference to the biological entity (taxon, cell line, tissue, pathway,
+        etc.) described by this entry.
+
+    description:
+      type: string
+      description: >
+        Optional free-text description providing contextual details about how
+        this biological entity is used or interpreted in this study.
 
   instruments:
     type: array

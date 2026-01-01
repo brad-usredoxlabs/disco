@@ -58,20 +58,28 @@ properties:
         - $ref: "./assertion.schema.yaml"
         - $ref: "./datatypes/assertion-ref.schema.yaml"
 
-  biology:
-    type: object
-    description: "Optional shared biology context for the whole study."
-    properties:
-      taxon:
-        type: object
-        required: ["@id"]
-        properties:
-          "@id": { type: string }
-          label: { type: string }
-        additionalProperties: false
-      system:
-        type: string
-        description: "e.g., HepG2, C. elegans, primary hepatocytes"
-    additionalProperties: false
+BiologyEntry:
+  type: object
+  description: >
+    Study- or context-level biology annotation that wraps a normalized
+    BiologicalEntityReference and adds human-readable descriptive context.
+
+  additionalProperties: false
+  required:
+    - entity
+
+  properties:
+    entity:
+      $ref: "./biological-entity.schema.yaml"
+      description: >
+        Reference to the biological entity (taxon, cell line, tissue, pathway,
+        etc.) described by this entry.
+
+    description:
+      type: string
+      description: >
+        Optional free-text description providing contextual details about how
+        this biological entity is used or interpreted in this study.
+
 
 additionalProperties: false

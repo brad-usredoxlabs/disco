@@ -12,7 +12,6 @@ const props = defineProps({
   tiptapSchema: { type: Object, default: null },
   tiptapUiConfig: { type: Object, default: null },
   tiptapNamingRule: { type: Object, default: () => ({}) },
-  tiptapWorkflowDefinition: { type: Object, default: null },
   schemaBundle: { type: Object, default: () => ({}) },
   validateRecord: { type: Function, required: true },
   tiptapContextOverrides: { type: Object, default: () => ({}) }
@@ -67,7 +66,6 @@ const handleSaved = () => emit('saved')
           :ui-config="tiptapUiConfig"
           :naming-rule="tiptapNamingRule || {}"
           :read-only="false"
-          :workflow-definition="tiptapWorkflowDefinition"
           :schema-bundle="schemaBundle || {}"
           :validate-record="validateRecord"
           :project-context-overrides="tiptapContextOverrides || {}"

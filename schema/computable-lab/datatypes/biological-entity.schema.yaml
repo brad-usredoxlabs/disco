@@ -1,52 +1,47 @@
 $schema: "http://json-schema.org/draft-07/schema#"
 $id: "biological-entity.schema.yaml"
+
 title: BiologicalEntityReference
-description: "Reference to a biological material (organism, tissue, cell line, pathway, etc.) selected from vocab/biological-entity.yaml."
+description: >
+  Normalized reference to a biological entity (organism, tissue, cell line,
+  pathway, phenotype, compound, assay material, etc.), typically selected
+  from a controlled vocabulary or ontology.
+
 type: object
 additionalProperties: false
-required: ["id", "label", "domain", "role"]
 
-x-taptab:
-  fieldType: ontologyList
-  vocab: biological-entity
-  arrayDefinition: "#/definitions/BiologyEntityList"
-  summaryFields: ["label", "domain", "role"]
+required:
+  - id
+  - label
 
 properties:
   id:
     type: string
     description: "Ontology identifier (CURIE or full IRI)."
+
   label:
     type: string
     description: "Human-readable label returned by the ontology service."
+
   source:
     type: string
-    description: "Ontology acronym that produced this reference."
+    description: "Ontology or registry that produced this reference."
     enum:
       - ncbitaxon
       - uberon
       - cl
-      - pato
-      - reactome
       - cellosaurus
+      - reactome
+      - pato
       - chebi
       - go
       - other
-  ontology:
-    type: string
-    enum:
-      - ncbitaxon
-      - uberon
-      - cl
-      - pato
-      - reactome
-      - cellosaurus
-      - chebi
-      - go
-      - other
-    description: "Deprecated alias for `source`, kept for backward compatibility."
+
   domain:
     type: string
+    description: >
+      Optional semantic category describing what kind of biological entity
+      this is. Improves indexing and validation when present.
     enum:
       - taxon
       - cell_line
@@ -56,8 +51,12 @@ properties:
       - compound
       - assay_material
       - other
+
   role:
     type: string
+    description: >
+      Optional contextual role describing how this entity is used in the
+      experiment or study (e.g., sample, target, control).
     enum:
       - sample
       - target
@@ -70,7 +69,11 @@ properties:
       - other
 
 definitions:
-  BiologyEntityList:
+  BiologicalEntity:
+    $ref: "#"
+
+  BiologicalEntityList:
     type: array
+    description: "List of biological entity references."
     items:
-      $ref: "#"
+      $ref: "#/definitions/BiologicalEntity"

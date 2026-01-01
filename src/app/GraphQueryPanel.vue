@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useGraphQuery } from '../graph/useGraphQuery'
 import { useGraphQueriesConfig } from '../graph/useGraphQueriesConfig'
-import { isWorkflowStateImmutable } from '../workflows/workflowUtils'
 
 const props = defineProps({
   graphState: {
@@ -12,10 +11,6 @@ const props = defineProps({
   schemaLoader: {
     type: Object,
     required: true
-  },
-  workflowLoader: {
-    type: Object,
-    default: null
   }
 })
 
@@ -47,9 +42,8 @@ function neighborList(nodeId) {
   return expandedNeighbors.value.get(nodeId) || []
 }
 
-function isNodeImmutable(node) {
-  if (!node) return false
-  return isWorkflowStateImmutable(props.workflowLoader, node.recordType, node.frontMatter?.state)
+function isNodeImmutable() {
+  return false
 }
 
 watch(
@@ -112,9 +106,6 @@ watch(
                   <strong>{{ node.title || node.id }}</strong>
                   <p>
                     {{ node.recordType }} · {{ node.id }}
-                    <span v-if="isNodeImmutable(node)" class="lock-pill lock-pill--inline" title="Immutable workflow state">
-                      Locked
-                    </span>
                   </p>
                 </div>
                 <div v-if="neighborList(node.id).length" class="neighbors">

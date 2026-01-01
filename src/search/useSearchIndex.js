@@ -174,6 +174,8 @@ export function useSearchIndex(recordGraph) {
     () => recordGraph.graph?.value,
     (graphValue) => {
       if (!graphValue?.nodes?.length) return
+       // Only fall back to graph if we don't already have shards or cached shards applied
+       if (source.value === 'shards' || source.value === 'cache') return
       fallbackToGraph(graphValue)
     },
     { deep: true, immediate: true }

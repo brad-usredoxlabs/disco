@@ -1,6 +1,5 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { isWorkflowStateImmutable, workflowStateAllowsEvent } from '../workflows/workflowUtils'
 
 const props = defineProps({
   graphState: {
@@ -10,10 +9,6 @@ const props = defineProps({
   schemaLoader: {
     type: Object,
     required: true
-  },
-  workflowLoader: {
-    type: Object,
-    default: null
   },
   defaultRootType: {
     type: String,
@@ -284,30 +279,19 @@ function nodeSupportsTapTap(node) {
   return props.tiptapRecordTypes.includes(node.recordType)
 }
 
-function isNodeImmutable(node) {
-  if (!node) return false
-  return isWorkflowStateImmutable(props.workflowLoader, node.recordType, node.frontMatter?.state)
+function isNodeImmutable() {
+  return false
 }
 
 function canCreateChild(parentNode, relation) {
   if (!parentNode || !relation) return false
-  if (isNodeImmutable(parentNode)) return false
   if (!relation.parentField) return false
-  const actionId = relation.actionId
-  if (actionId && !workflowStateAllowsEvent(props.workflowLoader, parentNode.recordType, parentNode.frontMatter?.state, actionId)) {
-    return false
-  }
   return true
 }
 
 function creationDisabledReason(parentNode, relation) {
   if (!parentNode || !relation) return 'Creation unavailable for this relationship.'
   if (!relation.parentField) return 'Parent linkage field missing.'
-  if (isNodeImmutable(parentNode)) return 'Parent record is immutable in its current workflow state.'
-  const actionId = relation.actionId
-  if (actionId && !workflowStateAllowsEvent(props.workflowLoader, parentNode.recordType, parentNode.frontMatter?.state, actionId)) {
-    return `Workflow state does not allow the "${actionId}" transition.`
-  }
   return ''
 }
 
@@ -391,7 +375,6 @@ function supportingDocTitle(node) {
             <button class="tree-label" type="button" @click="handleSelect(row.node)">
               <span class="tree-title">{{ row.node.title || row.node.id }}</span>
               <span class="tree-meta">{{ row.node.recordType }}</span>
-              <span v-if="isNodeImmutable(row.node)" class="lock-pill" title="Immutable workflow state">Locked</span>
             </button>
             <div class="tree-actions">
               <button

@@ -13,9 +13,10 @@ const emit = defineEmits(['open'])
 const usingGraphFallback = computed(() => props.search.source?.value === 'graph')
 const usingCachedShards = computed(() => props.search.source?.value === 'cache')
 
-function handleInput(event) {
-  props.search.setQuery(event.target.value)
-}
+const queryModel = computed({
+  get: () => props.search.query?.value || '',
+  set: (val) => props.search.setQuery?.(val || '')
+})
 
 function openResult(path) {
   emit('open', path)
@@ -27,6 +28,10 @@ function handleFilterChange(key, event) {
 
 function clearFilters() {
   props.search.clearFilters?.()
+}
+
+function submitSearch() {
+  props.search.setQuery?.(queryModel.value || '')
 }
 </script>
 
@@ -45,9 +50,9 @@ function clearFilters() {
         class="search-input"
         type="search"
         placeholder="Search keyword…"
-        :value="search.query.value"
-        @input="handleInput"
+        v-model="queryModel"
       />
+      <button class="primary search-submit" type="button" @click="submitSearch">Search</button>
       <div v-if="search.results.value.length" class="combo-results">
         <button
           v-for="hit in search.results.value.slice(0, 6)"
@@ -81,6 +86,9 @@ function clearFilters() {
 <style scoped>
 .combo {
   position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
 }
 
 .search-input {
@@ -89,6 +97,11 @@ function clearFilters() {
   border: 1px solid #cbd5f5;
   padding: 0.65rem 0.8rem;
   font-size: 0.95rem;
+}
+
+.search-submit {
+  padding: 0.65rem 1rem;
+  align-self: center;
 }
 
 .combo-results {

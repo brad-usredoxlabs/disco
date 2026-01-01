@@ -18,7 +18,6 @@ import { buildRecordContextOverrides } from '../records/biologyInheritance'
 import { useRepoConnection } from '../fs/repoConnection'
 import { useVirtualRepoTree } from '../fs/useVirtualRepoTree'
 import { useSchemaBundle } from '../schema-bundles/useSchemaBundle'
-import { useWorkflowBundle } from '../workflows/useWorkflowBundle'
 import { useRecordGraph } from '../graph/useRecordGraph'
 import { useSearchIndex } from '../search/useSearchIndex'
 import { useRecordValidator } from '../records/recordValidator'
@@ -36,7 +35,6 @@ import { useSettingsModal } from './shell/composables/useSettingsModal'
 import { assertionFilename } from '../assertions/assertionUtils'
 import {
   openTipTapWindow,
-  openPlateEditorWindow,
   openProtocolEditorWindow,
   openRunEditorWindow,
   openFileInspectorWindow
@@ -46,7 +44,6 @@ import AssertionModal from '../assertions/AssertionModal.vue'
 const repo = useRepoConnection()
 const tree = useVirtualRepoTree(repo)
 const schemaLoader = useSchemaBundle(repo)
-const workflowLoader = useWorkflowBundle(repo, schemaLoader)
 const recordGraph = useRecordGraph(repo, schemaLoader)
 const searchIndex = useSearchIndex(recordGraph)
 const systemConfig = useSystemConfig(repo)
@@ -163,7 +160,6 @@ const recordCreationManager = useRecordCreation(
   recordGraph,
   searchIndex,
   relationshipsConfig,
-  openPlateEditorWindow,
   openProtocolEditorWindow,
   openFileInspectorWindow,
   activeRecordPath
@@ -173,7 +169,6 @@ const {
   creatorContext,
   openCreator,
   closeCreator,
-  buildPlateLayoutCreationDefaults,
   buildMetadataPatchFromNode
 } = recordCreationManager
 
@@ -256,9 +251,6 @@ const tiptapNamingRule = computed(() =>
 const tiptapSupports = computed(
   () => !!tiptapRecordType.value && tiptapSupportedTypes.value.includes(tiptapRecordType.value)
 )
-const tiptapWorkflowDefinition = computed(() =>
-  tiptapRecordType.value ? workflowLoader.getMachine(tiptapRecordType.value) : null
-)
 const tiptapGraphNode = computed(() => {
   if (!tiptapTarget.value?.path) return null
   return recordGraph.graph?.value?.nodesByPath?.[tiptapTarget.value.path] || null
@@ -278,23 +270,6 @@ const defaultGraphRootLabel = computed(() => {
   return `${defaultGraphRootType.value.charAt(0).toUpperCase()}${defaultGraphRootType.value.slice(1)} records`
 })
 const supportingDocumentEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.['supporting-document'])
-const topLevelRecordTypes = computed(() => {
-  const relations = relationshipsConfig.value || {}
-  const list = Object.entries(relations)
-    .filter(([, descriptor]) => {
-      const parents = descriptor?.parents || {}
-      return !Object.keys(parents).length
-    })
-    .map(([type]) => type)
-    .sort((a, b) => a.localeCompare(b))
-  if (list.length) return list
-  return defaultGraphRootType.value ? [defaultGraphRootType.value] : []
-})
-
-function handleUpdateSelectedRoot(val) {
-  selectedRootRecordType.value = val || ''
-}
-const selectedRootRecordType = ref('')
 const protocolEnabled = computed(() => !!schemaBundle.value?.recordSchemas?.protocol)
 
 watch(
@@ -313,20 +288,6 @@ watch(
   [() => explorerTarget.value?.path, () => repo.directoryHandle.value],
   () => {
     loadExplorerData()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => topLevelRecordTypes.value,
-  (list) => {
-    if (!list.length) {
-      selectedRootRecordType.value = ''
-      return
-    }
-    if (!list.includes(selectedRootRecordType.value)) {
-      selectedRootRecordType.value = list[0]
-    }
   },
   { immediate: true }
 )
@@ -427,20 +388,9 @@ function handleSelect(nodeOrPath) {
 }
 
 async function handleRecordCreated(payload) {
-  const creationContext = creatorContext.value
-  const { path, recordType, metadata } = normalizeCreationResult(payload)
+  const { path, recordType } = normalizeCreationResult(payload)
   showCreator.value = false
   creatorContext.value = null
-
-  if (recordType === 'plateLayout') {
-    if (creationContext?.parentLink?.node?.recordType === 'run') {
-      await linkPlateLayoutToRun(creationContext.parentLink.node, metadata, path)
-    }
-  }
-
-  if (recordType && !selectedRootRecordType.value) {
-    selectedRootRecordType.value = recordType
-  }
 
   if (recordGraph?.rebuild) {
     await recordGraph.rebuild()
@@ -465,53 +415,6 @@ function normalizeCreationResult(payload) {
     recordType: payload.recordType || '',
     metadata: payload.metadata || {}
   }
-}
-
-async function linkPlateLayoutToRun(parentNode, childMetadata = {}, childPath = '') {
-  const runPath = parentNode?.path
-  const identifier = derivePlateLayoutIdentifier(childMetadata, childPath)
-  if (!runPath || !identifier) return
-  try {
-    const raw = await repo.readFile(runPath)
-    const { data: frontMatter = {}, body } = parseFrontMatter(raw)
-    const metadataSection = frontMatter.metadata || {}
-    const dataSection = frontMatter.data || {}
-    const operations = { ...(dataSection.operations || {}) }
-    const plateLayouts = Array.isArray(operations.plateLayouts) ? [...operations.plateLayouts] : []
-    if (plateLayouts.includes(identifier)) {
-      return
-    }
-    plateLayouts.push(identifier)
-    const nextFrontMatter = {
-      ...frontMatter,
-      metadata: metadataSection,
-      data: {
-        ...dataSection,
-        operations: {
-          ...operations,
-          plateLayouts
-        }
-      }
-    }
-    const serialized = serializeFrontMatter(nextFrontMatter, body)
-    await repo.writeFile(runPath, serialized)
-  } catch (err) {
-    console.warn('[PlateLayouts] Unable to link run with plate layout', err)
-  }
-}
-
-function derivePlateLayoutIdentifier(childMetadata = {}, childPath = '') {
-  if (childMetadata.recordId) return childMetadata.recordId
-  if (childMetadata.id) return childMetadata.id
-  return inferRecordIdFromPath(childPath)
-}
-
-function inferRecordIdFromPath(path = '') {
-  if (!path) return ''
-  const fileName = path.split('/').filter(Boolean).pop() || ''
-  if (!fileName) return ''
-  const base = fileName.replace(/\.(md|markdown|ya?ml)$/i, '')
-  return base.split('_')[0] || base
 }
 
 async function handleExpand(node) {
@@ -592,9 +495,6 @@ function handleGraphCreate(payload) {
   if (payload.parentField && payload.parentId) {
     metadataPatch[payload.parentField] = payload.parentId
   }
-  if (payload.recordType === 'plateLayout') {
-    Object.assign(metadataPatch, buildPlateLayoutCreationDefaults(payload.parentNode))
-  }
   openCreator({
     recordType: payload.recordType,
     metadata: metadataPatch,
@@ -671,24 +571,18 @@ function handleGraphUseAsSource(node) {
   }
 }
 
-function handleCreateSelectedRecord() {
-  if (!isReady.value) return
-  const recordType = selectedRootRecordType.value || defaultGraphRootType.value || ''
-  if (!recordType) {
-    openCreator()
-    return
-  }
-  const simpleModeTypes = new Set(['study', 'protocol'])
-  openCreator({
-    recordType,
-    simpleMode: simpleModeTypes.has(recordType)
-  })
-}
-
 function handleCreateProtocol() {
   if (!isReady.value || !protocolEnabled.value) return
   openCreator({
     recordType: 'protocol',
+    simpleMode: true
+  })
+}
+
+function handleCreateStudy() {
+  if (!isReady.value) return
+  openCreator({
+    recordType: 'study',
     simpleMode: true
   })
 }
@@ -823,7 +717,6 @@ onBeforeUnmount(() => {
     :repo="repo"
     :inspector-target="inspectorTarget"
     :schema-loader="schemaLoader"
-    :workflow-loader="workflowLoader"
     :record-graph="recordGraph"
     @connect="handleConnect"
     @saved="handleInspectorSaved"
@@ -851,7 +744,6 @@ onBeforeUnmount(() => {
       :tiptap-schema="tiptapSchema"
       :tiptap-ui-config="tiptapUiConfig"
       :tiptap-naming-rule="tiptapNamingRule"
-      :tiptap-workflow-definition="tiptapWorkflowDefinition"
       :schema-bundle="schemaLoader.schemaBundle?.value || {}"
       :validate-record="recordValidator.validate"
       :tiptap-context-overrides="tiptapContextOverrides.value || {}"
@@ -947,12 +839,9 @@ onBeforeUnmount(() => {
       :graph-tree-enabled="graphTreeEnabled"
       :graph-query-enabled="graphQueryEnabled"
       :is-ready="isReady"
-      :selected-root-record-type="selectedRootRecordType"
-      :top-level-record-types="topLevelRecordTypes"
       :protocol-enabled="protocolEnabled"
       :record-graph="recordGraph"
       :schema-loader="schemaLoader"
-      :workflow-loader="workflowLoader"
       :default-graph-root-type="defaultGraphRootType"
       :default-graph-root-label="defaultGraphRootLabel"
       :active-record-path="activeRecordPath"
@@ -961,14 +850,10 @@ onBeforeUnmount(() => {
       :root-nodes="rootNodes"
       :is-tree-bootstrapping="isTreeBootstrapping"
       :search-index="searchIndex"
-      @update:selected-root-record-type="handleUpdateSelectedRoot"
       @select="handleSelect"
       @expand="handleExpand"
-      @create-selected-record="handleCreateSelectedRecord"
+      @create-study="handleCreateStudy"
       @create-protocol="handleCreateProtocol"
-      @open-promotion="openPromotionModal"
-      @open-explorer="showExplorerModal = true"
-      @open-run-editor="showRunEditorModal = true"
       @open-assertion="handleOpenAssertion('global_assertions_browser', {})"
       @graph-create="handleGraphCreate"
       @graph-open-tiptap="handleGraphOpenTipTap"
@@ -998,7 +883,6 @@ onBeforeUnmount(() => {
       :assertion-context="assertionContext"
       :namespacing-config="namespacingConfig"
       :schema-loader="schemaLoader"
-      :workflow-loader="workflowLoader"
       :record-graph="recordGraph"
       @connect="handleConnect"
       @close-prompt="closePrompt"

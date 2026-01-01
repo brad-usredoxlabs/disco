@@ -53,7 +53,8 @@ export function composeRecordFrontMatter(
   formDataInput = {},
   bundle = {},
   studyOverrides = {},
-  namespacingOverrides = {}
+  namespacingOverrides = {},
+  options = {}
 ) {
   const resolvedRecordType =
     metadataInput?.kind || metadataInput?.recordType || recordType || metadataInput?.record_type || metadataInput?.type || ''
@@ -91,6 +92,14 @@ export function composeRecordFrontMatter(
   const normalizedMetadata = normalizeMetadataSection(resolvedRecordType, metadataSection, { jsonLdConfig: mergedJsonLdConfig }, combinedOverrides, formDataInput)
   mergeRunSpecificSections(resolvedRecordType, dataSections, metadataInput, resolvedFormData)
   ensureBiologyPrefixes(normalizedMetadata, dataSections, { ...bundle, jsonLdConfig: mergedJsonLdConfig }, combinedOverrides)
+  normalizedMetadata.provenance = normalizeProvenanceArray(
+    normalizedMetadata.provenance,
+    options.systemProvenance || [],
+    {
+      defaultBy: options.defaultProvenanceBy || 'system',
+      defaultAt: normalizedMetadata.updatedAt || normalizedMetadata.createdAt || new Date().toISOString()
+    }
+  )
   const flattenedData = flattenDataSections(pruneEmptySections(dataSections))
   const withSchema = ensureSchema(resolvedRecordType, normalizedMetadata)
   return orderRecordFields(withSchema, flattenedData)
@@ -216,6 +225,10 @@ export function mergeMetadataAndFormData(metadata = {}, explicitFormData) {
     })
   }
   delete base.formData
+  base.provenance = normalizeProvenanceArray(base.provenance, [], {
+    defaultBy: 'system',
+    defaultAt: base.updatedAt || base.createdAt || new Date().toISOString()
+  })
   return base
 }
 
@@ -320,6 +333,40 @@ function computeContextPrefixes(studyOverrides = {}, bundle = {}) {
   const basePrefixes = { ...DEFAULT_JSON_LD_CONTEXT, ...(bundle?.jsonLdConfig?.prefixes || {}) }
   const prefOverrides = (studyOverrides && studyOverrides.prefixes) || {}
   return { ...basePrefixes, ...prefOverrides }
+}
+
+function normalizeProvenanceArray(userValue, systemEntries = [], defaults = {}) {
+  const entries = []
+  const seen = new Set()
+  const defaultAt = defaults.defaultAt || new Date().toISOString()
+  const defaultBy = defaults.defaultBy || 'system'
+  const appendEntry = (entry) => {
+    const normalized = coerceProvenanceEntry(entry, { defaultAt, defaultBy })
+    if (!normalized) return
+    const key = JSON.stringify(normalized)
+    if (seen.has(key)) return
+    seen.add(key)
+    entries.push(normalized)
+  }
+
+  const userArray = Array.isArray(userValue) ? userValue : userValue ? [userValue] : []
+  userArray.forEach((entry) => appendEntry(entry))
+
+  const sysArray = Array.isArray(systemEntries) ? systemEntries : systemEntries ? [systemEntries] : []
+  sysArray.forEach((entry) => appendEntry(entry))
+
+  return entries.length ? entries : undefined
+}
+
+function coerceProvenanceEntry(entry, defaults = {}) {
+  const base = isPlainObject(entry) ? cloneValue(entry) : {}
+  if (!isPlainObject(entry) && entry !== undefined && entry !== null) {
+    base.notes = String(entry)
+  }
+  if (!base.kind) base.kind = 'derive'
+  if (!base.at) base.at = defaults.defaultAt || new Date().toISOString()
+  if (!base.by) base.by = defaults.defaultBy || 'system'
+  return base.kind && base.at && base.by ? base : null
 }
 
 function assignDataValue(target, descriptor, value) {

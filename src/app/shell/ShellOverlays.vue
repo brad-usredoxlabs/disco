@@ -24,7 +24,6 @@ defineProps({
   creatorContext: { type: Object, default: null },
   repo: { type: Object, required: true },
   schemaLoader: { type: Object, required: true },
-  workflowLoader: { type: Object, required: true },
   recordGraph: { type: Object, required: true }
 })
 
@@ -213,7 +212,6 @@ const emit = defineEmits([
     :open="showCreator"
     :repo="repo"
     :schema-loader="schemaLoader"
-    :workflow-loader="workflowLoader"
     :record-graph="recordGraph"
     :namespacing-config="namespacingConfig"
     :on-created="(val) => emit('record-created', val)"

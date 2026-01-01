@@ -5,7 +5,6 @@ export interface RepoBundleServices {
   repo: unknown
   tree: unknown
   schemaLoader: unknown
-  workflowLoader: unknown
   systemConfig: unknown
   offlineStatus?: unknown
 }

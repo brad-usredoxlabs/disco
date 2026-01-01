@@ -3,9 +3,9 @@
 
 ## 1. Introduction
 
-This document defines the architecture for a schema-driven, serverless Laboratory Information System (LIS) and Quality Management System (QMS). The system runs entirely as a client-side application (e.g., GitHub Pages). All business logic, workflows, and validation logic are derived from declarative schema bundles. There is no separate “LIS mode” or “QMS mode”; instead, the schema defines all strictness and required behaviors.
+This document defines the architecture for a schema-driven, serverless Laboratory Information System (LIS) and Quality Management System (QMS). The system runs entirely as a client-side application (e.g., GitHub Pages). All business logic and validation logic are derived from declarative schema bundles. There is no separate “LIS mode” or “QMS mode”; instead, the schema defines all strictness and required behaviors.
 
-The system supports both research and regulated workflows by loading different schema bundles while keeping the application code identical.
+The system supports both research and regulated configurations by loading different schema bundles while keeping the application code identical.
 
 ---
 
@@ -43,11 +43,10 @@ This avoids prompting the user for directory access for each record.
 - Sidebar LLM assistant  
 - No business rules in UI components; all derived from schema
 
-### 4.2 Workflow Layer (XState)
-- Declarative record lifecycles  
-- State transitions defined via `.machine.yaml` files  
-- Guards for validation and signoffs  
-- Regulated workflows use the same engine but stricter schema
+### 4.2 Lifecycle Metadata (optional)
+- Schemas may include a `state` or similar lifecycle field to describe record progress.
+- The UI treats lifecycle fields as plain metadata; there is no runtime state machine enforcing transitions.
+- Any lifecycle rules are expressed through schema validation (e.g., enum values) or external review processes.
 
 ### 4.3 Schema-Driven Domain Logic
 Entirely composed of pure functions generated from declarative configuration.
@@ -72,7 +71,6 @@ Validates:
 - LLM receives:  
   - Current file  
   - Schema  
-  - Workflow state  
   - Validation rules  
   - **Local vocabularies and ontologies (OLS-backed search)**  
 - LLM produces patches or structured suggestions  
@@ -82,25 +80,19 @@ Validates:
 - JSON-LD metadata is treated as the canonical graph language. `src/records/jsonLdFrontmatter.js` normalizes every record into `@context`, `@id`, `@type`, and structured `data` sections using bundle-specific config (see §5.3).
 - `src/graph/useRecordGraph.js` orchestrates graph rebuilds whenever the repo handle or schema bundle changes. It pulls Markdown files via `src/graph/collectRecordFiles.js`, hydrates them with JSON-LD metadata, and constructs a snapshot through `src/graph/graphBuilder.js`.
 - Each node includes derived IRIs, record type, semantic tags, biology entities, and relationship edges defined in the bundle (`relationships.recordTypes`). Backlinks are generated so parent/child/related traversals remain O(1).
-- The UI’s primary exploration surface is `src/app/GraphTreePanel.vue`, embedded in the File Workbench. It renders schema-aware trees, supports inline child creation (respecting workflow and relationship rules), and keeps selection synchronized with the active file.
+- The UI’s primary exploration surface is `src/app/GraphTreePanel.vue`, embedded in the File Workbench. It renders schema-aware trees, supports inline child creation (respecting relationship rules), and keeps selection synchronized with the active file.
 - Declarative graph queries live at `/graph/<schema-set>/queries.yaml`, loaded via `src/schema-bundles/useSchemaBundle.js` and evaluated by `src/graph/useGraphQuery.js`. Filters operate on JSON-LD paths (e.g., `metadata.@type`, `data.operations.samples[]`) so schema authors can define saved searches and expansion rules without touching the UI.
 
-### 4.8 Plate Layout Editor
-- Plate layout records (`recordType: plateLayout`, e.g., files under `09_PLATE_LAYOUTS/`) can be opened directly from the File Tree or by visiting `http://localhost:5174/?plateEditorPath=<path>&plateEditorBundle=<bundle>` (same query params also work on the primary Vite server). `src/app/AppShell.vue` watches the `plateEditorPath` query parameter and launches a standalone editor window so plate design work can happen outside the general markdown workbench.
-- `src/plate-editor/PlateEditorShell.vue` is the top-level Vue shell that loads the selected Markdown file, parses JSON-LD front matter, and binds it to the dedicated plate editor store (`src/plate-editor/store/usePlateEditorStore.js`). It keeps the record hash in sync so the “Save plate layout” button only activates when well assignments or timeline events change.
-- Visual editing lives in `src/plate-editor/components`: `PlateGrid.vue` renders wells + selection overlays, `ApplyBar.vue` applies materials/roles to a selection, and `MaterialDetailsDrawer.vue` manages the shared material library. Supporting composables and services (`composables/useMaterialLibrary.js`, `services/materialLibraryWriter.js`, `utils/layoutUtils.js`) encapsulate grid geometry, presets, and persistence. `LabwareGrid.vue` + `TransferStepSidecar.vue` provide dual-grid, protocol-style transfer step building with separate source/target selections.
-- Schema authors define allowable plate specs via `spec/plate-editor/PlateEditorSpec.*` (role catalog, well geometry, default events). The registry in `src/plate-editor/specRegistry.js` exposes those specs, and `schema/computable-lab/plate-layout.schema.yaml` links each record to a spec through the `editorSpecId` field so layouts render with the right template.
-- PlateEvents authored in plate layouts remain useful as templates, but **runs are the canonical source of PlateEvents**. Layouts can still be ingested as seed data when a run lacks inline events.
+### 4.8 Plate Layout Editor (retired)
+- Plate layout records have been removed; runs are the canonical source of PlateEvents. Standalone plate layout editors and layouts are no longer part of the bundle.
 
 ### 4.9 Robot Adapter Tooling
-- Lightweight conversion scripts live under `scripts/adapters/`. `plate-events-to-pylabrobot.mjs` emits a JSON command list that PyLabRobot developers can consume, while `plate-events-to-pyalab.mjs` prints a human-readable step list compatible with pyalab/Vialab workflows.
-- Both adapters reuse `scripts/adapters/lib/plateEventConverter.mjs`, which parses plate layout records (via `src/records/frontMatter.js`), normalizes legacy and structured events, and exposes helper mappers (`toPyLabRobotCommands`, `toPyalabSteps`). This keeps robot-specific hints optional and prevents schema drift.
-- Example PlateEvents for transfer/incubate/read/wash/custom scenarios are documented in `tmp/plate-event-examples.md` so operators and adapter authors can copy canonical YAML snippets directly into records.
+- Lightweight conversion scripts live under `scripts/adapters/`. `scripts/adapters/lib/plateEventConverter.mjs` normalizes structured events and exposes helper mappers (`toPyLabRobotCommands`, `toPyalabSteps`). Example PlateEvents for transfer/incubate/read/wash/custom scenarios are documented in `tmp/plate-event-examples.md` so operators and adapter authors can copy canonical YAML snippets directly into records.
 - Plate editor transfer steps now emit protocol-style `details.mapping` plus derived `target.wells`, so adapters and the derivation pipeline can replay mappings into per-well contents.
 
 ### 4.10 Stabilization & Migration
 - `scripts/migrations/backfill-plate-events.mjs` upgrades legacy plate layouts by converting `wells.inputs` entries into JSON-LD PlateEvents. It can run in dry-run mode or target specific files, and the core logic lives in `scripts/migrations/lib/backfillPlateEvents.mjs`.
-- Regression coverage lives in `tests/backfillPlateEvents.test.mjs` and `tests/plateEventDeriver.test.mjs`, ensuring derived wells stay in sync with PlateEvents and the migration keeps emitting canonical transfer payloads.
+- Regression coverage lives in `tests/plateEventDeriver.test.mjs`, ensuring derived wells stay in sync with PlateEvents and the migration keeps emitting canonical transfer payloads.
 
 ### 4.11 Protocol Templates
 - Protocol records now define labware roles, parameter schemas, and ordered event templates (see `schema/computable-lab/protocol.schema.yaml` plus `datatypes/protocol-event*.schema.yaml`).  
@@ -117,8 +109,8 @@ Validates:
 - The Run Editor has replaced role-based labware bindings with a **dynamic source palette**: `sourcePalette`, `activeSourceId`, and `destinationPlate` live in `useRunEditorStore.js`, seed from legacy `labware_bindings`/`data.source_palette`, and persist both palette metadata and back-compat bindings on save. New modals add template labware (layout from `labwareTemplates`) or run-derived sources (`loadRunById` replay with status badges and auto-suggested labwareId/layout). ApplyBar/TransferStepSidecar build mapping/events using the active source labwareId and the fixed destination plate; palette items support soft-archive and replay-driven wells. A Graph Tree “Use as source” action in the workspace seeds a pending palette entry and opens the Run Editor on the selected run.
 
 ### 4.13 Event Graph Explorer & Promotion
-- The Event Graph Explorer is now wired into the main workspace nav with a picker for runs and plate layouts. It renders an overlay legend, lane-level mapping previews/highlights, and a lineage edge list in the drawer. A standalone Explorer view can be launched from the nav or via query params; the `AppShell` keeps selection and overlays in sync with the File Workbench.
-- The event-graph engine lives under `src/event-graph/` (units/state/replay/selectors) and replays PlateEvents from runs (falling back to linked plate layouts when needed). Helper utilities in `src/explorer/helpers.js` centralize mapping, cursor, and overlay logic.
+- The Event Graph Explorer is now wired into the main workspace nav with a picker for runs. It renders an overlay legend, lane-level mapping previews/highlights, and a lineage edge list in the drawer. A standalone Explorer view can be launched from the nav or via query params; the `AppShell` keeps selection and overlays in sync with the File Workbench.
+- The event-graph engine lives under `src/event-graph/` (units/state/replay/selectors) and replays PlateEvents from runs. Helper utilities in `src/explorer/helpers.js` centralize mapping, cursor, and overlay logic.
 - Promotion workflow: both the UI modal (“Promote to protocol”) and CLI script (`scripts/promote-run-to-protocol.mjs`) share helpers in `src/app/promotionUtils.js`. They suggest labware roles, validate against protocol schema, and write promoted protocols to `06_PROTOCOLS/..._PROMOTED.md`. Fixtures under `tmp/fixtures/` exercise round-trip promotion.
 
 ### 4.14 Material Registry & Revisioning (new)
@@ -211,28 +203,18 @@ All prefilled data is stored in front matter and validated by Zod.
 
 ---
 
-## 7. Workflow Layer (XState)
+## 7. Lifecycle Metadata (no state engine)
 
-All workflow constraints—including regulatory signoffs—live in machine YAML.
+Lifecycle fields (such as `state`) are defined directly in record schemas and stored as ordinary metadata. The UI does not run a state machine or enforce transitions; any progression rules live in schema validation (e.g., enums) or external review/automation.
 
-Example:
+Example schema snippet:
 
 ```yaml
-states:
-  draft:
-    on:
-      SUBMIT:
-        target: in_review
-        cond: validation.passed
-
-  in_review:
-    on:
-      APPROVE:
-        target: approved
-        cond: signoff.atLeastTwo
+properties:
+  state:
+    type: string
+    enum: [draft, in_review, approved]
 ```
-
-Strict workflows are activated simply by choosing a schema bundle that defines them.
 
 ---
 
@@ -316,9 +298,9 @@ The system assumes the repository is synchronized with GitHub or another Git hos
 
 Recommended practices for regulated schema sets:
 
-* Mandatory GitHub sync workflow
+* Mandatory GitHub sync policy
 * External backups
-* Record review workflows requiring verification of external backup status
+* Record review steps requiring verification of external backup status
 
 ---
 
@@ -327,7 +309,7 @@ Recommended practices for regulated schema sets:
 This unified architecture removes the need for a dual-mode system.
 All behavior—research or regulated—is determined entirely by schemas:
 
-* Workflows
+* Lifecycle fields (e.g., state enums)
 * Required fields
 * Prefilled metadata
 * Signoff requirements

@@ -28,25 +28,6 @@ export function openTipTapWindow(path, recordType, bundle) {
 }
 
 /**
- * Opens a Plate Editor window for a plate layout
- * @param {string} path - Plate layout file path
- * @param {string} [bundle] - Optional schema bundle name
- */
-export function openPlateEditorWindow(path, bundle) {
-  if (!path) return
-  if (typeof window === 'undefined') return
-  
-  const url = new URL(window.location.href)
-  url.searchParams.delete('plateEditorPath')
-  url.searchParams.delete('plateEditorBundle')
-  url.searchParams.set('plateEditorPath', path)
-  if (bundle) {
-    url.searchParams.set('plateEditorBundle', bundle)
-  }
-  window.open(url.toString(), '_blank', 'noopener,noreferrer')
-}
-
-/**
  * Opens a Protocol Editor window for a protocol
  * @param {string} path - Protocol file path
  * @param {string} [bundle] - Optional schema bundle name

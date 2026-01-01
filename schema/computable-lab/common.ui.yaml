@@ -16,6 +16,25 @@ layout:
         width: 6
         props:
           dense: true
+        readOnly: true
+    "@id":
+      group: metadata
+      order: 15
+      ui:
+        readOnly: true
+        width: 6
+    "@type":
+      group: metadata
+      order: 18
+      ui:
+        component: chips-list
+        readOnly: true
+    "@context":
+      group: metadata
+      order: 19
+      ui:
+        readOnly: true
+        hidden: true
     title:
       group: header
       order: 20
@@ -41,6 +60,7 @@ layout:
       order: 50
       ui:
         width: 4
+        readOnly: true
     updatedAt:
       group: metadata
       order: 60
@@ -56,8 +76,21 @@ layout:
       group: references
       order: 80
       ui:
-        component: chips-list
-        width: 6
+        display: table
+        readOnly: true
+        columns:
+          - key: kind
+            label: Kind
+          - key: at
+            label: At
+          - key: by
+            label: By
+          - key: activity
+            label: Activity
+          - key: notes
+            label: Notes
+        props:
+          dense: true
     relatedIdentifiers:
       group: references
       order: 90

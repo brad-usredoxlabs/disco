@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { parseFrontMatter, serializeFrontMatter } from '../../records/frontMatter'
 import { getParentPath, joinPath, normalizePath } from '../../fs/pathUtils'
-import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../../records/jsonLdFrontmatter'
 
 export function useTipTapIO(repo, validateRecord) {
   const loading = ref(false)
@@ -112,30 +111,19 @@ export function useTipTapIO(repo, validateRecord) {
 
   async function seedRecord(recordPath, sidecarPath, template = {}) {
     const baseMetadata = {
-      state: 'draft',
       title: template.title || 'Untitled protocol',
       recordType: template.recordType || 'protocol',
       ...template
     }
-    let frontMatterPayload
-    let inferredType = baseMetadata.recordType || 'record'
-    if (hasJsonLdShape(template)) {
-      frontMatterPayload = template
-      inferredType = template.metadata?.recordType || template.recordType || inferredType
-    } else {
-      const formData = isPlainObject(baseMetadata.formData) ? baseMetadata.formData : {}
-      frontMatterPayload = composeRecordFrontMatter(inferredType, baseMetadata, formData, {})
-    }
-    const { metadata: hydratedMetadata, formData } = extractRecordData(inferredType, frontMatterPayload, {})
-    const schemaRecord = mergeMetadataAndFormData(hydratedMetadata, formData)
+    const schemaRecord = { ...baseMetadata }
     if (validateRecord) {
       validateRecord(schemaRecord)
     }
     const tiptapDoc = buildDocFromRecord(schemaRecord, '')
-    await repo.writeFile(recordPath, serializeFrontMatter(frontMatterPayload))
+    await repo.writeFile(recordPath, serializeFrontMatter(schemaRecord))
     await repo.writeFile(sidecarPath, JSON.stringify(tiptapDoc, null, 2))
     return {
-      metadata: frontMatterPayload,
+      metadata: schemaRecord,
       body: '',
       tiptapDoc,
       recordPath,

@@ -4,7 +4,7 @@ import RecordMetadataForm from '../records/RecordMetadataForm.vue'
 import AssistantPanel from './AssistantPanel.vue'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
 import { useRecordValidator } from '../records/recordValidator'
-import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
+import { mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
 
 const props = defineProps({
@@ -17,10 +17,6 @@ const props = defineProps({
     default: null
   },
   schemaLoader: {
-    type: Object,
-    required: true
-  },
-  workflowLoader: {
     type: Object,
     required: true
   },
@@ -37,14 +33,12 @@ const props = defineProps({
 const currentNode = toRef(props, 'node')
 const plainTextContent = ref('')
 const recordMetadata = ref({})
-const recordBody = ref('')
 const recordType = ref('')
 const isLoading = ref(false)
 const isSaving = ref(false)
 const status = ref('')
 const error = ref('')
 const metadataDirty = ref(false)
-const bodyDirty = ref(false)
 const plainTextDirty = ref(false)
 const validationState = ref({ status: 'idle', issues: [], ok: false })
 const hydrationDepth = ref(0)
@@ -60,7 +54,7 @@ async function endHydration() {
 const isFile = computed(() => currentNode.value?.kind === 'file')
 const filePath = computed(() => (currentNode.value ? currentNode.value.path : ''))
 const isRecord = computed(() => !!recordType.value)
-const isDirty = computed(() => metadataDirty.value || bodyDirty.value || plainTextDirty.value)
+const isDirty = computed(() => metadataDirty.value || plainTextDirty.value)
 const schemaBundle = computed(() => props.schemaLoader.schemaBundle?.value)
 const activeSchema = computed(() => (isRecord.value ? schemaBundle.value?.recordSchemas?.[recordType.value] : null))
 const activeUiConfig = computed(() => (isRecord.value ? schemaBundle.value?.uiConfigs?.[recordType.value] : null))
@@ -79,15 +73,6 @@ const metadataModel = computed({
   }
 })
 
-const workflowDefinition = computed(() => (isRecord.value ? props.workflowLoader.getMachine(recordType.value) : null))
-const workflowConfig = computed(() => workflowDefinition.value?.config || null)
-const workflowState = computed(() => {
-  if (!workflowConfig.value) return ''
-  return recordMetadata.value?.state || workflowConfig.value.initial || ''
-})
-const workflowStateMeta = computed(() => workflowConfig.value?.states?.[workflowState.value]?.meta || {})
-const workflowDescription = computed(() => workflowStateMeta.value?.description || '')
-const isImmutable = computed(() => !!workflowStateMeta.value?.immutable)
 const graphData = computed(() => {
   if (props.recordGraph?.graph?.value) return props.recordGraph.graph.value
   if (props.recordGraph?.value) return props.recordGraph.value
@@ -123,7 +108,6 @@ const canOpenTipTap = computed(() => {
   if (!supportsTipTap.value) return false
   if (!activeSchema.value) return false
   if (isLoading.value) return false
-  if (isImmutable.value) return false
   return !isDirty.value
 })
 const tipTapDisabledReason = computed(() => {
@@ -131,13 +115,8 @@ const tipTapDisabledReason = computed(() => {
   if (!supportsTipTap.value) return 'TapTab is not enabled for this record type.'
   if (!activeSchema.value) return 'This record type is missing a schema definition.'
   if (isLoading.value) return 'Wait for the file to finish loading.'
-  if (isImmutable.value) return 'This record is immutable in the current workflow state.'
   if (isDirty.value) return 'Save or discard your pending changes before opening TapTab.'
   return ''
-})
-const markdownWarning = computed(() => {
-  if (!isRecord.value || !supportsTipTap.value) return ''
-  return 'Markdown is automatically generated from the YAML metadata/form data. Use TapTab or the form to edit.'
 })
 
 function evaluateGuard(name) {
@@ -172,35 +151,6 @@ function openRecordById(id) {
   }
 }
 
-const workflowTransitions = computed(() => {
-  if (!workflowConfig.value || !workflowState.value) return []
-  const stateConfig = workflowConfig.value.states?.[workflowState.value]
-  if (!stateConfig) return []
-  const transitions = []
-  const onConfig = stateConfig.on || {}
-  for (const [eventName, definition] of Object.entries(onConfig)) {
-    const entries = Array.isArray(definition) ? definition : [definition]
-    entries.forEach((entry, index) => {
-      if (!entry) return
-      const target = entry.target || entry.to
-      if (!target) return
-      const guardName =
-        typeof entry.guard === 'string'
-          ? entry.guard
-          : entry.guard?.name || entry.guard?.type || ''
-      transitions.push({
-        id: `${eventName}-${index}-${target}`,
-        event: eventName,
-        target,
-        guard: guardName,
-        allowed: evaluateGuard(guardName),
-        description: entry.description || ''
-      })
-    })
-  }
-  return transitions
-})
-
 const validationStatus = computed(() => {
   if (!isRecord.value) return 'idle'
   return validationState.value.status
@@ -221,10 +171,8 @@ watch(
     error.value = ''
     plainTextContent.value = ''
     recordMetadata.value = {}
-    recordBody.value = ''
     recordType.value = ''
     metadataDirty.value = false
-    bodyDirty.value = false
     plainTextDirty.value = false
     validationState.value = { status: 'idle', issues: [], ok: false }
 
@@ -241,20 +189,19 @@ async function loadFile(node) {
     isLoading.value = true
     beginHydration()
     const content = await props.repo.readFile(node.path)
-    const { data, body } = parseFrontMatter(content)
+    const { data } = parseFrontMatter(content)
     const frontMatter = data || {}
-    const inferredType = inferRecordType(frontMatter, node.path)
-    const { metadata: hydratedMetadata } = extractRecordData(inferredType, frontMatter, schemaBundle.value || {})
-    recordMetadata.value = hydratedMetadata || {}
-    recordBody.value = body || ''
-    recordType.value = recordMetadata.value?.recordType || inferredType || ''
-    plainTextContent.value = content
-    runRecordValidation()
-    ensureWorkflowState()
-    status.value = `Loaded ${node.name}`
-  } catch (err) {
-    error.value = err?.message || 'Unable to load file.'
-  } finally {
+  const inferredType = inferRecordType(frontMatter, node.path)
+  const merged = { ...frontMatter }
+  if (!merged.recordType && inferredType) merged.recordType = inferredType
+  recordMetadata.value = merged
+  recordType.value = merged?.recordType || inferredType || ''
+  plainTextContent.value = content
+  runRecordValidation()
+  status.value = `Loaded ${node.name}`
+} catch (err) {
+  error.value = err?.message || 'Unable to load file.'
+} finally {
     await endHydration()
     isLoading.value = false
   }
@@ -264,34 +211,12 @@ async function saveFile() {
   if (!isFile.value) return
   try {
     isSaving.value = true
-    let payload
-    if (isRecord.value && supportsTipTap.value) {
-      const frontMatterPayload = composeRecordFrontMatter(
-        recordType.value,
-        recordMetadata.value,
-        recordMetadata.value.formData || {},
-        schemaBundle.value || {},
-        recordContextOverrides.value || {}
-      )
-      payload = serializeFrontMatter(frontMatterPayload)
-    } else if (isRecord.value) {
-      const frontMatterPayload = composeRecordFrontMatter(
-        recordType.value,
-        recordMetadata.value,
-        recordMetadata.value.formData || {},
-        schemaBundle.value || {},
-        recordContextOverrides.value || {}
-      )
-      payload = serializeFrontMatter(frontMatterPayload)
-    } else {
-      payload = plainTextContent.value
-    }
+    const payload = isRecord.value ? serializeFrontMatter(recordMetadata.value) : plainTextContent.value
     await props.repo.writeFile(filePath.value, payload)
     props.recordGraph?.rebuild?.()
     props.searchIndex?.rebuild?.()
     status.value = 'Saved changes'
     metadataDirty.value = false
-    bodyDirty.value = false
     plainTextDirty.value = false
   } catch (err) {
     error.value = err?.message || 'Failed to save file.'
@@ -301,21 +226,14 @@ async function saveFile() {
 }
 
 function refreshMarkdownPreview() {
-  recordBody.value = ''
+  // No-op: markdown body removed in favor of flat YAML.
 }
 
 async function regenerateMarkdown() {
   if (!isRecord.value || !supportsTipTap.value || !filePath.value) return
   try {
     status.value = 'Refreshing record…'
-    const frontMatterPayload = composeRecordFrontMatter(
-      recordType.value,
-      recordMetadata.value,
-      recordMetadata.value.formData || {},
-      schemaBundle.value || {},
-      recordContextOverrides.value || {}
-    )
-    await props.repo.writeFile(filePath.value, serializeFrontMatter(frontMatterPayload))
+    await props.repo.writeFile(filePath.value, serializeFrontMatter(recordMetadata.value))
     status.value = 'Record refreshed.'
   } catch (err) {
     status.value = ''
@@ -326,14 +244,11 @@ async function regenerateMarkdown() {
 function onPlainTextInput(event) {
   plainTextContent.value = event.target.value
   metadataDirty.value = false
-  bodyDirty.value = false
   plainTextDirty.value = true
 }
 
 function updateRecordBody(event) {
-  if (isImmutable.value) return
-  recordBody.value = event.target.value
-  bodyDirty.value = true
+  // Markdown body removed; keep handler for legacy wiring.
 }
 
 function inferRecordType(frontMatter, path) {
@@ -374,40 +289,6 @@ function runRecordValidation() {
   }
 }
 
-function assignWorkflowState(nextState, markDirty = true) {
-  if (!nextState) return
-  // Don't mark dirty if we're not actually changing the state
-  const isActuallyChanging = recordMetadata.value?.state !== nextState
-  
-  if (!markDirty) {
-    beginHydration()
-  }
-  recordMetadata.value = {
-    ...(recordMetadata.value || {}),
-    state: nextState
-  }
-  if (!markDirty) {
-    nextTick(() => {
-      hydrationDepth.value = Math.max(0, hydrationDepth.value - 1)
-    })
-  } else if (isActuallyChanging) {
-    metadataDirty.value = true
-  }
-}
-
-function ensureWorkflowState() {
-  if (!isRecord.value || !workflowConfig.value) return
-  if (!recordMetadata.value?.state) {
-    assignWorkflowState(workflowConfig.value.initial, false)
-  }
-}
-
-function applyTransition(transition) {
-  if (!transition?.allowed || isImmutable.value) return
-  assignWorkflowState(transition.target, true)
-  runRecordValidation()
-}
-
 watch(
   () => recordMetadata.value,
   () => {
@@ -417,15 +298,6 @@ watch(
     runRecordValidation()
   },
   { deep: true }
-)
-
-watch(
-  () => recordBody.value,
-  () => {
-    if (!isRecord.value) return
-    if (isHydrating.value) return
-    bodyDirty.value = true
-  }
 )
 
 watch(
@@ -442,15 +314,7 @@ watch(
   () => {
     if (isRecord.value) {
       runRecordValidation()
-      ensureWorkflowState()
     }
-  }
-)
-
-watch(
-  () => workflowConfig.value,
-  () => {
-    ensureWorkflowState()
   }
 )
 
@@ -629,32 +493,6 @@ function openTipTapEditor() {
       </button>
     </div>
 
-    <section v-if="isRecord && workflowConfig" class="workflow-panel">
-      <div class="workflow-header">
-        <div>
-          <p class="section-label">Workflow state</p>
-          <div class="workflow-state-pill" :class="{ 'is-immutable': isImmutable }">
-            {{ workflowState || 'unknown' }}
-          </div>
-        </div>
-        <span v-if="workflowDescription" class="workflow-description">{{ workflowDescription }}</span>
-      </div>
-      <div class="workflow-transitions" v-if="workflowTransitions.length">
-        <button
-          v-for="transition in workflowTransitions"
-          :key="transition.id"
-          class="secondary"
-          type="button"
-          :disabled="!transition.allowed || isImmutable"
-          @click="applyTransition(transition)"
-        >
-          {{ transition.event }} → {{ transition.target }}
-        </button>
-      </div>
-      <p v-else class="workflow-muted">No transitions available.</p>
-      <p v-if="isImmutable" class="workflow-muted">This record is immutable in the current state.</p>
-    </section>
-
     <section v-if="graphNode" class="relationships-panel">
       <header class="record-section-header">
         <p class="section-label">Relationships</p>
@@ -777,20 +615,6 @@ function openTipTapEditor() {
           </p>
         </div>
       </section>
-      <section>
-        <header class="record-section-header">
-          <p class="section-label">Markdown body</p>
-        </header>
-        <p v-if="markdownWarning" class="markdown-warning">
-          {{ markdownWarning }}
-        </p>
-        <textarea
-          class="file-textarea"
-          :value="recordBody"
-          :disabled="isLoading || isImmutable"
-          @input="updateRecordBody"
-        ></textarea>
-      </section>
     </div>
 
     <textarea
@@ -890,55 +714,6 @@ function openTipTapEditor() {
   background: #fff7ed;
   border-color: rgba(251, 191, 36, 0.4);
   color: #c2410c;
-}
-
-.workflow-panel {
-  margin-top: 1rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-
-.workflow-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.workflow-state-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.5);
-  text-transform: capitalize;
-}
-
-.workflow-state-pill.is-immutable {
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #b91c1c;
-}
-
-.workflow-description {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #475569;
-}
-
-.workflow-transitions {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.workflow-muted {
-  margin-top: 0.75rem;
-  font-size: 0.85rem;
-  color: #94a3b8;
 }
 
 .markdown-warning {

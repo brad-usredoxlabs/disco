@@ -21,10 +21,6 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  workflowLoader: {
-    type: Object,
-    required: true
-  },
   recordGraph: {
     type: Object,
     required: true
@@ -68,7 +64,6 @@ const simpleMode = computed(() => !!incomingContext.value?.simpleMode)
 const bundle = computed(() => props.schemaLoader.schemaBundle?.value)
 const namingRules = computed(() => bundle.value?.naming || {})
 const relationships = computed(() => bundle.value?.relationships || { recordTypes: {} })
-const workflowMachines = computed(() => props.workflowLoader.workflowBundle?.value?.machines || {})
 const graphData = computed(() => props.recordGraph?.graph?.value || { nodes: [], nodesById: {} })
 const creatorContextOverrides = computed(() => {
   const nodesById = graphData.value?.nodesById || {}
@@ -127,8 +122,7 @@ watch(
   async (type) => {
     if (!type) return
     const namingRule = namingRules.value[type]
-    const workflowMachine = workflowMachines.value?.[type]
-    state.metadata = buildDefaultFrontMatter(type, namingRule, workflowMachine)
+    state.metadata = buildDefaultFrontMatter(type, namingRule)
     const bodyDefaults = buildBodyDefaults(type, bundle.value || {})
     if (Object.keys(bodyDefaults).length) {
       state.metadata.formData = bodyDefaults

@@ -39,15 +39,6 @@ run:
       linkage:
         viaField: "experimentId"
 
-plateLayout:
-  idField: "id"
-  baseDir: "plate_layouts"
-  filenamePattern: "{{id}}_{{runId}}_{{title_sanitized}}.yaml"
-  idGeneration:
-    prefix: "PLT"
-    format: "PLT-{counter:0000}"
-    counterFile: ".counters/plate-layout.counter"
-
 recipe:
   idField: "id"
   baseDir: "recipes"

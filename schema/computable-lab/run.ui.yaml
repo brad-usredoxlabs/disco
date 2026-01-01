@@ -32,6 +32,8 @@ layout:
     createdBy:
       group: "metadata"
       order: 12
+      ui:
+        readOnly: true
 
     experimentId:
       group: "header"
@@ -100,27 +102,6 @@ layout:
         component: textarea
         props:
           rows: 4
-    plateLayout:
-      group: "details"
-      order: 80
-      jsonLd:
-        target: data
-        section: operations
-        key: plateLayout
-      ui:
-        component: code
-        language: yaml
-    plateLayouts:
-      group: "details"
-      order: 85
-      jsonLd:
-        target: data
-        section: operations
-        key: plateLayouts
-      ui:
-        component: JsonEditor
-        props:
-          minLines: 4
     operator:
       group: "details"
       order: 90

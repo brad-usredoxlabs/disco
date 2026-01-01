@@ -32,6 +32,8 @@ layout:
     createdBy:
       group: "metadata"
       order: 12
+      ui:
+        readOnly: true
     shortSlug:
       group: "header"
       order: 10

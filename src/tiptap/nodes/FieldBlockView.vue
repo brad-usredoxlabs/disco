@@ -12,7 +12,10 @@
   >
     <template v-if="isOntologyField">
       <div class="field-inline field-inline--ontology">
-        <span class="field-label">{{ labelText }}</span>
+        <span class="field-label">
+          {{ labelText }}
+          <span v-if="isRequired" class="required-indicator" title="Required field">*</span>
+        </span>
         <OntologyFieldInput
           :value="node.attrs.value"
           :placeholder="placeholder"
@@ -23,7 +26,10 @@
     </template>
     <template v-else-if="isOntologyListField">
       <div class="field-inline field-inline--ontology-list">
-        <span class="field-label">{{ labelText }}</span>
+        <span class="field-label">
+          {{ labelText }}
+          <span v-if="isRequired" class="required-indicator" title="Required field">*</span>
+        </span>
         <OntologyListField
           class="ontology-list-field"
           :value="node.attrs.value"
@@ -35,7 +41,10 @@
     </template>
     <template v-else-if="isRecipeCardField">
       <div class="recipe-field-wrapper">
-        <span class="field-label">{{ labelText }}</span>
+        <span class="field-label">
+          {{ labelText }}
+          <span v-if="isRequired" class="required-indicator" title="Required field">*</span>
+        </span>
         <RecipeCardField
           :value="node.attrs.value"
           :vocab="node.attrs.vocab"
@@ -51,7 +60,10 @@
           'field-inline--date': isDateLike
         }"
       >
-        <span class="field-label">{{ labelText }}</span>
+        <span class="field-label">
+          {{ labelText }}
+          <span v-if="isRequired" class="required-indicator" title="Required field">*</span>
+        </span>
         <template v-if="isTextarea">
           <textarea
             class="field-input field-input--textarea"
@@ -152,6 +164,7 @@ const isOntologyListField = computed(() => fieldType.value === 'ontologyList')
 const isEditorReadOnly = computed(() => props.editor?.isEditable === false)
 
 const labelText = computed(() => humanizeLabel(props.node.attrs.fieldKey))
+const isRequired = computed(() => props.node.attrs.required === true)
 const enumInput = ref(null)
 const showDropdown = ref(false)
 const query = ref('')
@@ -344,9 +357,22 @@ function handleFocus() {
   white-space: nowrap;
 }
 
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
 .field-label::after {
   content: ':';
   margin-left: 0.2rem;
+}
+
+.required-indicator {
+  color: #dc2626;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .field-input {

@@ -133,19 +133,6 @@ export function usePromotionWorkflow(repo, schemaLoader, activeRecordPath, explo
     if (!events.length && Array.isArray(data.operations?.events)) {
       events.push(...data.operations.events)
     }
-    if (!events.length) {
-      const layoutPath = data.operations?.plateLayout || (Array.isArray(data.operations?.plateLayouts) && data.operations.plateLayouts[0])
-      if (layoutPath && repo?.readFile) {
-        try {
-          const rawLayout = await repo.readFile(layoutPath)
-          const { data: layoutData } = parseFrontMatter(rawLayout)
-          const layoutEvents = layoutData?.operations?.events || []
-          events.push(...layoutEvents)
-        } catch (err) {
-          console.warn('Failed to read plate layout for events', err)
-        }
-      }
-    }
     return events
   }
 
