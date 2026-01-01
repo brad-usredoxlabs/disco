@@ -1,4 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
+$id: "https://computable-lab.com/schema/computable-lab/plate-layout.schema.yaml"
 $title: "Plate Layout"
 type: object
 
@@ -10,9 +11,10 @@ required:
   - layout
 
 properties:
-  recordType:
+  kind:
     type: string
     description: "Record discriminator. Should be 'plateLayout'."
+    const: "plateLayout"
   state:
     type: string
     description: "Workflow state identifier (e.g., draft, approved)."
@@ -85,6 +87,14 @@ properties:
     description: "Optional sequence of plate events applied to this layout."
     items:
       $ref: "./datatypes/plate-event.schema.yaml"
+
+  assertions:
+    type: array
+    description: "Embedded assertions or references to standalone assertion records."
+    items:
+      oneOf:
+        - $ref: "./assertion.schema.yaml"
+        - $ref: "./datatypes/assertion-ref.schema.yaml"
 
   annotations:
     type: object

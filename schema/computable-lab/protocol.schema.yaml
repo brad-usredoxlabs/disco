@@ -1,4 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
+$id: "https://computable-lab.com/schema/computable-lab/protocol.schema.yaml"
 $title: "Protocol"
 type: object
 
@@ -13,9 +14,10 @@ required:
   - events
 
 properties:
-  recordType:
+  kind:
     type: string
     description: "Record discriminator. Should be 'protocol'."
+    const: "protocol"
   state:
     type: string
     description: "Workflow state identifier (e.g., draft, approved)."
@@ -33,8 +35,7 @@ properties:
 
   status:
     type: string
-    enum: ["draft", "active", "deprecated"]
-    default: "draft"
+    enum: ["in_progress", "finalized", "deprecated"]
     description: "High-level publication status for this protocol version."
 
   tags:
@@ -66,5 +67,13 @@ properties:
     description: "Ordered list of event templates executed when this protocol runs."
     items:
       $ref: "./datatypes/protocol-event.schema.yaml"
+
+  assertions:
+    type: array
+    description: "Embedded assertions or references to standalone assertion records."
+    items:
+      oneOf:
+        - $ref: "./assertion.schema.yaml"
+        - $ref: "./datatypes/assertion-ref.schema.yaml"
 
 additionalProperties: false

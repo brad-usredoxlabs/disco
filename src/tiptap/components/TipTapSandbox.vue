@@ -52,7 +52,7 @@ import { computed, ref, watch } from 'vue'
 import TipTapEditor from './TipTapEditor.vue'
 import { useTipTapIO } from '../composables/useTipTapIO'
 
-const SANDBOX_PATH = '/tmp/tiptap-sandbox.md'
+const SANDBOX_PATH = '/tmp/tiptap-sandbox.yaml'
 const SIDECAR_NAME = 'sandbox.body.tiptap.json'
 
 const props = defineProps({

@@ -152,7 +152,7 @@ async function walkDir(current, files) {
     const fullPath = path.join(current, entry.name)
     if (entry.isDirectory()) {
       await walkDir(fullPath, files)
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+    } else if (entry.isFile() && /\.(md|markdown|ya?ml)$/i.test(entry.name)) {
       files.push(fullPath)
     }
   }

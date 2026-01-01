@@ -1,5 +1,7 @@
 // FILE: src/domain/records/file-loader.ts
-// Helpers for loading records from YAML front matter + Markdown body.
+// Helpers for loading records stored as pure YAML (legacy front matter + body supported as fallback).
+
+import YAML from "yaml";
 
 export interface LoadedRecordFile {
   path: string;
@@ -23,18 +25,28 @@ export async function loadRecordFile(
   return { path, frontMatter, markdown };
 }
 
-// Very basic YAML front matter splitter. Replace with gray-matter if desired.
-// Currently returns the YAML block as a raw string; you can parse it with js-yaml
-// or inject a parser via dependency injection.
+// Very basic splitter: supports legacy front matter + body, but prefers pure YAML.
 function splitFrontMatter(
   text: string
 ): { frontMatter: any; markdown: string } {
   const boundary = /^---\s*$/m;
   const parts = text.split(boundary);
-  if (parts.length < 3) {
-    return { frontMatter: {}, markdown: text };
+
+  // Legacy front matter + body: --- yaml --- body
+  if (parts.length >= 3) {
+    const [, yamlBlock, ...rest] = parts;
+    const markdown = rest.join("---\n").trimStart();
+    try {
+      return { frontMatter: YAML.parse(yamlBlock) || {}, markdown };
+    } catch {
+      return { frontMatter: {}, markdown };
+    }
   }
-  const [, yamlBlock, ...rest] = parts;
-  const markdown = rest.join("---\n");
-  return { frontMatter: yamlBlock, markdown: markdown.trimStart() };
+
+  // Default: treat the entire file as YAML
+  try {
+    return { frontMatter: YAML.parse(text) || {}, markdown: "" };
+  } catch {
+    return { frontMatter: {}, markdown: "" };
+  }
 }

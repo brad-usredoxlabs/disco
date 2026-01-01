@@ -59,7 +59,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import TipTapEditor from './TipTapEditor.vue'
 import { useTipTapIO, buildDocFromRecord } from '../composables/useTipTapIO'
-import { generateMarkdownView, buildFieldDescriptors } from '../../records/markdownView'
+import { buildFieldDescriptors } from '../../records/markdownView'
 import { serializeFrontMatter } from '../../records/frontMatter'
 import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../../records/jsonLdFrontmatter'
 import {
@@ -398,16 +398,7 @@ async function saveRecord() {
       sidecarName: 'body.tiptap.json',
       validationRecord: schemaRecord
     })
-    const markdown = generateMarkdownView(
-      activeRecordType.value,
-      metadata.value,
-      formState.value || {},
-      props.schemaBundle || {}
-    )
-    await props.repo.writeFile(
-      props.recordPath,
-      serializeFrontMatter(metadataPayload, markdown)
-    )
+    await props.repo.writeFile(props.recordPath, serializeFrontMatter(metadataPayload))
     originalMetadata.value = cloneJson(metadata.value)
     originalDoc.value = cloneJson(tiptapDoc.value)
     metadataDirty.value = false

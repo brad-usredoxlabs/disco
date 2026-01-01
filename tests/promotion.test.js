@@ -32,7 +32,7 @@ async function loadManifestSchemas() {
 }
 
 test('promotion produces schema-valid protocol from fixture run', async () => {
-  const fixturePath = path.join(process.cwd(), 'tmp/fixtures/run-promotion-fixture.md')
+  const fixturePath = path.join(process.cwd(), 'tmp/fixtures/run-promotion-fixture.yaml')
   const runRaw = await readFile(fixturePath, 'utf-8')
   const { data: frontmatter } = parseFrontMatter(runRaw)
   const events = frontmatter?.data?.activities?.[0]?.plate_events || []
@@ -42,7 +42,7 @@ test('promotion produces schema-valid protocol from fixture run', async () => {
   const promoted = promoteEvents(events, labwareMap, 'transfer_volume')
   const frontmatterOut = {
     metadata: {
-      recordType: 'protocol',
+      kind: 'protocol',
       title: 'Promoted protocol'
     },
     data: {
@@ -63,7 +63,7 @@ test('promotion produces schema-valid protocol from fixture run', async () => {
   const protocolSchema = await loadProtocolSchema()
   const zodSchema = buildZodSchema(protocolSchema, { schemas: recordSchemas })
   const payload = {
-    recordType: 'protocol',
+    kind: 'protocol',
     id: 'PROTO-PROMO',
     state: 'draft',
     recordId: 'PROTO-PROMO',

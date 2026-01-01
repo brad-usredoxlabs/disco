@@ -13,8 +13,8 @@ async function main() {
   const tmpDir = await fs.mkdtemp('protocol-run-')
   try {
     const configPath = path.join(tmpDir, 'config.json')
-    const protocolPath = path.resolve(__dirname, 'fixtures/protocols/sample-protocol.md')
-    const outputRunPath = path.join(tmpDir, 'RUN-TEST.md')
+    const protocolPath = path.resolve(__dirname, 'fixtures/protocols/sample-protocol.yaml')
+    const outputRunPath = path.join(tmpDir, 'RUN-TEST.yaml')
     const config = {
       protocolPath,
       runId: 'RUN-CLI-TEST',

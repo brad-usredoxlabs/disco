@@ -281,7 +281,7 @@ async function collectMarkdownFiles(dir) {
       const fullPath = path.join(current, entry.name)
       if (entry.isDirectory()) {
         await walk(fullPath)
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+      } else if (entry.isFile() && /\.(md|markdown|ya?ml)$/i.test(entry.name)) {
         files.push(fullPath)
       }
     }

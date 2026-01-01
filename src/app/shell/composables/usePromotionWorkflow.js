@@ -112,7 +112,7 @@ export function usePromotionWorkflow(repo, schemaLoader, activeRecordPath, explo
         throw new Error(validation.issues.map((i) => `${i.path}: ${i.message}`).join(' | '))
       }
       const outPath =
-        promotionForm.runPath.replace(/^08_RUNS\//, '06_PROTOCOLS/').replace(/\.md$/i, '') + '_PROMOTED.md'
+        promotionForm.runPath.replace(/^08_RUNS\//, '06_PROTOCOLS/').replace(/\.(md|markdown|ya?ml)$/i, '') + '_PROMOTED.yaml'
       const serialized = serializeFrontMatter(frontmatter, '# Promoted protocol\n\nGenerated from run promotion.')
       await repo.writeFile(outPath, serialized)
       promotionForm.status = `Wrote ${outPath}`

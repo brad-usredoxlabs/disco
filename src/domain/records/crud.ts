@@ -18,13 +18,11 @@ export interface CreateRecordParams {
   recordType: string;
   schemaSet: string;
   metadata: Record<string, unknown>;
-  markdown?: string;
 }
 
 export interface UpdateRecordParams {
   path: string;
   frontMatter: any;
-  markdown: string;
 }
 
 export interface DeleteRecordParams {
@@ -44,10 +42,9 @@ export interface CrudContext {
   storage: RecordStorage;
 }
 
-// Serialize YAML front matter + markdown safely (no template literals inside)
-function serializeRecord(frontMatter: any, markdown: string): string {
-  const yaml = JSON.stringify(frontMatter, null, 2);
-  return "---\n" + yaml + "\n---\n\n" + markdown + "\n";
+// Serialize record as pure YAML (no Markdown body)
+function serializeRecord(frontMatter: any): string {
+  return JSON.stringify(frontMatter, null, 2);
 }
 
 export async function createRecord(
@@ -91,12 +88,10 @@ export async function createRecord(
   });
 
   const path = baseDir + "/" + filename;
-  const markdown = params.markdown ?? "";
-
-  const content = serializeRecord(frontMatter, markdown);
+  const content = serializeRecord(frontMatter);
   await storage.writeFile(path, content);
 
-  return { path, frontMatter, markdown };
+  return { path, frontMatter, markdown: "" };
 }
 
 export async function readRecord(
@@ -133,7 +128,7 @@ export async function updateRecord(
     );
   }
 
-  const content = serializeRecord(frontMatter, markdown);
+  const content = serializeRecord(frontMatter);
   await storage.writeFile(path, content);
 }
 
@@ -185,6 +180,6 @@ export async function cloneRecord(
     recordType,
     schemaSet: ctx.schemaBundle.schemaSet,
     metadata: newFrontMatter,
-    markdown: source.markdown,
+    markdown: "",
   });
 }

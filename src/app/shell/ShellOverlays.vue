@@ -112,7 +112,7 @@ const emit = defineEmits([
       <div class="modal-form">
         <label>
           Run path
-          <input v-model="promotionForm.runPath" type="text" placeholder="runs/RUN-0001.md" />
+          <input v-model="promotionForm.runPath" type="text" placeholder="runs/RUN-0001.yaml" />
         </label>
         <label>
           Protocol title
@@ -163,7 +163,7 @@ const emit = defineEmits([
       <div class="modal-form">
         <label>
           Run path
-          <input :value="explorerFilePath" type="text" placeholder="runs/RUN-0001.md" @input="emit('update:explorerFilePath', $event.target.value)" />
+          <input :value="explorerFilePath" type="text" placeholder="runs/RUN-0001.yaml" @input="emit('update:explorerFilePath', $event.target.value)" />
         </label>
         <label>
           Labware @id (optional)
@@ -185,7 +185,7 @@ const emit = defineEmits([
       <div class="modal-form">
         <label>
           Run path
-          <input :value="runEditorFilePath" type="text" placeholder="runs/RUN-0001.md" @input="emit('update:runEditorFilePath', $event.target.value)" />
+          <input :value="runEditorFilePath" type="text" placeholder="runs/RUN-0001.yaml" @input="emit('update:runEditorFilePath', $event.target.value)" />
         </label>
       </div>
     </template>
@@ -215,6 +215,7 @@ const emit = defineEmits([
     :schema-loader="schemaLoader"
     :workflow-loader="workflowLoader"
     :record-graph="recordGraph"
+    :namespacing-config="namespacingConfig"
     :on-created="(val) => emit('record-created', val)"
     :creation-context="creatorContext"
     @close="emit('close-creator')"

@@ -13,8 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 function createTempLayout() {
   const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'plate-backfill-'))
-  const source = path.join(__dirname, 'fixtures/plate-layouts/sample-layout.md')
-  const target = path.join(tmpDir, 'sample-layout.md')
+  const source = path.join(__dirname, 'fixtures/plate-layouts/sample-layout.yaml')
+  const target = path.join(tmpDir, 'sample-layout.yaml')
   copyFileSync(source, target)
   return { tmpDir, target }
 }

@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "assertion.schema.yaml"
+$id: "https://computable-lab.com/schema/computable-lab/assertion.schema.yaml"
 title: Assertion
 description: >
   An Assertion is a declarative claim about biology, experiment design,

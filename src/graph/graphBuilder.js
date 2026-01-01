@@ -10,14 +10,13 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
   const biologyStats = emptyBiologyStats()
 
   for (const file of files) {
-    if (!file?.text?.startsWith?.('---')) continue
     try {
       const { data, body } = parseFrontMatter(file.text)
-      const { metadata: hydratedMetadata, formData } = extractRecordData(file.recordType, data, schemaBundle)
+      const { metadata: hydratedMetadata, formData } = extractRecordData(file.kind || file.recordType, data, schemaBundle)
       const schemaRecord = mergeMetadataAndFormData(hydratedMetadata, formData)
       const id = schemaRecord?.id || schemaRecord?.recordId
-      const resolvedType = schemaRecord?.recordType || file.recordType
-      if (!id || resolvedType !== file.recordType) continue
+      const resolvedType = schemaRecord?.kind || schemaRecord?.recordType || file.kind || file.recordType
+      if (!id || !resolvedType) continue
 
       const biologyEntities = extractBiologyEntities(schemaRecord)
       updateBiologyStats(biologyStats, biologyEntities)
@@ -28,7 +27,6 @@ export function buildGraphSnapshot(files = [], schemaBundle = {}) {
         path: file.path,
         title: schemaRecord?.title || id,
         frontMatter: schemaRecord,
-        markdown: body || '',
         biologyEntities,
         semanticTags,
         parents: [],

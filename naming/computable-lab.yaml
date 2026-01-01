@@ -2,7 +2,7 @@ study:
   idField: "id"
   shortSlugField: "shortSlug"
   baseDir: "studies"
-  filenamePattern: "{{id}}_{{title_sanitized}}.md"
+  filenamePattern: "{{id}}_{{title_sanitized}}.yaml"
   idGeneration:
     prefix: "STD"
     format: "STD-{counter:0000}"
@@ -12,7 +12,7 @@ experiment:
   idField: "id"
   shortSlugField: "shortSlug"
   baseDir: "experiments"
-  filenamePattern: "{{studyShortSlug}}_{{shortSlug}}_{{title_sanitized}}.md"
+  filenamePattern: "{{studyShortSlug}}_{{shortSlug}}_{{title_sanitized}}.yaml"
   idGeneration:
     prefix: "EXP"
     format: "EXP-{counter:0000}"
@@ -27,7 +27,7 @@ experiment:
 run:
   idField: "id"
   baseDir: "runs"
-  filenamePattern: "{{id}}_{{experimentShortSlug}}_{{date}}.md"
+  filenamePattern: "{{id}}_{{experimentShortSlug}}_{{date}}.yaml"
   idGeneration:
     prefix: "RUN"
     format: "RUN-{counter:0000}"
@@ -42,7 +42,7 @@ run:
 plateLayout:
   idField: "id"
   baseDir: "plate_layouts"
-  filenamePattern: "{{id}}_{{runId}}_{{title_sanitized}}.md"
+  filenamePattern: "{{id}}_{{runId}}_{{title_sanitized}}.yaml"
   idGeneration:
     prefix: "PLT"
     format: "PLT-{counter:0000}"
@@ -51,7 +51,7 @@ plateLayout:
 recipe:
   idField: "id"
   baseDir: "recipes"
-  filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.md"
+  filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.yaml"
   idGeneration:
     prefix: "REC"
     format: "REC-{counter:0000}"
@@ -60,7 +60,7 @@ recipe:
 protocol:
   idField: "id"
   baseDir: "protocols"
-  filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.md"
+  filenamePattern: "{{id}}_v{{version}}_{{title_sanitized}}.yaml"
   idGeneration:
     prefix: "PRO"
     format: "PRO-{counter:0000}"

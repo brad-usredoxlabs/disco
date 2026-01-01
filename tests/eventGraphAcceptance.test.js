@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 test('acceptance scenario: qPCR well has mixed components and correct volume', async () => {
-  const fixture = path.join(process.cwd(), 'tmp/fixtures/run-acceptance-e2e.md')
+  const fixture = path.join(process.cwd(), 'tmp/fixtures/run-acceptance-e2e.yaml')
   const raw = await readFile(fixture, 'utf-8')
   const { data: fm } = parseFrontMatter(raw)
   const events = fm?.data?.activities?.flatMap((act) => act.plate_events || []) || []

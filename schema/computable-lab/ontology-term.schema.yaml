@@ -1,0 +1,25 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$title: "OntologyTerm"
+type: object
+required: [label, identifier]
+additionalProperties: false
+properties:
+  label:
+    type: string
+    description: Preferred label
+  identifier:
+    type: string
+    description: CURIE/IRI (e.g., CHEBI:12345)
+  definition:
+    type: string
+    description: Term definition
+  ontology:
+    type: string
+    description: Source ontology (e.g., CHEBI, GMO, SNOMEDCT, NCIT)
+  synonyms:
+    type: array
+    items: { type: string }
+  xrefs:
+    type: array
+    items: { type: string }
+    description: Cross-references

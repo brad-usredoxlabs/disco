@@ -20,7 +20,9 @@ async function dirExists(repoConnection, path) {
   }
 }
 
-async function collectMarkdownFiles(repoConnection, baseDir) {
+const RECORD_EXTENSIONS = ['.yaml', '.yml', '.md']
+
+async function collectRecordPaths(repoConnection, baseDir) {
   const files = []
 
   async function walk(path) {
@@ -33,7 +35,7 @@ async function collectMarkdownFiles(repoConnection, baseDir) {
     for (const entry of entries) {
       if (entry.kind === 'directory') {
         await walk(entry.path)
-      } else if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+      } else if (entry.kind === 'file' && RECORD_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
         files.push(entry.path)
       }
     }
@@ -53,11 +55,10 @@ export async function collectRecordFiles(repoConnection, naming = {}) {
   const records = []
   for (const [recordType, namingRule] of Object.entries(naming)) {
     if (!namingRule?.baseDir) continue
-    const paths = await collectMarkdownFiles(repoConnection, namingRule.baseDir)
+    const paths = await collectRecordPaths(repoConnection, namingRule.baseDir)
     for (const path of paths) {
       try {
         const text = await repoConnection.readFile(path)
-        if (!text?.startsWith('---')) continue
         records.push({ path, recordType, text })
       } catch {
         /* ignore unreadable files */

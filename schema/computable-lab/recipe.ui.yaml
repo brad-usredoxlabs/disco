@@ -2,10 +2,17 @@ title: "Recipe UI Configuration"
 recordType: "recipe"
 
 layout:
+  fields:
+    kind:
+      group: "metadata"
+      order: 0
+      ui:
+        readOnly: true
   sections:
     metadata:
       label: "Metadata"
       fields:
+        - kind
         - title
         - family
         - version
@@ -23,7 +30,7 @@ layout:
       order: 40
       ui:
         component: select
-        options: ["draft", "active", "deprecated"]
+        options: ["in_progress", "finalized", "deprecated"]
     tags:
       group: metadata
       order: 50

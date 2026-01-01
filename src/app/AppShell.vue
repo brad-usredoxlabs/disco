@@ -224,20 +224,40 @@ const runOptions = computed(() => {
   }))
 })
 const tiptapSupportedTypes = computed(() => schemaBundle.value?.manifest?.tiptap?.recordTypes || [])
+function inferRecordTypeFromPath(path = '') {
+  if (!path) return ''
+  const namingConfig = schemaBundle.value?.naming || {}
+  for (const [recordType, cfg] of Object.entries(namingConfig)) {
+    const baseDir = cfg?.baseDir?.replace(/^\/+|\/+$/g, '')
+    if (baseDir && path.includes(`${baseDir}/`)) {
+      return recordType
+    }
+  }
+  if (path.includes('/studies/')) return 'study'
+  if (path.includes('/experiments/')) return 'experiment'
+  if (path.includes('/runs/')) return 'run'
+  return ''
+}
+const tiptapRecordType = computed(
+  () =>
+    tiptapTarget.value?.recordType ||
+    tiptapGraphNode.value?.recordType ||
+    inferRecordTypeFromPath(tiptapTarget.value?.path)
+)
 const tiptapSchema = computed(() =>
-  tiptapTarget.value ? schemaBundle.value?.recordSchemas?.[tiptapTarget.value.recordType] || null : null
+  tiptapRecordType.value ? schemaBundle.value?.recordSchemas?.[tiptapRecordType.value] || null : null
 )
 const tiptapUiConfig = computed(() =>
-  tiptapTarget.value ? schemaBundle.value?.uiConfigs?.[tiptapTarget.value.recordType] || null : null
+  tiptapRecordType.value ? schemaBundle.value?.uiConfigs?.[tiptapRecordType.value] || null : null
 )
 const tiptapNamingRule = computed(() =>
-  tiptapTarget.value ? schemaBundle.value?.naming?.[tiptapTarget.value.recordType] || null : null
+  tiptapRecordType.value ? schemaBundle.value?.naming?.[tiptapRecordType.value] || null : null
 )
-const tiptapSupports = computed(() =>
-  !!tiptapTarget.value && tiptapSupportedTypes.value.includes(tiptapTarget.value.recordType)
+const tiptapSupports = computed(
+  () => !!tiptapRecordType.value && tiptapSupportedTypes.value.includes(tiptapRecordType.value)
 )
 const tiptapWorkflowDefinition = computed(() =>
-  tiptapTarget.value ? workflowLoader.getMachine(tiptapTarget.value.recordType) : null
+  tiptapRecordType.value ? workflowLoader.getMachine(tiptapRecordType.value) : null
 )
 const tiptapGraphNode = computed(() => {
   if (!tiptapTarget.value?.path) return null
@@ -401,21 +421,7 @@ function handleSelect(nodeOrPath) {
   // Handle both string paths and node objects
   const node = typeof nodeOrPath === 'object' && nodeOrPath !== null ? nodeOrPath : null
   const path = node ? node.path : typeof nodeOrPath === 'string' ? nodeOrPath : ''
-  const bundle = schemaLoader.selectedBundle?.value
-  if (node?.recordType === 'plateLayout' && path) {
-    openPlateEditorWindow(path, bundle)
-    return
-  }
-  if (node?.recordType === 'protocol' && path) {
-    openProtocolEditorWindow(path, bundle)
-    return
-  }
-  if (node?.recordType === 'run' && path) {
-    openRunEditorWindow(path, bundle)
-    return
-  }
   if (path) {
-    openFileInspectorWindow(path, bundle)
     activeRecordPath.value = path
   }
 }
@@ -425,27 +431,26 @@ async function handleRecordCreated(payload) {
   const { path, recordType, metadata } = normalizeCreationResult(payload)
   showCreator.value = false
   creatorContext.value = null
-  const bundle = schemaLoader.selectedBundle?.value
-  let handled = false
+
   if (recordType === 'plateLayout') {
     if (creationContext?.parentLink?.node?.recordType === 'run') {
       await linkPlateLayoutToRun(creationContext.parentLink.node, metadata, path)
     }
-    if (path) {
-      openPlateEditorWindow(path, bundle)
-      handled = true
-    }
   }
-  if (recordType === 'protocol' && path) {
-    openProtocolEditorWindow(path, bundle)
-    handled = true
+
+  if (recordType && !selectedRootRecordType.value) {
+    selectedRootRecordType.value = recordType
   }
-  if (!handled && path) {
-    openFileInspectorWindow(path, bundle)
+
+  if (recordGraph?.rebuild) {
+    await recordGraph.rebuild()
+  }
+  if (searchIndex?.rebuild) {
+    searchIndex.rebuild()
+  }
+  if (path) {
     activeRecordPath.value = path
   }
-  recordGraph?.rebuild?.()
-  searchIndex?.rebuild?.()
 }
 
 function normalizeCreationResult(payload) {
@@ -505,7 +510,7 @@ function inferRecordIdFromPath(path = '') {
   if (!path) return ''
   const fileName = path.split('/').filter(Boolean).pop() || ''
   if (!fileName) return ''
-  const base = fileName.replace(/\.md$/i, '')
+  const base = fileName.replace(/\.(md|markdown|ya?ml)$/i, '')
   return base.split('_')[0] || base
 }
 
@@ -555,6 +560,14 @@ function handleUseRunAsSource(payload = {}) {
   const runNode = runOptions.value.find((node) => node.id === runId)
   const path = payload.path || runNode?.path || explorerTarget.value?.path || ''
   const label = payload.label || labwareId || runId
+  const bundle = payload.bundle || explorerTarget.value?.bundle || schemaLoader.selectedBundle?.value
+
+  // If requested, open the run editor in a new tab regardless of existing editor state.
+  if (payload.openInNewTab && path) {
+    openRunEditorWindow(path, bundle)
+    return
+  }
+
   pendingPaletteAdd.value = { runId, labwareId, label }
   // If run editor already loaded, add immediately
   if (runEditorRef.value?.store) {
@@ -567,9 +580,8 @@ function handleUseRunAsSource(payload = {}) {
     pendingPaletteAdd.value = null
     return
   }
-  // Otherwise open the run editor on the run
+  // Otherwise open the run editor on the run (new tab if requested)
   if (path) {
-    const bundle = payload.bundle || explorerTarget.value?.bundle || schemaLoader.selectedBundle?.value
     openRunEditorWith(path, bundle)
   }
 }
@@ -631,6 +643,14 @@ function handleGraphSupportingDoc(payload) {
 
 function handleGraphUseAsSource(node) {
   if (!node) return
+  
+  // If openInNewTab flag is set, open in a new tab
+  if (node.openInNewTab && node.path) {
+    const bundle = node.bundle || schemaLoader.selectedBundle?.value
+    openRunEditorWindow(node.path, bundle)
+    return
+  }
+  
   const runId = node.id || node.frontMatter?.metadata?.id || node.frontMatter?.metadata?.recordId || ''
   const labwareId = resolveLabwareFromNode(node) || 'plate/UNKNOWN'
   const label = node.title || labwareId || runId
@@ -811,7 +831,7 @@ onBeforeUnmount(() => {
   <SettingsStandalone
     v-else-if="isStandaloneSettings"
     :is-online="isOnline"
-    :repo-is-requesting="repo.isRequesting"
+    :repo-is-requesting="repo.isRequesting.value"
     :settings-form="settingsForm"
     :settings-saving="settingsSaving"
     :settings-error="settingsError"
@@ -867,7 +887,7 @@ onBeforeUnmount(() => {
     ref="runEditorStandaloneRef"
     :is-online="isOnline"
     :is-ready="isReady"
-    :repo-is-requesting="repo.isRequesting"
+    :repo-is-requesting="repo.isRequesting.value"
     :run-editor-target="runEditorTarget"
     :run-editor-bundle-mismatch="runEditorBundleMismatch"
     :run-editor-state="runEditorState"
@@ -883,7 +903,7 @@ onBeforeUnmount(() => {
     v-else-if="isStandaloneExplorer"
     :is-online="isOnline"
     :is-ready="isReady"
-    :repo-is-requesting="repo.isRequesting"
+    :repo-is-requesting="repo.isRequesting.value"
     :explorer-target="explorerTarget"
     :explorer-bundle-mismatch="explorerBundleMismatch"
     :explorer-state="explorerState"
@@ -904,7 +924,7 @@ onBeforeUnmount(() => {
         subtitle="Schema-driven LIS/QMS shell powered by Vue + Vite"
         :connection-label="connectionLabel"
         :is-ready="isReady"
-        :is-requesting="repo.isRequesting"
+        :is-requesting="repo.isRequesting.value"
         :is-supported="repo.isSupported"
         @open-settings="openSettings"
         @connect="handleConnect"

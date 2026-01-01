@@ -126,7 +126,7 @@ export function useRecordCreation(
     if (!path) return ''
     const fileName = path.split('/').filter(Boolean).pop() || ''
     if (!fileName) return ''
-    const base = fileName.replace(/\.md$/i, '')
+    const base = fileName.replace(/\.(md|markdown|ya?ml)$/i, '')
     return base.split('_')[0] || base
   }
 

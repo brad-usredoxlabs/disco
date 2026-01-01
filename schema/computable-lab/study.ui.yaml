@@ -3,22 +3,17 @@ recordType: "study"
 
 layout:
   fields:
-    recordType:
+    kind:
       group: "metadata"
       order: 0
       ui:
         readOnly: true
-    kind:
-      group: "metadata"
-      order: 2
-      ui:
-        readOnly: true
-    status:
+    state:
       group: "metadata"
       order: 5
       ui:
         component: select
-        options: ["draft", "active", "complete", "archived"]
+        options: ["in_progress", "finalized", "deprecated"]
     label:
       group: "header"
       order: 10

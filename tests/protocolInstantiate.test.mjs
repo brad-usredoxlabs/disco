@@ -16,7 +16,7 @@ function loadFixture(name) {
 }
 
 function main() {
-  const { data } = loadFixture('sample-protocol.md')
+  const { data } = loadFixture('sample-protocol.yaml')
   const events = instantiateProtocol(data, {
     runId: 'RUN-TEST',
     parameters: {

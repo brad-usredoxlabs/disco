@@ -1,6 +1,5 @@
----
 metadata:
-  recordType: protocol
+  kind: protocol
   state: draft
   id: PRO-TEST
   title: Sample protocol
@@ -33,6 +32,3 @@ data:
         type: incubate
         labware_role: cell_plate
         duration: "${incubation_time}"
----
-
-# Sample protocol body

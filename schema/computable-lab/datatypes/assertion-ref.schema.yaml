@@ -1,0 +1,15 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "datatypes/assertion-ref.schema.yaml"
+title: AssertionRef
+description: "Reference to a standalone assertion record by @id."
+type: object
+additionalProperties: false
+required:
+  - "@id"
+properties:
+  "@id":
+    type: string
+    description: "Global @id of a standalone Assertion record."
+  label:
+    type: string
+    description: "Optional display label for UI without dereferencing."

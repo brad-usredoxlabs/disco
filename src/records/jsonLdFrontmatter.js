@@ -22,7 +22,6 @@ export const DEFAULT_JSON_LD_CONTEXT = Object.freeze({
   go: 'http://purl.obolibrary.org/obo/GO_'
 })
 
-const DEFAULT_DATA_SECTION = 'operations'
 export const KNOWN_BIOLOGY_PREFIX_IRIS = Object.freeze({
   ncbitaxon: 'http://purl.obolibrary.org/obo/NCBITaxon_',
   uberon: 'http://purl.obolibrary.org/obo/UBERON_',
@@ -34,9 +33,30 @@ export const KNOWN_BIOLOGY_PREFIX_IRIS = Object.freeze({
   go: 'http://purl.obolibrary.org/obo/GO_'
 })
 
-export function composeRecordFrontMatter(recordType, metadataInput = {}, formDataInput = {}, bundle = {}, studyOverrides = {}) {
+const DEFAULT_SCHEMA_PREFIX = './schema/computable-lab/'
+
+function flattenDataSections(sections = {}) {
+  const flattened = {}
+  Object.values(sections || {}).forEach((sectionValue) => {
+    if (!isPlainObject(sectionValue)) return
+    Object.entries(sectionValue).forEach(([key, value]) => {
+      if (value === undefined) return
+      flattened[key] = value
+    })
+  })
+  return flattened
+}
+
+export function composeRecordFrontMatter(
+  recordType,
+  metadataInput = {},
+  formDataInput = {},
+  bundle = {},
+  studyOverrides = {},
+  namespacingOverrides = {}
+) {
   const resolvedRecordType =
-    metadataInput?.recordType || recordType || metadataInput?.record_type || metadataInput?.type || ''
+    metadataInput?.kind || metadataInput?.recordType || recordType || metadataInput?.record_type || metadataInput?.type || ''
   const descriptors = buildFieldDescriptors(resolvedRecordType, bundle)
   const bodyFieldNames = new Set(descriptors.body.map((descriptor) => descriptor.name))
   const metadataSection = {}
@@ -67,37 +87,31 @@ export function composeRecordFrontMatter(recordType, metadataInput = {}, formDat
   })
   applyBiologyInheritance(dataSections, combinedOverrides)
 
-  const normalizedMetadata = normalizeMetadataSection(
-    resolvedRecordType,
-    metadataSection,
-    bundle,
-    combinedOverrides,
-    formDataInput
-  )
+  const mergedJsonLdConfig = mergeNamespacingConfig(bundle?.jsonLdConfig || {}, namespacingOverrides)
+  const normalizedMetadata = normalizeMetadataSection(resolvedRecordType, metadataSection, { jsonLdConfig: mergedJsonLdConfig }, combinedOverrides, formDataInput)
   mergeRunSpecificSections(resolvedRecordType, dataSections, metadataInput, resolvedFormData)
-  ensureBiologyPrefixes(normalizedMetadata, dataSections, bundle, combinedOverrides)
-  return {
-    metadata: normalizedMetadata,
-    data: pruneEmptySections(dataSections)
-  }
+  ensureBiologyPrefixes(normalizedMetadata, dataSections, { ...bundle, jsonLdConfig: mergedJsonLdConfig }, combinedOverrides)
+  const flattenedData = flattenDataSections(pruneEmptySections(dataSections))
+  const withSchema = ensureSchema(resolvedRecordType, normalizedMetadata)
+  return orderRecordFields(withSchema, flattenedData)
 }
 
 export function extractRecordData(recordType, frontMatter = {}, bundle = {}) {
   if (!frontMatter || typeof frontMatter !== 'object') {
     return {
-      metadata: { recordType: recordType || '', formData: {} },
+      metadata: { kind: recordType || '', formData: {} },
       formData: {}
     }
   }
 
   const hasJsonLdShape = frontMatter.metadata || frontMatter.data
   const resolvedRecordType =
-    recordType || frontMatter.metadata?.recordType || frontMatter.recordType || frontMatter.type || ''
+    recordType || frontMatter.metadata?.kind || frontMatter.metadata?.recordType || frontMatter.recordType || frontMatter.type || ''
 
   if (!hasJsonLdShape) {
     const metadata = cloneValue(frontMatter) || {}
     const formData = isPlainObject(metadata.formData) ? cloneValue(metadata.formData) : {}
-    metadata.recordType ||= resolvedRecordType
+    metadata.kind ||= resolvedRecordType
     metadata.formData = cloneValue(formData)
     return { metadata, formData }
   }
@@ -122,15 +136,74 @@ export function extractRecordData(recordType, frontMatter = {}, bundle = {}) {
     })
   })
 
-  const metadataWithFormData = {
+  const flattenedData = flattenDataSections(frontMatter.data || {})
+  const mergedRecord = {
+    kind: metadataSection.kind || metadataSection.recordType || resolvedRecordType,
     ...metadataSection,
-    recordType: metadataSection.recordType || resolvedRecordType,
+    ...flattenedData,
     formData: cloneValue(formData)
   }
 
   return {
-    metadata: metadataWithFormData,
+    metadata: mergedRecord,
     formData
+  }
+}
+
+function ensureSchema(recordType, metadata = {}) {
+  if (!recordType) return metadata || {}
+  const next = cloneValue(metadata) || {}
+  if (!next.$schema) {
+    next.$schema = `${DEFAULT_SCHEMA_PREFIX}${recordType}.schema.yaml`
+  }
+  return next
+}
+
+function orderRecordFields(metadata = {}, flattenedData = {}) {
+  const ordered = {}
+  const identityKeys = ['$schema', 'kind', 'id', '@id', '@type', '@context']
+  identityKeys.forEach((key) => {
+    if (metadata[key] !== undefined) {
+      ordered[key] = metadata[key]
+    }
+  })
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (identityKeys.includes(key)) return
+    if (key === 'formData') return
+    ordered[key] = value
+  })
+  Object.entries(flattenedData || {}).forEach(([key, value]) => {
+    ordered[key] = value
+  })
+  if (metadata.formData !== undefined) {
+    ordered.formData = metadata.formData
+  }
+  return ordered
+}
+
+function mergeNamespacingConfig(jsonLdConfig = {}, overrides = {}) {
+  const hasBaseOverride = Object.prototype.hasOwnProperty.call(overrides || {}, 'baseIri') ||
+    Object.prototype.hasOwnProperty.call(overrides || {}, 'base_iri')
+  const hasCurieOverride = Object.prototype.hasOwnProperty.call(overrides || {}, 'curiePrefix') ||
+    Object.prototype.hasOwnProperty.call(overrides || {}, 'curie_prefix')
+
+  const baseIri = hasBaseOverride
+    ? overrides.baseIri ?? overrides.base_iri ?? ''
+    : (jsonLdConfig.baseIri && jsonLdConfig.baseIri !== 'https://example.org' ? jsonLdConfig.baseIri : '')
+  const curiePrefix = hasCurieOverride
+    ? overrides.curiePrefix ?? overrides.curie_prefix ?? ''
+    : (jsonLdConfig.curiePrefix || jsonLdConfig.curie_prefix || '')
+
+  const prefixes = {
+    ...(jsonLdConfig.prefixes || {})
+  }
+  if (baseIri && curiePrefix) {
+    prefixes[curiePrefix] = baseIri.endsWith('/') ? baseIri : `${baseIri}/`
+  }
+  return {
+    ...jsonLdConfig,
+    baseIri: baseIri || jsonLdConfig.baseIri,
+    prefixes
   }
 }
 
@@ -148,9 +221,9 @@ export function mergeMetadataAndFormData(metadata = {}, explicitFormData) {
 
 function normalizeMetadataSection(recordType, metadataSection = {}, bundle = {}, studyOverrides = {}, formData = {}) {
   const next = cloneValue(metadataSection) || {}
-  const typeValue = next.recordType || recordType || next.type || ''
-  if (typeValue && !next.recordType) {
-    next.recordType = typeValue
+  const typeValue = next.kind || next.recordType || recordType || next.type || ''
+  if (typeValue && !next.kind) {
+    next.kind = typeValue
   }
   if (!next.recordId && next.id) {
     next.recordId = next.id
@@ -207,7 +280,7 @@ function pickObject(...candidates) {
 }
 
 function deriveRecordIri(metadata, jsonLdConfig = {}) {
-  const recordType = metadata.recordType || metadata.type
+  const recordType = metadata.kind || metadata.recordType || metadata.type
   const recordId = metadata.recordId || metadata.id
   const baseIri = jsonLdConfig.baseIri
   const segment = jsonLdConfig.recordTypes?.[recordType]?.pathSegment

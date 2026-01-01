@@ -15,7 +15,7 @@ const props = defineProps({
   recordGraph: { type: Object, required: true },
   schemaLoader: { type: Object, required: true },
   workflowLoader: { type: Object, required: true },
-  defaultGraphRootType: { type: Object, default: null },
+  defaultGraphRootType: { type: [String, Object], default: '' },
   defaultGraphRootLabel: { type: String, default: '' },
   activeRecordPath: { type: String, default: '' },
   tiptapSupportedTypes: { type: Array, default: () => [] },

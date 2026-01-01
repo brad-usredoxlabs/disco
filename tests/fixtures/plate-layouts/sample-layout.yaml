@@ -1,6 +1,5 @@
----
 metadata:
-  recordType: plateLayout
+  kind: plateLayout
   state: draft
   id: PLT-TEST
   title: Sample plate
@@ -21,6 +20,3 @@ data:
               value: 5
               unit: uL
             notes: Primary compound
----
-
-# Sample plate

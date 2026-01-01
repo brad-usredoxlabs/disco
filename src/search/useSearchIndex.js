@@ -79,14 +79,14 @@ export function useSearchIndex(recordGraph) {
   function buildGraphDocs(graphValue = {}) {
     const nodes = graphValue?.nodes || []
     return nodes.map((node) => {
-      const textParts = [node.title || '', JSON.stringify(node.frontMatter || {}), node.markdown || '']
+      const textParts = [node.title || '', JSON.stringify(node.frontMatter || {})]
       const text = textParts.join('\n').toLowerCase()
       return {
         id: node.id,
         path: node.path,
         title: node.title || node.id,
         recordType: node.recordType,
-        snippet: (node.markdown || '').slice(0, 200),
+        snippet: '',
         text,
         taxonId: '',
         taxonLabel: '',

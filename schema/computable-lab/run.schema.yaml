@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "run.schema.yaml"
+$id: "https://computable-lab.com/schema/computable-lab/run.schema.yaml"
 title: Run
 type: object
 description: >
@@ -85,11 +85,13 @@ properties:
     items:
       $ref: "#/definitions/file_ref"
 
-  assertions:
-    type: array
-    description: "Embedded assertions associated with this run."
-    items:
-      $ref: "./assertion.schema.yaml"
+assertions:
+  type: array
+  description: "Embedded assertions or references to standalone assertion records."
+  items:
+    oneOf:
+      - $ref: "./assertion.schema.yaml"
+      - $ref: "./datatypes/assertion-ref.schema.yaml"
 
 additionalProperties: false
 

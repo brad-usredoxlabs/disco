@@ -6,7 +6,7 @@ import { loadPlateEventsFromRecord, toPyalabSteps } from './lib/plateEventConver
 async function main() {
   const targetPath = process.argv[2]
   if (!targetPath) {
-    console.error('Usage: node scripts/adapters/plate-events-to-pyalab.mjs <plate-layout.md>')
+    console.error('Usage: node scripts/adapters/plate-events-to-pyalab.mjs <plate-layout.yaml>')
     process.exit(1)
   }
 

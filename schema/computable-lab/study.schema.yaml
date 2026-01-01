@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: "study.schema.yaml"
+$id: "https://computable-lab.com/schema/computable-lab/study.schema.yaml"
 title: Study
 description: >
   A Study is a top-level scientific container grouping related experiments and runs.
@@ -15,10 +15,6 @@ required:
   - label
 
 properties:
-  recordType:
-    type: string
-    description: "Record discriminator. Should be 'study'."
-
   kind:
     type: string
     const: "study"
@@ -40,7 +36,7 @@ properties:
 
   status:
     type: string
-    enum: ["draft", "active", "complete", "archived"]
+    enum: ["in_progress", "finalized", "deprecated"]
 
   aims:
     type: array
@@ -56,9 +52,11 @@ properties:
 
   assertions:
     type: array
-    description: "Embedded assertions associated with this study."
+    description: "Embedded assertions or references to standalone assertion records."
     items:
-      $ref: "./assertion.schema.yaml"
+      oneOf:
+        - $ref: "./assertion.schema.yaml"
+        - $ref: "./datatypes/assertion-ref.schema.yaml"
 
   biology:
     type: object
@@ -75,17 +73,5 @@ properties:
         type: string
         description: "e.g., HepG2, C. elegans, primary hepatocytes"
     additionalProperties: false
-
-  experiments:
-    type: array
-    description: "Experiment @ids included in this study."
-    items:
-      type: string
-
-  runs:
-    type: array
-    description: "Optional Run @ids directly associated with the study."
-    items:
-      type: string
 
 additionalProperties: false

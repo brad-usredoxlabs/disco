@@ -397,7 +397,7 @@ function supportingDocTitle(node) {
               <button
                 class="icon-button"
                 type="button"
-                title="Open record"
+                title="View record"
                 @click="handleSelect(row.node)"
                 :disabled="!row.node.path"
               >
@@ -405,18 +405,6 @@ function supportingDocTitle(node) {
                   <path
                     d="M10 4c-4.5 0-8 3.5-8 6s3.5 6 8 6 8-3.5 8-6-3.5-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"
                   />
-                </svg>
-              </button>
-              <button
-                v-if="row.node.recordType === 'run'"
-                class="icon-button"
-                type="button"
-                title="Use as source in Run Editor"
-                :disabled="!row.node.path"
-                @click.stop="emit('use-as-source', row.node)"
-              >
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M4 10h8.5L10 7.5l1-1 4 3.5-4 3.5-1-1L12.5 11H4z" />
                 </svg>
               </button>
               <button
@@ -456,6 +444,19 @@ function supportingDocTitle(node) {
                 </svg>
               </button>
               <button
+                v-if="row.node.recordType === 'run'"
+                class="icon-button"
+                type="button"
+                title="Edit run"
+                :disabled="!row.node.path"
+                @click.stop="emit('use-as-source', { ...row.node, openInNewTab: true })"
+              >
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M4 13.5V16h2.5l8-8-2.5-2.5-8 8zM15 6l-2-2 1.5-1.5a1 1 0 011.4 0l0.6 0.6a1 1 0 010 1.4L15 6z" />
+                </svg>
+              </button>
+              <button
+                v-else
                 class="icon-button"
                 type="button"
                 title="Edit in TapTab"

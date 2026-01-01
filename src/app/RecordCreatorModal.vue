@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import BaseModal from '../ui/modal/BaseModal.vue'
 import { buildDefaultFrontMatter, computeRecordPath, sanitizeSlug } from '../records/recordCreation'
-import { generateMarkdownView, buildBodyDefaults } from '../records/markdownView'
+import { buildBodyDefaults } from '../records/markdownView'
 import { previewId, commitId } from '../records/idGenerator'
 import { serializeFrontMatter } from '../records/frontMatter'
 import { composeRecordFrontMatter } from '../records/jsonLdFrontmatter'
@@ -29,6 +29,10 @@ const props = defineProps({
     type: Object,
     required: true
   },
+  namespacingConfig: {
+    type: Object,
+    default: () => ({})
+  },
   onCreated: {
     type: Function,
     default: null
@@ -48,7 +52,6 @@ const emit = defineEmits(['close'])
 const state = reactive({
   recordType: '',
   metadata: {},
-  body: '# New record\n\nDescribe the record here.',
   filePath: '',
   isCreating: false,
   error: '',
@@ -132,7 +135,6 @@ watch(
     } else {
       delete state.metadata.formData
     }
-    state.body = generateMarkdownView(type, state.metadata, state.metadata.formData || {}, bundle.value || {})
     await seedAutoId(namingRule)
     applyCreationContextPatch()
     ensureParentFields()
@@ -294,20 +296,15 @@ async function handleCreate() {
   try {
     state.isCreating = true
     state.error = ''
-    const markdownView = generateMarkdownView(
-      state.recordType,
-      state.metadata,
-      state.metadata.formData || {},
-      bundle.value || {}
-    )
     const frontMatterPayload = composeRecordFrontMatter(
       state.recordType,
       state.metadata,
       state.metadata.formData || {},
       bundle.value || {},
-      creatorContextOverrides.value || {}
+      creatorContextOverrides.value || {},
+      props.namespacingConfig || {}
     )
-    const content = serializeFrontMatter(frontMatterPayload, markdownView)
+    const content = serializeFrontMatter(frontMatterPayload)
     await props.repo.writeFile(state.filePath, content)
     const namingRule = namingRules.value[state.recordType]
     if (state.metadata.id === state.autoId && state.pendingCounter) {
@@ -431,9 +428,6 @@ function cloneMetadata(metadata) {
 
         <label>Target file</label>
         <input type="text" :value="state.filePath" readonly />
-
-        <label>Body template</label>
-        <textarea rows="6" v-model="state.body"></textarea>
       </div>
     </div>
 

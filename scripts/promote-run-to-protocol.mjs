@@ -5,10 +5,10 @@
  * - Collects PlateEvents from run activities (plate_events) or legacy data.operations.events
  * - Strips timestamps/run/labware refs, replacing with labware roles (from --labware role=labwareId)
  * - Keeps mapping and mapping_spec; parameterizes volume if --volume-param is provided
- * - Writes a protocol Markdown with frontmatter to --out (default 06_PROTOCOLS/<runId>_PROMOTED.md)
+ * - Writes a protocol YAML record to --out (default 06_PROTOCOLS/<runId>_PROMOTED.yaml)
  *
  * Usage:
- *   node scripts/promote-run-to-protocol.mjs --run 08_RUNS/RUN-001.md --labware cell_plate=plate/PLT-1 --labware media_reservoir=labware:res1 --family my_protocol --version 0.1.0 --volume-param transfer_volume
+ *   node scripts/promote-run-to-protocol.mjs --run 08_RUNS/RUN-001.yaml --labware cell_plate=plate/PLT-1 --labware media_reservoir=labware:res1 --family my_protocol --version 0.1.0 --volume-param transfer_volume
  */
 
 import { promises as fs } from 'node:fs'
@@ -157,7 +157,7 @@ async function main() {
     path.join(
       process.cwd(),
       '06_PROTOCOLS',
-      `${path.basename(args.run, path.extname(args.run))}_PROMOTED.md`
+      `${path.basename(args.run, path.extname(args.run))}_PROMOTED.yaml`
     )
   await writeProtocol(out, frontmatter, '# Promoted protocol\n\nGenerated from run promotion script.')
   console.log(`[promote] Wrote protocol to ${out}`)

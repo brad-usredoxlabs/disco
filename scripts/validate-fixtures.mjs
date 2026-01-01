@@ -17,7 +17,7 @@ const SCHEMA_ROOT = path.join(process.cwd(), 'schema', 'computable-lab')
 async function main() {
   const targetFiles = [
     ...(await listDir('runs')),
-    ...(await listDir('tmp/fixtures')).filter((p) => p.endsWith('.md'))
+    ...(await listDir('tmp/fixtures')).filter((p) => /\.(ya?ml)$/i.test(p))
   ]
   const schemas = await loadSchemas()
   const results = []
@@ -46,7 +46,7 @@ async function listDir(dir) {
   const full = path.join(process.cwd(), dir)
   try {
     const entries = await fs.readdir(full)
-    return entries.filter((f) => f.endsWith('.md')).map((f) => path.join(dir, f))
+    return entries.filter((f) => /\.(ya?ml)$/i.test(f)).map((f) => path.join(dir, f))
   } catch {
     return []
   }

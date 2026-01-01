@@ -9,7 +9,7 @@ export function sanitizeSlug(value = '') {
     .toUpperCase()
 }
 
-export function applyFilenamePattern(pattern = '{{id}}.md', metadata = {}) {
+export function applyFilenamePattern(pattern = '{{id}}.yaml', metadata = {}) {
   const replacements = {
     ...metadata,
     title_sanitized: metadata.title ? sanitizeSlug(metadata.title) : '',
@@ -29,16 +29,16 @@ export function applyFilenamePattern(pattern = '{{id}}.md', metadata = {}) {
     .replace(/^_+/, '')
     .replace(/_+(?=\.[^.]+$)/, '')
 
-  if (!filename.toLowerCase().endsWith('.md')) {
-    filename += '.md'
+  if (!filename.toLowerCase().endsWith('.yaml') && !filename.toLowerCase().endsWith('.yml')) {
+    filename += '.yaml'
   }
 
-  return filename || 'record.md'
+  return filename || 'record.yaml'
 }
 
 export function buildDefaultFrontMatter(recordType, namingRule = {}, workflowDefinition) {
   const fm = {
-    recordType,
+    kind: recordType,
     state: workflowDefinition?.config?.initial || 'draft',
     id: '',
     title: '',
@@ -56,10 +56,12 @@ export function buildDefaultFrontMatter(recordType, namingRule = {}, workflowDef
 export function computeRecordPath(metadata, namingRule) {
   if (!namingRule) return ''
   const baseDir = namingRule.baseDir?.replace(/^\/+|\/+$/g, '') || ''
-  const fileName = applyFilenamePattern(namingRule.filenamePattern || '{{id}}.md', {
+  const fileName = applyFilenamePattern(namingRule.filenamePattern || '{{id}}.yaml', {
     ...metadata,
     [namingRule.shortSlugField || 'shortSlug']: metadata[namingRule.shortSlugField || 'shortSlug']
   })
-  const safeFileName = fileName || `${sanitizeSlug(metadata.shortSlug || metadata.id || metadata.title || 'record')}.md`
+  const safeFileName =
+    fileName ||
+    `${sanitizeSlug(metadata.shortSlug || metadata.id || metadata.title || 'record')}.yaml`
   return `/${baseDir}/${safeFileName}`.replace(/\/+/g, '/').replace(/\/+$/, '')
 }

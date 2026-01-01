@@ -4,7 +4,6 @@ import RecordMetadataForm from '../records/RecordMetadataForm.vue'
 import AssistantPanel from './AssistantPanel.vue'
 import RunActivitiesPanel from './RunActivitiesPanel.vue'
 import { parseFrontMatter, serializeFrontMatter } from '../records/frontMatter'
-import { generateMarkdownView } from '../records/markdownView'
 import { useRecordValidator } from '../records/recordValidator'
 import { composeRecordFrontMatter, extractRecordData, mergeMetadataAndFormData } from '../records/jsonLdFrontmatter'
 import { buildRecordContextOverrides } from '../records/biologyInheritance'
@@ -272,23 +271,16 @@ async function loadFile() {
     isLoading.value = true
     beginHydration()
     const content = await props.repo.readFile(props.recordPath)
-    if (content?.startsWith('---')) {
-      const { data, body } = parseFrontMatter(content)
-      const frontMatter = data || {}
-      const inferredType = inferRecordType(frontMatter, props.recordPath)
-      const { metadata: hydratedMetadata } = extractRecordData(inferredType, frontMatter, schemaBundle.value || {})
-      recordMetadata.value = hydratedMetadata || {}
-      recordBody.value = body || ''
-      activeRecordType.value = recordMetadata.value?.recordType || inferredType
-      plainTextContent.value = content
-      runRecordValidation()
-      ensureWorkflowState()
-    } else {
-      plainTextContent.value = content
-      recordMetadata.value = {}
-      recordBody.value = ''
-      activeRecordType.value = ''
-    }
+    const { data, body } = parseFrontMatter(content)
+    const frontMatter = data || {}
+    const inferredType = inferRecordType(frontMatter, props.recordPath)
+    const { metadata: hydratedMetadata } = extractRecordData(inferredType, frontMatter, schemaBundle.value || {})
+    recordMetadata.value = hydratedMetadata || {}
+    recordBody.value = body || ''
+    activeRecordType.value = recordMetadata.value?.recordType || inferredType || ''
+    plainTextContent.value = content
+    runRecordValidation()
+    ensureWorkflowState()
     status.value = `Loaded ${props.recordPath.split('/').pop()}`
   } catch (err) {
     error.value = err?.message || 'Unable to load file.'
@@ -310,14 +302,7 @@ async function saveFile() {
         schemaBundle.value || {},
         recordContextOverrides.value || {}
       )
-      const markdownView = generateMarkdownView(
-        activeRecordType.value,
-        recordMetadata.value,
-        recordMetadata.value.formData || {},
-        schemaBundle.value || {}
-      )
-      payload = serializeFrontMatter(frontMatterPayload, markdownView)
-      refreshMarkdownPreview(markdownView)
+      payload = serializeFrontMatter(frontMatterPayload)
     } else if (isRecord.value) {
       const frontMatterPayload = composeRecordFrontMatter(
         activeRecordType.value,
@@ -326,7 +311,7 @@ async function saveFile() {
         schemaBundle.value || {},
         recordContextOverrides.value || {}
       )
-      payload = serializeFrontMatter(frontMatterPayload, recordBody.value)
+      payload = serializeFrontMatter(frontMatterPayload)
     } else {
       payload = plainTextContent.value
     }
@@ -343,48 +328,8 @@ async function saveFile() {
   }
 }
 
-function refreshMarkdownPreview(nextBody) {
-  if (!isRecord.value || !supportsTipTap.value) return
-  if (typeof nextBody === 'string') {
-    recordBody.value = nextBody
-    return
-  }
-  try {
-    recordBody.value = generateMarkdownView(
-      activeRecordType.value,
-      recordMetadata.value,
-      recordMetadata.value.formData || {},
-      schemaBundle.value || {}
-    )
-  } catch (err) {
-    console.warn('[inspector] Unable to refresh markdown preview', err)
-  }
-}
-
-async function regenerateMarkdown() {
-  if (!isRecord.value || !supportsTipTap.value || !props.recordPath) return
-  try {
-    status.value = 'Regenerating markdown…'
-    const frontMatterPayload = composeRecordFrontMatter(
-      activeRecordType.value,
-      recordMetadata.value,
-      recordMetadata.value.formData || {},
-      schemaBundle.value || {},
-      recordContextOverrides.value || {}
-    )
-    const markdownView = generateMarkdownView(
-      activeRecordType.value,
-      recordMetadata.value,
-      recordMetadata.value.formData || {},
-      schemaBundle.value || {}
-    )
-    await props.repo.writeFile(props.recordPath, serializeFrontMatter(frontMatterPayload, markdownView))
-    refreshMarkdownPreview(markdownView)
-    status.value = 'Markdown refreshed.'
-  } catch (err) {
-    status.value = ''
-    error.value = err?.message || 'Unable to regenerate markdown.'
-  }
+function refreshMarkdownPreview() {
+  recordBody.value = ''
 }
 
 function onPlainTextInput(event) {

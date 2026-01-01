@@ -1,4 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
+$id: "https://computable-lab.com/schema/computable-lab/experiment.schema.yaml"
 $title: "Experiment"
 type: object
 
@@ -13,9 +14,10 @@ required:
   - shortSlug
 
 properties:
-  recordType:
+  kind:
     type: string
     description: "Record discriminator. Should be 'experiment'."
+    const: "experiment"
   state:
     type: string
     description: "Workflow state identifier (e.g., draft, approved)."
@@ -54,11 +56,6 @@ properties:
     items:
       $ref: "./datatypes/biological-entity.schema.yaml"
 
-  reagents:
-    $ref: "./datatypes/reagent-list.schema.yaml"
-    description: >
-      Reagents and materials referenced by ontology ID or local vocab entry.
-
   instruments:
     type: array
     description: >
@@ -94,16 +91,10 @@ properties:
         role:
           type: string
           description: "Logical role of the attachment in this Experiment."
-          enum: ["raw", "processed", "qc", "report", "other"]
+          enum: ["supporting_evidence", "raw_data", "processed_data", "qc", "report", "other"]
         mediaType:
           type: string
           description: "Optional MIME type (e.g., 'application/pdf', 'image/png')."
-
-  binaryDataFiles:
-    type: array
-    description: "External data file identifiers (DVC pointers, object storage paths)."
-    items:
-      type: string
 
   measurementType:
     $ref: "./datatypes/ontology-term.schema.yaml"
@@ -130,17 +121,10 @@ properties:
     $ref: "./datatypes/ontology-term.schema.yaml"
     description: "High-level OBI type for this record."
 
-  recipeCard:
-    $ref: "./datatypes/recipe-card.schema.yaml"
-  biology:
-    type: object
-    properties:
-      entities:
-        $ref: "./datatypes/biological-entity.schema.yaml#/definitions/BiologyEntityList"
-    additionalProperties: false
-
-  assertions:
-    type: array
-    description: "Embedded assertions associated with this experiment."
-    items:
-      $ref: "./assertion.schema.yaml"
+assertions:
+  type: array
+  description: "Embedded assertions or references to standalone assertion records."
+  items:
+    oneOf:
+      - $ref: "./assertion.schema.yaml"
+      - $ref: "./datatypes/assertion-ref.schema.yaml"

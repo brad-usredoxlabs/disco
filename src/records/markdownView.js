@@ -1,21 +1,5 @@
 import { humanizeKey } from './utils.js'
 
-export function generateMarkdownView(recordType, metadata = {}, bodyData = {}, bundle = {}) {
-  const sections = []
-  const header = buildHeaderSection(recordType, metadata)
-  const overview = buildOverviewSection(metadata)
-  const links = buildLinksSection(metadata, bodyData)
-  const biology = buildBiologySection(bodyData)
-  const operations = buildOperationsSection(metadata, bodyData)
-  const attachments = buildAttachmentsSection(bodyData)
-
-  ;[header, overview, links, biology, operations, attachments].forEach((section) => {
-    if (section) sections.push(section)
-  })
-
-  return sections.join('\n\n').trim() + '\n'
-}
-
 export function buildFieldDescriptors(recordType, bundle = {}) {
   const schema = bundle.recordSchemas?.[recordType] || {}
   const props = schema.properties || {}
@@ -171,13 +155,14 @@ function dereferenceSchemaNode(node, rootSchema, registry = {}) {
 }
 
 function buildHeaderSection(recordType, metadata = {}) {
-  const humanizedType = humanizeKey(recordType || 'record')
+  const displayType = metadata.kind || recordType
+  const humanizedType = humanizeKey(displayType || 'record')
   const title = (metadata.title || `Untitled ${humanizedType}`).trim()
   const recordId = metadata.recordId || metadata.id || ''
   const headerLine = `# ${title}${recordId ? ` (${recordId})` : ''}`
   const badges = []
   if (metadata.state) badges.push(`**Status:** ${metadata.state}`)
-  if (recordType) badges.push(`**Record type:** ${humanizedType}`)
+  if (displayType) badges.push(`**Record type:** ${humanizedType}`)
   if (metadata.shortSlug) badges.push(`**Slug:** ${metadata.shortSlug}`)
   if (metadata.studyId) badges.push(`**Study:** ${formatInlineReference(metadata.studyId)}`)
   return badges.length ? `${headerLine}\n${badges.join(' · ')}` : headerLine

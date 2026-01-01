@@ -3,7 +3,7 @@ recordType: "experiment"
 
 layout:
   fields:
-    recordType:
+    kind:
       group: "metadata"
       order: 0
       ui:

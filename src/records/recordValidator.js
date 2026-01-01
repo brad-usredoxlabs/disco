@@ -11,19 +11,19 @@ export function useRecordValidator(schemaLoader) {
     }
   )
 
-  function getSchema(recordType) {
+  function getSchema(kind) {
     const bundle = schemaLoader.schemaBundle?.value
-    if (!bundle?.recordSchemas?.[recordType]) {
+    if (!bundle?.recordSchemas?.[kind]) {
       return null
     }
 
-    const key = `${recordType}:${bundle.schemaSet}`
+    const key = `${kind}:${bundle.schemaSet}`
     if (cache.value.has(key)) {
       return cache.value.get(key)
     }
 
     try {
-      const schema = buildZodSchema(bundle.recordSchemas[recordType], {
+      const schema = buildZodSchema(bundle.recordSchemas[kind], {
         schemas: bundle.recordSchemas
       })
       cache.value.set(key, schema)
@@ -34,13 +34,13 @@ export function useRecordValidator(schemaLoader) {
     }
   }
 
-  function validate(recordType, data) {
-    if (!recordType) {
-      return { ok: false, issues: ['Missing record type'] }
+  function validate(kind, data) {
+    if (!kind) {
+      return { ok: false, issues: ['Missing record kind'] }
     }
-    const schema = getSchema(recordType)
+    const schema = getSchema(kind)
     if (!schema) {
-      return { ok: false, issues: [{ path: 'root', message: `No schema registered for record type "${recordType}".` }] }
+      return { ok: false, issues: [{ path: 'root', message: `No schema registered for kind "${kind}".` }] }
     }
 
     const result = schema.safeParse(data)

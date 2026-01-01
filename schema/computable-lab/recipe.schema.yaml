@@ -1,4 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
+$id: "https://computable-lab.com/schema/computable-lab/recipe.schema.yaml"
 $title: "Recipe"
 type: object
 
@@ -12,9 +13,10 @@ required:
   - card
 
 properties:
-  recordType:
+  kind:
     type: string
     description: "Record discriminator. Should be 'recipe'."
+    const: "recipe"
   state:
     type: string
     description: "Workflow state identifier (e.g., draft, approved)."
@@ -32,8 +34,7 @@ properties:
 
   status:
     type: string
-    enum: ["draft", "active", "deprecated"]
-    default: "draft"
+    enum: ["in_progress", "finalized", "deprecated"]
     description: "High-level publication status of this recipe version."
 
   tags:
@@ -54,5 +55,13 @@ properties:
     description: "Optional external references (protocol documents, SOP links)."
     items:
       type: string
+
+  assertions:
+    type: array
+    description: "Embedded assertions or references to standalone assertion records."
+    items:
+      oneOf:
+        - $ref: "./assertion.schema.yaml"
+        - $ref: "./datatypes/assertion-ref.schema.yaml"
 
 additionalProperties: false
